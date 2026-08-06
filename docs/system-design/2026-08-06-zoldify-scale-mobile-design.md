@@ -146,9 +146,12 @@ Tiến trình chết giữa hai dòng = tiền trừ của người gửi mà kh
 
 | Hạng mục | Chốt |
 |---|---|
-| Mục tiêu | Đồ án, nhưng kiến trúc không phải đập đi khi thương mại hoá |
-| Deadline | 6 tuần, ~21/09/2026 |
-| Team | 4-6 sinh viên |
+| Mục tiêu | Đồ án capstone, nhưng kiến trúc không phải đập đi khi thương mại hoá |
+| Deadline | **~5,5 tuần, hoàn thành 15/09/2026**, đóng băng tính năng 08/09 |
+| Team | **5 sinh viên** (quy định capstone: 3-5) |
+| Mục tiêu điểm | **Level 3 (81-100)** — xem đối chiếu rubric ở kế hoạch bàn giao |
+| Nền tảng app | **Bắt buộc cả Android và iOS** (Expo Go trên iPhone) |
+| Ngôn ngữ báo cáo | **Toàn bộ tiếng Anh**, ≥50 trang, đúng mẫu VTC |
 | Hạ tầng | 1 VPS đơn, ngân sách vài trăm nghìn/tháng |
 | Mobile | React Native + Expo |
 | Scope app | **Mua + bán đầy đủ** (~28 màn hình) |
@@ -642,6 +645,10 @@ Một task chỉ được coi là xong khi đủ **tất cả**:
 ---
 
 ## 9. Phân rã task A-Z theo tuần & theo người
+
+> ⚠️ **CHƯƠNG NÀY ĐÃ ĐƯỢC THAY THẾ.** Kế hoạch 6 tuần / 6 vai trò bên dưới được lập trước khi có thông báo capstone. Lịch thật, phân vai thật, và phần đối chiếu rubric nằm ở **[`2026-08-06-capstone-delivery-plan.md`](./2026-08-06-capstone-delivery-plan.md)** — 5,5 tuần, 5 vai trò, thêm 4 tính năng Level 3 và hạng mục báo cáo 50 trang.
+>
+> Giữ lại chương này vì phần mô tả nội dung công việc và tiêu chí nghiệm thu vẫn còn đúng; chỉ có lịch và người là đổi.
 
 ### 9.1 Sáu vai trò
 
