@@ -6,6 +6,9 @@ import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { ApiShape } from '@common/decorators/api-response.decorator';
+import { Message } from './entities/message.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('chat')
@@ -25,6 +28,7 @@ export class ChatController {
   }
 
   @ResponseMessage('Lấy tin nhắn thành công')
+  @ApiPaginated(Message)
   @Get('conversations/:id/messages')
   getMessages(
     @Param('id') id: string,
@@ -52,6 +56,7 @@ export class ChatController {
   }
 
   @ResponseMessage('Lấy số tin nhắn chưa đọc thành công')
+  @ApiShape({ unread_count: 'number' })
   @Get('unread-count')
   getUnreadCount(@User() user: IUser) {
     return this.chatService.getUnreadCount(user);

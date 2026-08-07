@@ -7,6 +7,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { FileEntity } from './entities/file.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('files')
 export class FilesController {
@@ -37,6 +39,7 @@ export class FilesController {
 }
 
   @UseGuards(JwtAuthGuard)
+  @ApiPaginated(FileEntity)
   @Get()
   @ResponseMessage('Lấy danh sách file thành công')
   findAll(@Query('page') page: string, @Query('limit') limit: string, @Query('folder') folder: string) {

@@ -6,12 +6,16 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { AdminGuard } from '@common/guards/admin.guard';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { User as UserEntity } from '@identity/users/entities/user.entity';
+import { Withdrawal } from '@money/withdrawals/entities/withdrawal.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  @ApiPaginated(UserEntity)
   @Get('users')
   @ResponseMessage('Lấy danh sách người dùng thành công')
   getUsers(
@@ -73,6 +77,7 @@ export class AdminController {
   }
 
 
+  @ApiPaginated(Withdrawal)
   @Get('withdrawals')
   @ResponseMessage('Lấy danh sách yêu cầu rút tiền thành công')
   getWithdrawals(

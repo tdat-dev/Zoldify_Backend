@@ -1,5 +1,6 @@
 import { Controller, Get, Header, VERSION_NEUTRAL } from '@nestjs/common';
 import { Public } from '@common/decorators/public.decorator';
+import { RawResponse } from '@common/decorators/raw-response.decorator';
 import { SitemapService } from './sitemap.service';
 
 // Google đòi sitemap nằm ở gốc domain, nên route này không đi qua
@@ -9,6 +10,7 @@ export class SitemapController {
   constructor(private readonly sitemapService: SitemapService) {}
 
   @Public()
+  @RawResponse()
   @Get('sitemap.xml')
   @Header('Content-Type', 'application/xml')
   async getSitemap() {

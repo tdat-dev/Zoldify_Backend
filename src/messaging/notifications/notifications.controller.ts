@@ -6,6 +6,8 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { SkipCheckPermissions } from '@common/decorators/public.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { Notification } from './entities/notification.entity';
+import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
 
 @SkipCheckPermissions()
 @Controller('notifications')
@@ -21,6 +23,7 @@ export class NotificationsController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách thông báo thành công')
+  @ApiPaginated(Notification)
   @Get()
   findAll(
     @Query('currentPage') currentPage: string,
@@ -32,6 +35,7 @@ export class NotificationsController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy số thông báo chưa đọc thành công')
+  @ApiShape({ unread_count: 'number' })
   @Get('unread-count')
   getUnreadCount(@User() user: IUser) {
     return this.notificationsService.getUnreadCount(user);

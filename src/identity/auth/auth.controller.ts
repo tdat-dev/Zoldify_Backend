@@ -31,6 +31,9 @@ import { FirebaseService } from '@messaging/firebase/firebase.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User as UserEntity } from '@identity/users/entities/user.entity';
+import { ApiEntity } from '@common/decorators/api-response.decorator';
+import { MessageResponseDto } from '@common/dto/message-response.dto';
+import { AuthUserDto, LoginResponseDto } from './dto/auth-response.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -47,6 +50,7 @@ export class AuthController {
     short: { limit: 3, ttl: 1000 },
     medium: { limit: 10, ttl: 60000 },
   })
+  @ApiEntity(LoginResponseDto)
   @Post('login')
   @ResponseMessage('Đăng nhập thành công')
   @ApiBody({ type: LoginUserDto })
@@ -66,6 +70,7 @@ export class AuthController {
     short: { limit: 1, ttl: 1000 },
     medium: { limit: 5, ttl: 60000 },
   })
+  @ApiEntity(MessageResponseDto)
   @Post('register/send-otp')
   @ResponseMessage('Gửi mã OTP xác thực đăng ký thành công')
   async sendRegisterOtp(@Body() dto: SendRegisterOtpDto) {
@@ -77,6 +82,7 @@ export class AuthController {
     short: { limit: 1, ttl: 1000 },
     medium: { limit: 5, ttl: 60000 },
   })
+  @ApiEntity(AuthUserDto)
   @Post('register/verify-otp')
   @ResponseMessage('Xác thực OTP thành công')
   async verifyRegisterOtp(@Body() dto: VerifyRegisterOtpDto) {
@@ -88,6 +94,7 @@ export class AuthController {
     short: { limit: 1, ttl: 1000 },
     medium: { limit: 5, ttl: 60000 },
   })
+  @ApiEntity(AuthUserDto)
   @Post('register')
   @ResponseMessage('Đăng ký thành công')
   handleRegister(@Body() registerUserDto: RegisterUserDto) {
@@ -95,6 +102,7 @@ export class AuthController {
   }
 
   @Public()
+  @ApiEntity(LoginResponseDto)
   @Post('firebase')
   async firebaseLogin(@Body('idToken') idToken: string) {
     // để test đăng nhập bằng firebase: google
@@ -128,6 +136,7 @@ export class AuthController {
     short: { limit: 1, ttl: 1000 },
     medium: { limit: 5, ttl: 60000 },
   })
+  @ApiEntity(MessageResponseDto)
   @Post('forgot-password/send-otp')
   @ResponseMessage('Gửi OTP thành công')
   async sendForgotPasswordOtp(@Body() dto: SendOtpDto) {
@@ -139,6 +148,7 @@ export class AuthController {
     short: { limit: 1, ttl: 1000 },
     medium: { limit: 5, ttl: 60000 },
   })
+  @ApiEntity(MessageResponseDto)
   @Post('forgot-password/reset')
   @ResponseMessage('Đặt lại mật khẩu thành công')
   async resetPassword(@Body() dto: ResetPasswordDto) {
@@ -146,6 +156,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiEntity(MessageResponseDto)
   @Post('change-password')
   @ResponseMessage('Đổi mật khẩu thành công')
   async changePassword(@User() user: IUser, @Body() dto: ChangePasswordDto) {
@@ -157,6 +168,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiEntity(MessageResponseDto)
   @Post('logout')
   @ResponseMessage('Đăng xuất thành công')
   async logout(@User() user: IUser) {
@@ -164,6 +176,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiEntity(AuthUserDto)
   @Patch('profile')
   @ResponseMessage('Cập nhật thông tin thành công')
   async updateProfile(

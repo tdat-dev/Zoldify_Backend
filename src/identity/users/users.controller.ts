@@ -7,6 +7,8 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { AdminGuard } from '@common/guards/admin.guard';
 import { UseGuards } from '@nestjs/common';
+import { User } from './entities/user.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -24,6 +26,7 @@ export class UsersController {
     };
   }
 
+  @ApiPaginated(User)
   @Get()
   @ResponseMessage('Lấy danh sách tài khoản thành công!')
   findAll(

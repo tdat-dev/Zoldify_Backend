@@ -7,6 +7,9 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { SkipCheckPermissions } from '@common/decorators/public.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
+import { Cart } from './entities/cart.entity';
+import { ApiEntity, ApiPaginated } from '@common/decorators/api-response.decorator';
+import { MessageResponseDto } from '@common/dto/message-response.dto';
 
 @SkipCheckPermissions()
 @Controller('cart')
@@ -22,6 +25,7 @@ export class CartController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách giỏ hàng thành công')
+  @ApiPaginated(Cart)
   @Get()
   findAll(@User() user: IUser) {
     return this.cartService.findAll(user);
@@ -43,6 +47,7 @@ export class CartController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa giỏ hàng thành công')
+  @ApiEntity(MessageResponseDto)
   @Delete(':id')
   remove(@Param('id') id: string, @User() user: IUser) {
     return this.cartService.remove(+id, user);

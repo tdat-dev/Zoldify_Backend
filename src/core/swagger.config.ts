@@ -74,10 +74,22 @@ export function wrapResponsesInEnvelope(
         ?.responses;
       if (!responses) continue;
 
+      // NestJS ghi mặc định 201 cho POST, còn decorator ApiOkResponse lại
+      // khai 200. Kết quả là một endpoint có hai mục 2xx mà chỉ một mục có
+      // kiểu, client sinh code đọc nhầm mục trống rồi mất kiểu. Lấy schema
+      // đã khai được ở bất kỳ mục 2xx nào rồi dùng chung cho mọi mục 2xx.
+      const declared = Object.entries(responses).find(
+        ([status, r]) =>
+          /^2\d\d$/.test(status) && r?.content?.['application/json']?.schema,
+      );
+      const declaredSchema = declared?.[1]?.content?.['application/json']
+        ?.schema as unknown;
+
       for (const [status, response] of Object.entries(responses)) {
         if (!/^2\d\d$/.test(status)) continue;
 
-        const inner = response?.content?.['application/json']?.schema;
+        const inner =
+          response?.content?.['application/json']?.schema ?? declaredSchema;
 
         response.content = {
           'application/json': {

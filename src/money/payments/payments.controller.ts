@@ -6,6 +6,8 @@ import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { Payment } from './entities/payment.entity';
+import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
 
 @Controller('payments')
 export class PaymentsController {
@@ -23,6 +25,7 @@ export class PaymentsController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách giao dịch thành công')
+  @ApiPaginated(Payment)
   @Get()
   findAll(
     @Query('currentPage') currentPage: string,
@@ -35,6 +38,7 @@ export class PaymentsController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy số dư ví thành công')
+  @ApiShape({ balance: 'number' })
   @Get('wallet/balance')
   getBalance(@User() user: IUser) {
     return this.paymentsService.getBalance(user);

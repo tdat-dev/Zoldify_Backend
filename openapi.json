@@ -109,7 +109,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -282,6 +299,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -296,7 +339,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -366,7 +411,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/AuthUserDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -397,6 +444,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -411,7 +484,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -442,6 +517,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AuthUserDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -456,7 +557,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/AuthUserDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -487,6 +590,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AuthUserDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -501,7 +630,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/AuthUserDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -522,6 +653,32 @@
         "operationId": "AuthController_firebaseLogin_v1",
         "parameters": [],
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -536,7 +693,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -567,6 +726,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -581,7 +766,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -612,6 +799,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -626,7 +839,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -657,6 +872,32 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -671,7 +912,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -692,6 +935,32 @@
         "operationId": "AuthController_logout_v1",
         "parameters": [],
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
           "201": {
             "description": "",
             "content": {
@@ -706,7 +975,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -803,7 +1074,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Category"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1141,7 +1429,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Product"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1436,7 +1741,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1488,7 +1810,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1532,7 +1871,21 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "follower": {
+                          "type": "number"
+                        },
+                        "following": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "follower",
+                        "following"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1576,7 +1929,17 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "followed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "followed"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1673,7 +2036,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Notification"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1708,7 +2088,17 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "unread_count": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "unread_count"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -1994,7 +2384,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Order"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2341,7 +2748,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Cart"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2483,7 +2907,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2627,7 +3053,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Escrow"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2744,7 +3187,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Escrow"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2788,7 +3248,17 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "held_balance": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "held_balance"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2893,7 +3363,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Payment"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2928,7 +3415,17 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "balance": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "balance"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3152,7 +3649,17 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "balance": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "balance"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3212,7 +3719,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WalletTransaction"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3397,7 +3921,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Message"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3532,7 +4073,17 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "unread_count": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "unread_count"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3629,7 +4180,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Review"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3689,7 +4257,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Review"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -3930,7 +4515,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/FileEntity"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -4522,7 +5124,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Product"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -4647,6 +5266,7 @@
             }
           }
         },
+        "summary": "Sepay gửi webhook đến endpoint này\nPublic — không cần JWT vì Sepay không biết token của user\nXác thực bằng HMAC signature thay vì JWT",
         "tags": [
           "Sepay"
         ]
@@ -4692,6 +5312,7 @@
             }
           }
         },
+        "summary": "Tạo link thanh toán PayOS cho đơn hàng hoặc nạp ví\nPOST /payos/create-link\nbody: { type: 'order' | 'topup', order_id?: number, amount?: number }",
         "tags": [
           "Payos"
         ]
@@ -4736,6 +5357,7 @@
             }
           }
         },
+        "summary": "Lấy trạng thái thanh toán theo orderId (nội bộ)\nGET /payos/order/:orderId",
         "tags": [
           "Payos"
         ]
@@ -4824,6 +5446,7 @@
             }
           }
         },
+        "summary": "Lấy trạng thái payment link theo payos_order_code\nGET /payos/status/:code",
         "tags": [
           "Payos"
         ]
@@ -4869,6 +5492,7 @@
             }
           }
         },
+        "summary": "Hủy payment link (user tự hủy từ frontend)\nPOST /payos/cancel\nbody: { payos_order_code: string }",
         "tags": [
           "Payos"
         ]
@@ -4906,6 +5530,7 @@
             }
           }
         },
+        "summary": "Webhook nhận thông báo từ PayOS\nPOST /payos/webhook (PUBLIC, không cần JWT)\nPayOS gửi raw JSON, cần verify signature",
         "tags": [
           "Payos"
         ]
@@ -4992,7 +5617,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -5383,7 +6025,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Withdrawal"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -5689,7 +6348,24 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Withdrawal"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -5767,6 +6443,33 @@
           "password"
         ]
       },
+      "PaginationMetaDto": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number",
+            "description": "Trang hiện tại, bắt đầu từ 1"
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "Số bản ghi mỗi trang"
+          },
+          "pages": {
+            "type": "number",
+            "description": "Tổng số trang"
+          },
+          "total": {
+            "type": "number",
+            "description": "Tổng số bản ghi khớp điều kiện lọc"
+          }
+        },
+        "required": [
+          "current",
+          "pageSize",
+          "pages",
+          "total"
+        ]
+      },
       "User": {
         "type": "object",
         "properties": {
@@ -5777,9 +6480,6 @@
             "type": "string"
           },
           "email": {
-            "type": "string"
-          },
-          "password": {
             "type": "string"
           },
           "phone_number": {
@@ -5813,12 +6513,6 @@
           "gender": {
             "type": "string"
           },
-          "refresh_token": {
-            "type": "string"
-          },
-          "token_version": {
-            "type": "number"
-          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -5832,7 +6526,6 @@
           "id",
           "full_name",
           "email",
-          "password",
           "phone_number",
           "role",
           "avatar",
@@ -5841,14 +6534,56 @@
           "is_locked",
           "last_seen",
           "gender",
-          "refresh_token",
-          "token_version",
           "created_at"
         ]
       },
       "UpdateUserDto": {
         "type": "object",
         "properties": {}
+      },
+      "AuthUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "full_name",
+          "email",
+          "role"
+        ]
+      },
+      "LoginResponseDto": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "JWT dùng cho mọi request sau đó, đặt vào header Authorization"
+          },
+          "refresh_token": {
+            "type": "string",
+            "description": "Dùng để xin access_token mới khi cái cũ hết hạn"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUserDto"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "user"
+        ]
       },
       "LoginUserDto": {
         "type": "object",
@@ -5865,6 +6600,17 @@
         "required": [
           "email",
           "password"
+        ]
+      },
+      "MessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
         ]
       },
       "SendRegisterOtpDto": {
@@ -6700,13 +7446,13 @@
             "type": "number"
           },
           "status": {
-            "type": "string",
             "enum": [
               "holding",
               "released",
               "refunded",
               "cancelled"
-            ]
+            ],
+            "type": "string"
           },
           "released_at": {
             "format": "date-time",
@@ -6894,6 +7640,85 @@
           "amount"
         ]
       },
+      "Wallet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "balance": {
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user",
+          "balance",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "WalletTransaction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "balance_before": {
+            "type": "number"
+          },
+          "balance_after": {
+            "type": "number"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "topup",
+              "payment",
+              "refund",
+              "withdrawal"
+            ]
+          },
+          "reference": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "wallet",
+          "amount",
+          "balance_before",
+          "balance_after",
+          "type",
+          "reference",
+          "note",
+          "created_at"
+        ]
+      },
       "TransferDto": {
         "type": "object",
         "properties": {
@@ -6961,24 +7786,6 @@
           "updated_at"
         ]
       },
-      "SendMessageDto": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "images": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "content",
-          "images"
-        ]
-      },
       "Message": {
         "type": "object",
         "properties": {
@@ -7016,6 +7823,24 @@
           "images",
           "is_read",
           "created_at"
+        ]
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "content",
+          "images"
         ]
       },
       "CreateReviewDto": {

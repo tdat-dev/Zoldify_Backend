@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -8,12 +18,14 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { UpdateStockDto } from './dto/update-stock.dto';
+import { Product } from './entities/product.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  @UseGuards(JwtAuthGuard)// Chỉ những ai đăng nhập (có token) mới được thêm
+  @UseGuards(JwtAuthGuard) // Chỉ những ai đăng nhập (có token) mới được thêm
   @ResponseMessage('Thêm mới sản phẩm thành công')
   @Post()
   create(@Body() createProductDto: CreateProductDto, @User() user: IUser) {
@@ -22,17 +34,18 @@ export class ProductsController {
 
   @ResponseMessage('Lấy danh sách tất cả sản phẩm thành công!')
   @Public()
+  @ApiPaginated(Product)
   @Get()
   findAll(
-    @Query("current") currentPage: string,
-    @Query("pageSize") limit: string,
-    @Query("q") q: string,
-    @Query("category_id") category_id: string,
-    @Query("seller_id") seller_id: string,
-    @Query("price_min") price_min: string,
-    @Query("price_max") price_max: string,
-    @Query("sort") sort: string,
-    @Query() qs: any
+    @Query('current') currentPage: string,
+    @Query('pageSize') limit: string,
+    @Query('q') q: string,
+    @Query('category_id') category_id: string,
+    @Query('seller_id') seller_id: string,
+    @Query('price_min') price_min: string,
+    @Query('price_max') price_max: string,
+    @Query('sort') sort: string,
+    @Query() qs: any,
   ) {
     qs.q = q;
     qs.category_id = category_id;

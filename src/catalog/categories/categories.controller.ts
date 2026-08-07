@@ -7,6 +7,8 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { Category } from './entities/category.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('categories')
 export class CategoriesController {
@@ -25,6 +27,7 @@ export class CategoriesController {
 
   @Public() // Cho phép xem danh sách danh mục công khai không cần token
   @ResponseMessage('Lấy danh sách tất cả danh mục thành công!')
+  @ApiPaginated(Category)
   @Get()
   findAll(
     @Query("current") currentPage: string,
