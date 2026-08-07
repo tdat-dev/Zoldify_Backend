@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
 import { hashSync } from 'bcrypt';
 import { config } from 'dotenv';
-import { Setting } from './settings/entities/setting.entity';
+import { Setting } from '@ops/settings/entities/setting.entity';
 config();
 
 const U = 'https://images.unsplash.com/';

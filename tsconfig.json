@@ -14,6 +14,16 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@identity/*": ["src/identity/*"],
+      "@catalog/*": ["src/catalog/*"],
+      "@ordering/*": ["src/ordering/*"],
+      "@money/*": ["src/money/*"],
+      "@messaging/*": ["src/messaging/*"],
+      "@ops/*": ["src/ops/*"],
+      "@common/*": ["src/common/*"],
+      "@core/*": ["src/core/*"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,

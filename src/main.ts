@@ -1,7 +1,7 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { TransformInterceptor } from './core/transform.interceptor';
-import { HttpExceptionFilter } from './core/http-exception.filter';
+import { TransformInterceptor } from '@core/transform.interceptor';
+import { HttpExceptionFilter } from '@core/http-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
