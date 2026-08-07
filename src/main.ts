@@ -5,7 +5,11 @@ import { HttpExceptionFilter } from '@core/http-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { configureRouting } from './core/routing.config';
-import { swaggerConfig } from './core/swagger.config';
+import {
+  markQueryParamsOptional,
+  swaggerConfig,
+  wrapResponsesInEnvelope,
+} from './core/swagger.config';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
@@ -76,7 +80,9 @@ async function bootstrap() {
   configureRouting(app);
 
   // Swagger: /api/docs — hợp đồng cho web và app
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const document = wrapResponsesInEnvelope(
+    markQueryParamsOptional(SwaggerModule.createDocument(app, swaggerConfig)),
+  );
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: { persistAuthorization: true },
   });

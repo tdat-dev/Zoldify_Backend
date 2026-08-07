@@ -21,7 +21,7 @@
     "seed": "ts-node src/seed.ts",
     "openapi:gen": "nest build && node dist/openapi-export.js",
     "openapi:check": "npm run openapi:gen && git diff --exit-code openapi.json",
-    "mock": "prism mock openapi.json --port 4010",
+    "mock": "prism mock openapi.json --port 4200",
     "boundaries:check": "node scripts/check-boundaries.mjs",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
