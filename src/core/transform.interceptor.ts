@@ -9,7 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { RESPONSE_MESSAGE } from '../common/decorators/response.decorator';
+import { RESPONSE_MESSAGE } from '@common/decorators/response.decorator';
 
 export interface Response<T> {
   statusCode: number;
