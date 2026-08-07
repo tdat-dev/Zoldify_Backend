@@ -3,7 +3,11 @@ import { SwaggerModule } from '@nestjs/swagger';
 import { writeFileSync } from 'fs';
 import { AppModule } from './app.module';
 import { configureRouting } from './core/routing.config';
-import { swaggerConfig } from './core/swagger.config';
+import {
+  markQueryParamsOptional,
+  swaggerConfig,
+  wrapResponsesInEnvelope,
+} from './core/swagger.config';
 
 /**
  * Xuất hợp đồng API ra openapi.json.
@@ -23,7 +27,9 @@ async function exportOpenApi(): Promise<void> {
 
   configureRouting(app);
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const document = wrapResponsesInEnvelope(
+    markQueryParamsOptional(SwaggerModule.createDocument(app, swaggerConfig)),
+  );
   const pathCount = Object.keys(document.paths ?? {}).length;
   const schemaCount = Object.keys(document.components?.schemas ?? {}).length;
 
