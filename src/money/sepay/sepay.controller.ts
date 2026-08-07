@@ -1,14 +1,11 @@
-import {
-  Controller,
-  Post,
-  Headers,
-  Req,
-  HttpCode,
-} from '@nestjs/common';
+import { Controller, Post, Headers, Req, HttpCode } from '@nestjs/common';
 import { SepayService } from './sepay.service';
 import { Public } from '@common/decorators/public.decorator';
 
-@Controller('api/sepay-webhook')
+// Trước đây là 'api/sepay-webhook'. Sau khi bật global prefix 'api' thì
+// đường dẫn sẽ thành /api/v1/sepay-webhook — nhớ cập nhật lại URL webhook
+// trong dashboard SePay, nếu không tiền nạp sẽ không vào ví.
+@Controller('sepay-webhook')
 export class SepayController {
   constructor(private readonly sepayService: SepayService) {}
 
@@ -19,7 +16,7 @@ export class SepayController {
    */
   @Public()
   @Post()
-  @HttpCode(200)  // Luôn trả 200 để Sepay không gửi lại
+  @HttpCode(200) // Luôn trả 200 để Sepay không gửi lại
   async handleWebhook(
     @Headers('x-signature') signature: string,
     @Req() req: any,
