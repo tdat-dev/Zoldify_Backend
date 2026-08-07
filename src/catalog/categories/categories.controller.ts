@@ -7,7 +7,7 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
-import { Category } from './entities/category.entity';
+import { CategoryListItemDto } from './dto/category-list-item.dto';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('categories')
@@ -27,7 +27,7 @@ export class CategoriesController {
 
   @Public() // Cho phép xem danh sách danh mục công khai không cần token
   @ResponseMessage('Lấy danh sách tất cả danh mục thành công!')
-  @ApiPaginated(Category)
+  @ApiPaginated(CategoryListItemDto)
   @Get()
   findAll(
     @Query("current") currentPage: string,

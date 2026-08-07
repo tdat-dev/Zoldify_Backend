@@ -1083,7 +1083,7 @@
                         "result": {
                           "type": "array",
                           "items": {
-                            "$ref": "#/components/schemas/Category"
+                            "$ref": "#/components/schemas/CategoryListItemDto"
                           }
                         }
                       },
@@ -2436,7 +2436,29 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "total_users": {
+                          "type": "number"
+                        },
+                        "total_products": {
+                          "type": "number"
+                        },
+                        "total_orders": {
+                          "type": "number"
+                        },
+                        "total_revenue": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "total_users",
+                        "total_products",
+                        "total_orders",
+                        "total_revenue"
+                      ]
+                    }
                   },
                   "required": [
                     "statusCode",
@@ -2971,7 +2993,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateOrderDto"
+                "$ref": "#/components/schemas/CreateGhnOrderDto"
               }
             }
           }
@@ -6908,6 +6930,42 @@
           "updated_at"
         ]
       },
+      "CategoryListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "product_count": {
+            "type": "number",
+            "description": "Số sản phẩm đang thuộc danh mục, tính lúc truy vấn"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "image",
+          "description",
+          "slug",
+          "is_active",
+          "product_count"
+        ]
+      },
       "UpdateCategoryDto": {
         "type": "object",
         "properties": {}
@@ -7019,8 +7077,7 @@
           "user_id",
           "type",
           "title",
-          "content",
-          "data"
+          "content"
         ]
       },
       "Notification": {
@@ -7074,45 +7131,56 @@
       "CreateOrderDto": {
         "type": "object",
         "properties": {
-          "to_name": {
+          "shipping_address": {
             "type": "string"
           },
-          "to_phone": {
+          "receiver_name": {
             "type": "string"
           },
-          "to_address": {
+          "receiver_phone": {
             "type": "string"
           },
-          "to_ward_code": {
+          "province": {
             "type": "string"
           },
-          "to_district_id": {
+          "district": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "cod",
+              "bank_transfer",
+              "wallet",
+              "momo",
+              "vnpay",
+              "payos"
+            ]
+          },
+          "shipping_fee": {
+            "type": "number",
+            "minimum": 0
+          },
+          "ghn_district_id": {
             "type": "number"
           },
-          "weight": {
-            "type": "number",
-            "minimum": 0
+          "ghn_ward_code": {
+            "type": "string"
           },
-          "cod_amount": {
-            "type": "number",
-            "minimum": 0
-          },
-          "items": {
+          "cart_item_ids": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/OrderItemDto"
+              "type": "number"
             }
           }
         },
         "required": [
-          "to_name",
-          "to_phone",
-          "to_address",
-          "to_ward_code",
-          "to_district_id",
-          "weight",
-          "cod_amount",
-          "items"
+          "shipping_address",
+          "receiver_name",
+          "receiver_phone"
         ]
       },
       "Order": {
@@ -7329,17 +7397,7 @@
           "note": {
             "type": "string"
           }
-        },
-        "required": [
-          "status",
-          "tracking_code",
-          "shipping_address",
-          "receiver_name",
-          "receiver_phone",
-          "province",
-          "district",
-          "note"
-        ]
+        }
       },
       "CreateCartDto": {
         "type": "object",
@@ -7427,6 +7485,50 @@
           "price"
         ]
       },
+      "CreateGhnOrderDto": {
+        "type": "object",
+        "properties": {
+          "to_name": {
+            "type": "string"
+          },
+          "to_phone": {
+            "type": "string"
+          },
+          "to_address": {
+            "type": "string"
+          },
+          "to_ward_code": {
+            "type": "string"
+          },
+          "to_district_id": {
+            "type": "number"
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cod_amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItemDto"
+            }
+          }
+        },
+        "required": [
+          "to_name",
+          "to_phone",
+          "to_address",
+          "to_ward_code",
+          "to_district_id",
+          "weight",
+          "cod_amount",
+          "items"
+        ]
+      },
       "Escrow": {
         "type": "object",
         "properties": {
@@ -7504,12 +7606,7 @@
               "payos"
             ]
           }
-        },
-        "required": [
-          "order_id",
-          "amount",
-          "payment_method"
-        ]
+        }
       },
       "Payment": {
         "type": "object",
@@ -7616,11 +7713,7 @@
           "transaction_code": {
             "type": "string"
           }
-        },
-        "required": [
-          "status",
-          "transaction_code"
-        ]
+        }
       },
       "TopupDto": {
         "type": "object",
@@ -7839,8 +7932,7 @@
           }
         },
         "required": [
-          "content",
-          "images"
+          "content"
         ]
       },
       "CreateReviewDto": {
@@ -7870,9 +7962,7 @@
         "required": [
           "product_id",
           "order_id",
-          "rating",
-          "comment",
-          "images"
+          "rating"
         ]
       },
       "Review": {
@@ -7944,12 +8034,7 @@
               "type": "string"
             }
           }
-        },
-        "required": [
-          "rating",
-          "comment",
-          "images"
-        ]
+        }
       },
       "FileEntity": {
         "type": "object",
