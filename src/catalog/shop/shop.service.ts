@@ -1,11 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateShopDto } from './dto/create-shop.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Shop, ShopStatus } from './entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
-import { Product, ProductStatus } from '@catalog/products/entities/product.entity';
+import {
+  Product,
+  ProductStatus,
+} from '@catalog/products/entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import type { IUser } from '@identity/users/users.interface';
@@ -23,14 +30,18 @@ export class ShopService {
     private readonly followRepository: Repository<Follow>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
-  ) { }
+  ) {}
 
   async create(createShopDto: CreateShopDto, user: IUser) {
-    const existing = await this.shopRepository.findOne({ where: { user: { id: user.id } } });
+    const existing = await this.shopRepository.findOne({
+      where: { user: { id: user.id } },
+    });
     if (existing) {
       throw new BadRequestException('Bạn đã có shop rồi');
     }
-    const slugExists = await this.shopRepository.findOne({ where: { slug: createShopDto.slug } });
+    const slugExists = await this.shopRepository.findOne({
+      where: { slug: createShopDto.slug },
+    });
     if (slugExists) {
       throw new BadRequestException('Slug này đã được sử dụng');
     }
@@ -58,7 +69,9 @@ export class ShopService {
     const shop = await this.getMyShop(user);
 
     if (updateShopDto.slug && updateShopDto.slug !== shop.slug) {
-      const slugExists = await this.shopRepository.findOne({ where: { slug: updateShopDto.slug } });
+      const slugExists = await this.shopRepository.findOne({
+        where: { slug: updateShopDto.slug },
+      });
       if (slugExists) {
         throw new BadRequestException('Slug này đã được sử dụng');
       }
@@ -84,7 +97,9 @@ export class ShopService {
     }
 
     const [productCount, followerCount] = await Promise.all([
-      this.productRepository.count({ where: { seller: { id: sellerId }, status: ProductStatus.ACTIVE } }),
+      this.productRepository.count({
+        where: { seller: { id: sellerId }, status: ProductStatus.ACTIVE },
+      }),
       this.followRepository.count({ where: { following: { id: sellerId } } }),
     ]);
 
@@ -101,12 +116,22 @@ export class ShopService {
     });
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }
 
-  async getSellerOrders(sellerId: number, page: number, limit: number, status?: string) {
+  async getSellerOrders(
+    sellerId: number,
+    page: number,
+    limit: number,
+    status?: string,
+  ) {
     const where: any = { product: { seller: { id: sellerId } } };
     if (status) {
       where.order = { status };
@@ -134,7 +159,12 @@ export class ShopService {
     const result = Array.from(orderMap.values());
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }

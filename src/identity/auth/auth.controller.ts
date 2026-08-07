@@ -9,7 +9,10 @@ import {
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { LoginUserDto, RegisterUserDto } from '@identity/users/dto/create-user.dto';
+import {
+  LoginUserDto,
+  RegisterUserDto,
+} from '@identity/users/dto/create-user.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { LocalAuthGuard } from './local-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
@@ -17,7 +20,13 @@ import { ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
-import { ChangePasswordDto, ResetPasswordDto, SendOtpDto, SendRegisterOtpDto, VerifyRegisterOtpDto } from './dto/auth.entity';
+import {
+  ChangePasswordDto,
+  ResetPasswordDto,
+  SendOtpDto,
+  SendRegisterOtpDto,
+  VerifyRegisterOtpDto,
+} from './dto/auth.entity';
 import { FirebaseService } from '@messaging/firebase/firebase.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -30,11 +39,14 @@ export class AuthController {
     private readonly firebaseService: FirebaseService,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
-  ) { }
+  ) {}
 
   @Public()
   @UseGuards(LocalAuthGuard)
-  @Throttle({ short: { limit: 3, ttl: 1000 }, medium: { limit: 10, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 10, ttl: 60000 },
+  })
   @Post('login')
   @ResponseMessage('Đăng nhập thành công')
   @ApiBody({ type: LoginUserDto })
@@ -50,7 +62,10 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ short: { limit: 1, ttl: 1000 }, medium: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 1, ttl: 1000 },
+    medium: { limit: 5, ttl: 60000 },
+  })
   @Post('register/send-otp')
   @ResponseMessage('Gửi mã OTP xác thực đăng ký thành công')
   async sendRegisterOtp(@Body() dto: SendRegisterOtpDto) {
@@ -58,7 +73,10 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ short: { limit: 1, ttl: 1000 }, medium: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 1, ttl: 1000 },
+    medium: { limit: 5, ttl: 60000 },
+  })
   @Post('register/verify-otp')
   @ResponseMessage('Xác thực OTP thành công')
   async verifyRegisterOtp(@Body() dto: VerifyRegisterOtpDto) {
@@ -66,7 +84,10 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ short: { limit: 1, ttl: 1000 }, medium: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 1, ttl: 1000 },
+    medium: { limit: 5, ttl: 60000 },
+  })
   @Post('register')
   @ResponseMessage('Đăng ký thành công')
   handleRegister(@Body() registerUserDto: RegisterUserDto) {
@@ -75,11 +96,14 @@ export class AuthController {
 
   @Public()
   @Post('firebase')
-  async firebaseLogin(@Body('idToken') idToken: string) { // để test đăng nhập bằng firebase: google
+  async firebaseLogin(@Body('idToken') idToken: string) {
+    // để test đăng nhập bằng firebase: google
     const fbUser = await this.firebaseService.verifyIdToken(idToken);
 
     let user = await this.userRepository.findOne({
-      where: fbUser.email ? { email: fbUser.email } : { phone_number: fbUser.phone_number },
+      where: fbUser.email
+        ? { email: fbUser.email }
+        : { phone_number: fbUser.phone_number },
     });
 
     if (!user) {
@@ -100,7 +124,10 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ short: { limit: 1, ttl: 1000 }, medium: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 1, ttl: 1000 },
+    medium: { limit: 5, ttl: 60000 },
+  })
   @Post('forgot-password/send-otp')
   @ResponseMessage('Gửi OTP thành công')
   async sendForgotPasswordOtp(@Body() dto: SendOtpDto) {
@@ -108,7 +135,10 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ short: { limit: 1, ttl: 1000 }, medium: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    short: { limit: 1, ttl: 1000 },
+    medium: { limit: 5, ttl: 60000 },
+  })
   @Post('forgot-password/reset')
   @ResponseMessage('Đặt lại mật khẩu thành công')
   async resetPassword(@Body() dto: ResetPasswordDto) {
@@ -119,7 +149,11 @@ export class AuthController {
   @Post('change-password')
   @ResponseMessage('Đổi mật khẩu thành công')
   async changePassword(@User() user: IUser, @Body() dto: ChangePasswordDto) {
-    return this.authService.changePassword(user.id, dto.oldPassword, dto.newPassword);
+    return this.authService.changePassword(
+      user.id,
+      dto.oldPassword,
+      dto.newPassword,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -132,7 +166,10 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Patch('profile')
   @ResponseMessage('Cập nhật thông tin thành công')
-  async updateProfile(@User() user: IUser, @Body('full_name') full_name: string) {
+  async updateProfile(
+    @User() user: IUser,
+    @Body('full_name') full_name: string,
+  ) {
     return this.authService.updateProfile(user.id, full_name);
   }
 }
