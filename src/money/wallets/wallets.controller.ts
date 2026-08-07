@@ -5,6 +5,8 @@ import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { TopupDto } from './dto/topup.dto';
 import { TransferDto } from './dto/transfer.dto';
+import { WalletTransaction } from './entities/wallet-transaction.entity';
+import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
 
 @Controller('wallets')
 export class WalletsController {
@@ -17,12 +19,14 @@ export class WalletsController {
   }
 
   
+  @ApiShape({ balance: 'number' })
   @Get('balance')
   @ResponseMessage('Lấy số dư vì thành công')
   getBalance(@User() user: IUser) {
     return this.walletsService.getBalance(user.id);
   }
 
+  @ApiPaginated(WalletTransaction)
   @Get('transactions')
   @ResponseMessage('Lấy lịch sử giao dịch thành công')
   getTransactions(

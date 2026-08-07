@@ -7,6 +7,8 @@ import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { Product } from '@catalog/products/entities/product.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('shop')
 export class ShopController {
@@ -42,6 +44,7 @@ export class ShopController {
 
   @Public()
   @ResponseMessage('Lấy sản phẩm của shop thành công')
+  @ApiPaginated(Product)
   @Get(':sellerId/products')
   getProducts(
     @Param('sellerId') sellerId: string,
@@ -52,8 +55,7 @@ export class ShopController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @ResponseMessage('Lấy đơn hàng của shop thành công')
-  @Get(':sellerId/orders')
+  @ResponseMessage('Lấy đơn hàng của shop thành công')  @Get(':sellerId/orders')
   getSellerOrders(
     @Param('sellerId') sellerId: string,
     @Query('page') page: string,

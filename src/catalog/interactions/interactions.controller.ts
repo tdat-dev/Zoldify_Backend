@@ -6,6 +6,8 @@ import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { CreateReviewDto } from './dto/create-review.dto';
 import type { IUser } from '@identity/users/users.interface';
 import { UpdateReviewDto } from './dto/update-review.dto';
+import { Review } from './entities/review.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('interactions')
 export class InteractionsController {
@@ -21,6 +23,7 @@ export class InteractionsController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách tương tác thành công')
+  @ApiPaginated(Review)
   @Get()
   findAll(
      @Query('currentPage') currentPage: string,
@@ -31,6 +34,7 @@ export class InteractionsController {
   }
 
   @ResponseMessage('Lấy đánh giá sản phẩm thành công')
+  @ApiPaginated(Review)
   @Get('product/:productId')
   findByProduct(
     @Param('productId') productId: string,

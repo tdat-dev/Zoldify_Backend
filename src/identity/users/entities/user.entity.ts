@@ -6,6 +6,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
 } from 'typeorm';
+import { ApiHideProperty } from '@nestjs/swagger';
 
 // Định nghĩa kiểu ENUM cho cột role(các chức năng)
 export enum UserRole {
@@ -33,7 +34,8 @@ export class User {
   email: string;
 
   // Mật khẩu đã hash (bcrypt) - VARCHAR(255)
-  @Column({ type: 'varchar', length: 255, select: false })// select: false: khi select * thì sẽ không trả về password
+  @ApiHideProperty()
+  @Column({ type: 'varchar', length: 255, select: false }) // select: false: khi select * thì sẽ không trả về password
   password: string;
 
   // Số điện thoại - VARCHAR(20), có thể null
@@ -53,7 +55,7 @@ export class User {
   avatar: string;
 
   // Số dư tài khoản (legacy, dùng bảng wallets) - DECIMAL(15,2)
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.0 })
   balance: number;
 
   // 1 = đã xác thực email - TINYINT(1) (boolean)
@@ -73,10 +75,12 @@ export class User {
   gender: string;
 
   // Token làm mới (refresh token) để duy trì đăng nhập
+  @ApiHideProperty()
   @Column({ type: 'varchar', length: 500, nullable: true })
   refresh_token: string;
 
   // Phiên bản token (tăng mỗi lần đổi token)
+  @ApiHideProperty()
   @Column({ type: 'int', default: 0 })
   token_version: number;
 
@@ -84,7 +88,7 @@ export class User {
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
-  // Xóa mềm 
+  // Xóa mềm
   @DeleteDateColumn()
   deleted_at?: Date;
 }

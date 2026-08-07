@@ -6,6 +6,8 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import type { IUser } from '@identity/users/users.interface'
 import { User } from '@common/decorators/user.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
+import { Withdrawal } from './entities/withdrawal.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('withdrawals')
 export class WithdrawalsController {
@@ -19,6 +21,7 @@ export class WithdrawalsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiPaginated(Withdrawal)
   @Get('me')
   @ResponseMessage('Lấy lịch sử rút tiền thành công')
   getMyWithdrawals(

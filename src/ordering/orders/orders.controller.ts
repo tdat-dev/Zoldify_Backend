@@ -6,6 +6,8 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { Order } from './entities/order.entity';
+import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('orders')
 export class OrdersController {
@@ -20,6 +22,7 @@ export class OrdersController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách đơn hàng thành công')
+  @ApiPaginated(Order)
   @Get()
   findAll(
     @Query('currentPage') currentPage: string,
