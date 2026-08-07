@@ -13,20 +13,25 @@
 | Hạng mục | Yêu cầu | Trạng thái Zoldify |
 |---|---|---|
 | Nhóm | 3-5 người | Giả định **5** |
-| Website | Node.js, có hosting + **tên miền trỏ vào** | NestJS ✅ · **chưa có domain** ❌ |
+| Website | Node.js, có hosting + **tên miền trỏ vào** | NestJS ✅ · domain `zoldify.com` ✅ · **chưa deploy** ❌ |
 | App | React Native / Flutter, **cả Android và iOS** | Expo ✅ · iOS cần xử lý ❌ |
 | Khi bảo vệ | App gọi API tới **hosting thật**, không phải local | Chưa deploy ❌ |
 | Báo cáo | **≥50 trang, toàn tiếng Anh**, đúng mẫu, in một mặt | Tài liệu đang tiếng Việt ⚠️ |
 | Slide | Đúng mẫu 14 slide, tiếng Anh, **sơ đồ export ảnh** (cấm chụp màn hình) | Mermaid export SVG ✅ |
-| Quản lý dự án | **Trello** + Git có dấu vết phối hợp | Đang dùng Maestro ⚠️ |
-| Báo cáo tiến độ | **Mỗi thứ Bảy** vào nhóm Zalo có thầy | Chưa có ❌ |
+| Quản lý dự án | **Trello** + Git có dấu vết phối hợp | Board `trello.com/b/e1draMoG/zoldify` ✅ · Git mới 1 commit của 1 người ⚠️ |
+| Báo cáo tiến độ | **Mỗi thứ Bảy** vào nhóm Zalo có thầy | Nhóm Zalo có thầy ✅ · bắt đầu báo cáo từ 08/08 |
 | Hoàn thiện | Trước ~5 buổi cuối | Mốc 15/09 |
 
-**Ba việc hành chính phải làm trong tuần này, không phải việc code** — chúng có thời gian chờ không rút ngắn được:
+**Phần hành chính — đã xong phần lớn** (cập nhật 07/08):
 
-1. **Mua tên miền.** DNS lan truyền mất tới 24-48 giờ. `.io.vn` gần như miễn phí, `.com` khoảng 300k/năm.
-2. **Lập nhóm Zalo và thêm thầy vào.** Thầy chấm mức độ tham gia dựa trên hoạt động ở đây.
-3. **Lập Trello và mời thầy.** Bắt buộc theo mục 9.1 của thông báo.
+| | Trạng thái |
+|---|---|
+| Tên miền `zoldify.com` | ✅ đã có — chỉ còn trỏ DNS về VPS khi deploy ở tuần 3 |
+| Nhóm Zalo có thầy | ✅ đã có — bắt đầu báo cáo từ thứ Bảy 08/08 |
+| Board Trello | ✅ đã có — còn mời nốt thầy và các thành viên còn lại |
+| Dấu vết Git của từng người | ⚠️ **chưa có** — repo backend mới 1 commit của 1 người |
+
+Việc còn lại duy nhất mang tính hành chính là **dấu vết Git**. Thầy chấm điểm tham gia theo từng người, nên bốn thành viên còn lại phải bắt đầu có commit ngay tuần đầu.
 
 ---
 
