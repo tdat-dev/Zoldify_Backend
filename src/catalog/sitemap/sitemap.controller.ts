@@ -1,8 +1,10 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, VERSION_NEUTRAL } from '@nestjs/common';
 import { Public } from '@common/decorators/public.decorator';
 import { SitemapService } from './sitemap.service';
 
-@Controller()
+// Google đòi sitemap nằm ở gốc domain, nên route này không đi qua
+// prefix /api lẫn version. Đổi đường dẫn là mất index tìm kiếm.
+@Controller({ version: VERSION_NEUTRAL })
 export class SitemapController {
   constructor(private readonly sitemapService: SitemapService) {}
 

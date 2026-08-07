@@ -3,6 +3,9 @@ import { AppModule } from './app.module';
 import { TransformInterceptor } from '@core/transform.interceptor';
 import { HttpExceptionFilter } from '@core/http-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule } from '@nestjs/swagger';
+import { configureRouting } from './core/routing.config';
+import { swaggerConfig } from './core/swagger.config';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
@@ -64,15 +67,24 @@ async function bootstrap() {
     }),
   );
 
-  
   app.useGlobalFilters(new HttpExceptionFilter());
 
   const reflector = app.get(Reflector);
   app.useGlobalInterceptors(new TransformInterceptor(reflector));
 
+  // Prefix + version: mọi route thành /api/v1/...
+  configureRouting(app);
+
+  // Swagger: /api/docs — hợp đồng cho web và app
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: { persistAuthorization: true },
+  });
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`🚀 Backend running on http://localhost:${port}`);
+  console.log(`📘 API docs:      http://localhost:${port}/api/docs`);
   console.log(`📡 CORS allowed: ${allowedOrigins.join(', ')}`);
 }
 bootstrap();
