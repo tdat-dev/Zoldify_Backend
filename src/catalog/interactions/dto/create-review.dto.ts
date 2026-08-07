@@ -17,9 +17,9 @@ export class CreateReviewDto {
 
   @IsOptional()
   @IsString({ message: 'Nội dung đánh giá phải là chuỗi' })
-  comment: string;
+  comment?: string;
 
   @IsOptional()
   @IsArray({ message: 'Ảnh đính kèm phải là mảng' })
-  images: string[];
+  images?: string[];
 }

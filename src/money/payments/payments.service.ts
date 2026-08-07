@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -7,7 +12,11 @@ import { Order } from '@ordering/orders/entities/order.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
-import { PaymentStatus, PaymentType, PaymentMethod } from '@common/enums/payment.enum';
+import {
+  PaymentStatus,
+  PaymentType,
+  PaymentMethod,
+} from '@common/enums/payment.enum';
 import { WalletsService } from '@money/wallets/wallets.service';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
 
@@ -21,10 +30,17 @@ export class PaymentsService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly walletsService: WalletsService,
-  ) { }
+  ) {}
 
   async create(createPaymentDto: CreatePaymentDto, user: IUser) {
-    const { order_id, amount, payment_method } = createPaymentDto;
+    // payment_method là tuỳ chọn trong DTO nhưng hai hàm bên dưới cần có.
+    // Trước đây kiểu TS không optional nên không ai thấy; giờ mặc định về
+    // COD cho khớp với mặc định của entity Order.
+    const {
+      order_id,
+      amount,
+      payment_method = PaymentMethod.COD,
+    } = createPaymentDto;
 
     if (order_id) {
       return this.processOrderPayment(order_id, payment_method, user);
@@ -37,7 +53,11 @@ export class PaymentsService {
     throw new BadRequestException('Vui lòng cung cấp order_id hoặc amount');
   }
 
-  private async processOrderPayment(orderId: number, paymentMethod: PaymentMethod, user: IUser) {
+  private async processOrderPayment(
+    orderId: number,
+    paymentMethod: PaymentMethod,
+    user: IUser,
+  ) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
       relations: ['user'],
@@ -47,7 +67,9 @@ export class PaymentsService {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
     if (order.user.id !== user.id) {
-      throw new ForbiddenException('Bạn không có quyền thanh toán đơn hàng này');
+      throw new ForbiddenException(
+        'Bạn không có quyền thanh toán đơn hàng này',
+      );
     }
     if (order.is_paid) {
       throw new BadRequestException('Đơn hàng đã được thanh toán');
@@ -57,9 +79,16 @@ export class PaymentsService {
 
     if (method === PaymentMethod.WALLET) {
       // Dùng WalletsService thay vì tự check balance
-      await this.walletsService.deduct(user.id, Number(order.final_amount), `order_${orderId}`);
+      await this.walletsService.deduct(
+        user.id,
+        Number(order.final_amount),
+        `order_${orderId}`,
+      );
 
-      await this.orderRepository.update(orderId, { is_paid: true, paid_at: new Date() });
+      await this.orderRepository.update(orderId, {
+        is_paid: true,
+        paid_at: new Date(),
+      });
 
       const payment = this.paymentRepository.create({
         order: { id: orderId },
@@ -86,7 +115,11 @@ export class PaymentsService {
     return this.paymentRepository.save(payment);
   }
 
-  private async processWalletTopup(amount: number, paymentMethod: PaymentMethod, user: IUser) {
+  private async processWalletTopup(
+    amount: number,
+    paymentMethod: PaymentMethod,
+    user: IUser,
+  ) {
     const method = paymentMethod || PaymentMethod.WALLET;
 
     const result = await this.walletsService.topup(user.id, amount);
@@ -168,15 +201,24 @@ export class PaymentsService {
 
     await this.paymentRepository.save(payment);
 
-    if (payment.status === PaymentStatus.SUCCESS && payment.order && payment.type === PaymentType.ORDER_PAYMENT) {
-      await this.orderRepository.update(payment.order.id, { is_paid: true, paid_at: new Date() });
+    if (
+      payment.status === PaymentStatus.SUCCESS &&
+      payment.order &&
+      payment.type === PaymentType.ORDER_PAYMENT
+    ) {
+      await this.orderRepository.update(payment.order.id, {
+        is_paid: true,
+        paid_at: new Date(),
+      });
     }
 
     return this.findOne(id, user);
   }
 
   async getBalance(user: IUser) {
-    const currentUser = await this.userRepository.findOne({ where: { id: user.id } });
+    const currentUser = await this.userRepository.findOne({
+      where: { id: user.id },
+    });
     if (!currentUser) {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
@@ -188,5 +230,4 @@ export class PaymentsService {
     await this.paymentRepository.delete(id);
     return 'Xóa giao dịch thành công';
   }
-
 }

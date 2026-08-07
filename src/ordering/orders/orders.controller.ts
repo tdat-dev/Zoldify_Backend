@@ -8,6 +8,7 @@ import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { Order } from './entities/order.entity';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
+import { ApiShape } from '@common/decorators/api-response.decorator';
 
 @Controller('orders')
 export class OrdersController {
@@ -36,6 +37,7 @@ export class OrdersController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy thống kê dashboard thành công')
+  @ApiShape({ total_users: 'number', total_products: 'number', total_orders: 'number', total_revenue: 'number' })
   @Get('stats')
   getStats(@User() user: IUser) {
     if (user.role !== 'admin') {

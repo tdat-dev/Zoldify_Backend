@@ -19,5 +19,5 @@ export class CreateNotificationDto {
   content: string;
 
   @IsOptional()
-  data: any;
+  data?: any;
 }

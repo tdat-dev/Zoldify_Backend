@@ -16,32 +16,32 @@ export class CreateOrderDto {
 
   @IsOptional()
   @IsString({ message: 'Tỉnh/Thành phố phải là chuỗi' })
-  province: string;
+  province?: string;
 
   @IsOptional()
   @IsString({ message: 'Quận/Huyện phải là chuỗi' })
-  district: string;
+  district?: string;
 
   @IsOptional()
   @IsString({ message: 'Ghi chú phải là chuỗi' })
-  note: string;
+  note?: string;
 
   @IsOptional()
   @IsEnum(PaymentMethod, { message: 'Phương thức thanh toán không hợp lệ' })
-  payment_method: PaymentMethod;
+  payment_method?: PaymentMethod;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
-  shipping_fee: number;
+  shipping_fee?: number;
 
   @IsOptional()
   @IsInt()
-  ghn_district_id: number;
+  ghn_district_id?: number;
 
   @IsOptional()
   @IsString()
-  ghn_ward_code: string;
+  ghn_ward_code?: string;
 
   @IsOptional()
   @IsArray()

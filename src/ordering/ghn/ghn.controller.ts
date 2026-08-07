@@ -1,7 +1,7 @@
 import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { GhnService } from './ghn.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateGhnOrderDto } from './dto/create-order.dto';
 
 @Controller('ghn')
 export class GhnController {
@@ -15,7 +15,7 @@ export class GhnController {
 
   @UseGuards(JwtAuthGuard)
   @Post('create-order')
-  createOrder(@Body() dto: CreateOrderDto) {
+  createOrder(@Body() dto: CreateGhnOrderDto) {
     return this.ghnService.createOrder(dto);
   }
 }

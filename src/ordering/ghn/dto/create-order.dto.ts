@@ -19,7 +19,7 @@ class OrderItemDto {
   price: number;
 }
 
-export class CreateOrderDto {
+export class CreateGhnOrderDto {
   @IsString()
   @IsNotEmpty()
   to_name: string;

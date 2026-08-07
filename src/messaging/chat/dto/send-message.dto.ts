@@ -7,5 +7,5 @@ export class SendMessageDto {
 
   @IsOptional()
   @IsArray({ message: 'Ảnh đính kèm phải là mảng' })
-  images: string[];
+  images?: string[];
 }
