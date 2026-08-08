@@ -159,14 +159,24 @@ Bảng đặc tả use case đầy đủ chiếm khoảng **1 trang mỗi use ca
 | 14 | Use case | ✅ | ✅ | Bổ sung bảng đặc tả |
 | 15 | Điều hướng app | ✅ | ✅ | |
 | 16 | CI/CD | ✅ | ✅ | |
-| **17** | **Activity Diagram** | ❌ | — | **Vẽ mới** — tối thiểu 3: đăng ký, đặt hàng-thanh toán, giải ngân escrow |
-| **18** | **Class Diagram** | ❌ | — | **Vẽ mới** — entity + service chính, có quan hệ và phương thức |
+| **17** | **Activity Diagram** ×4 | ✅ | ✅ | `2026-08-08-activity-class-diagrams.md` AD-01..04 — nhãn viết sẵn tiếng Anh |
+| **18** | **Class Diagram** ×3 | ✅ | ✅ | cùng file, CD-01..03 |
+
+**Xuất ảnh:** `npm run diagrams:export` render toàn bộ ra SVG (Word) + PNG 2x
+(PowerPoint) trong `docs/system-design/exports/`. `npm run diagrams:check` chỉ kiểm
+cú pháp — lần chạy gần nhất **25 sơ đồ, 0 lỗi**. Thư mục `exports/` không commit,
+chạy một lệnh là có lại.
 
 **Class Diagram khác ERD ở chỗ nào** — thầy có thể hỏi đúng câu này. ERD mô tả *bảng trong cơ sở dữ liệu*: khoá chính, khoá ngoại, kiểu cột. Class Diagram mô tả *lớp trong mã nguồn*: thuộc tính, phương thức, kế thừa, quan hệ phụ thuộc. Zoldify có `LedgerService`, `EscrowsService`, `OrdersService` — chúng là lớp có hành vi, không phải bảng, nên chỉ xuất hiện ở Class Diagram.
 
 ---
 
 ## 7. Kế hoạch 5,5 tuần
+
+> ⚠️ **Mục này viết cho 5 vai trò. Nhóm chỉ có 4 người.**
+> Bản đang dùng là **`2026-08-08-phan-cong-4-nguoi.md`** — gộp vai, tính lại ngân sách
+> (thiếu ~30% chứ không phải 10-15%), và cắt sẵn ~21 ngày công. Giữ mục này lại để
+> đối chiếu xem đã bỏ những gì.
 
 ### Năm vai trò
 
