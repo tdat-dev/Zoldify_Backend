@@ -2600,7 +2600,9 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {}
+                    "data": {
+                      "type": "object"
+                    }
                   },
                   "required": [
                     "statusCode",

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,6 +18,7 @@ import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { GhnService } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
+import { assertTransitionAllowed, OrderActor } from './order-status.policy';
 
 @Injectable()
 export class OrdersService {
@@ -30,7 +36,7 @@ export class OrdersService {
     private readonly notificationsService: NotificationsService,
     private readonly ghnService: GhnService,
     private readonly escrowsService: EscrowsService,
-  ) { }
+  ) {}
 
   async getStats() {
     const total_users = await this.userRepository.count();
@@ -49,7 +55,16 @@ export class OrdersService {
   }
 
   async create(createOrderDto: CreateOrderDto, user: IUser) {
-    const { shipping_address, receiver_name, receiver_phone, province, district, note, payment_method, cart_item_ids } = createOrderDto;
+    const {
+      shipping_address,
+      receiver_name,
+      receiver_phone,
+      province,
+      district,
+      note,
+      payment_method,
+      cart_item_ids,
+    } = createOrderDto;
 
     const cartWhere: any = { user: { id: user.id } };
     if (cart_item_ids && cart_item_ids.length > 0) {
@@ -69,7 +84,9 @@ export class OrdersService {
       const foundIds = cartItems.map((c) => c.id);
       const missing = cart_item_ids.filter((id) => !foundIds.includes(id));
       if (missing.length > 0) {
-        throw new BadRequestException(`Một số sản phẩm trong giỏ hàng không tồn tại: ${missing.join(', ')}`);
+        throw new BadRequestException(
+          `Một số sản phẩm trong giỏ hàng không tồn tại: ${missing.join(', ')}`,
+        );
       }
     }
 
@@ -86,15 +103,21 @@ export class OrdersService {
     for (const cartItem of cartItems) {
       const product = cartItem.product;
       if (!product) {
-        throw new NotFoundException(`Sản phẩm ID ${cartItem.product.id} không tồn tại`);
+        throw new NotFoundException(
+          `Sản phẩm ID ${cartItem.product.id} không tồn tại`,
+        );
       }
 
       if (product.seller?.id === user.id) {
-        throw new BadRequestException(`Bạn không thể mua sản phẩm "${product.name}" của chính mình`);
+        throw new BadRequestException(
+          `Bạn không thể mua sản phẩm "${product.name}" của chính mình`,
+        );
       }
 
       if (product.stock < cartItem.quantity) {
-        throw new BadRequestException(`Sản phẩm "${product.name}" chỉ còn ${product.stock} trong kho`);
+        throw new BadRequestException(
+          `Sản phẩm "${product.name}" chỉ còn ${product.stock} trong kho`,
+        );
       }
 
       const subtotal = Number(product.price) * cartItem.quantity;
@@ -148,7 +171,11 @@ export class OrdersService {
 
     // Decrement product stock
     for (const item of orderItemsData) {
-      await this.productRepository.decrement({ id: item.product.id }, 'stock', item.quantity);
+      await this.productRepository.decrement(
+        { id: item.product.id },
+        'stock',
+        item.quantity,
+      );
     }
 
     await this.cartRepository.delete(cartItems.map((c) => c.id));
@@ -167,7 +194,13 @@ export class OrdersService {
     return result;
   }
 
-  async findAll(currentPage: string, limit: string, status: string, user: IUser, viewAs?: string) {
+  async findAll(
+    currentPage: string,
+    limit: string,
+    status: string,
+    user: IUser,
+    viewAs?: string,
+  ) {
     const numPage = currentPage ? parseInt(currentPage) : 1;
     const numLimit = limit ? parseInt(limit) : 10;
     const offset = (numPage - 1) * numLimit;
@@ -235,100 +268,222 @@ export class OrdersService {
     return order;
   }
 
-  async updateStatus(id: number, updateOrderDto: UpdateOrderDto, user: IUser) {
-    const order = await this.findOne(id, user);
+  /**
+   * Nạp đơn và xác định người gọi là ai ĐỐI VỚI đơn này.
+   *
+   * `findOne()` không dùng được ở đây: nó lọc theo `order.user_id`, nên người
+   * bán luôn nhận 404 cho chính đơn hàng của họ — đó là lý do người bán chưa
+   * bao giờ xác nhận được đơn qua API.
+   *
+   * Không tìm thấy quan hệ nào thì trả 404 chứ không phải 403, để người ngoài
+   * không dò được đơn nào tồn tại.
+   */
+  private async findOneForActor(
+    id: number,
+    user: IUser,
+  ): Promise<{ order: Order; actors: OrderActor[] }> {
+    const order = await this.orderRepository.findOne({
+      where: { id },
+      relations: ['user', 'items', 'items.product', 'items.product.seller'],
+    });
 
-    if (updateOrderDto.status) {
-      // Nếu xác nhận đơn và chưa có tracking_code → tạo GHN
-      if (updateOrderDto.status === OrderStatus.CONFIRMED && !order.tracking_code && order.ghn_district_id) {
-        try {
-          const ghnOrder = await this.ghnService.createOrder({
-            to_name: order.receiver_name,
-            to_phone: order.receiver_phone,
-            to_address: order.shipping_address,
-            to_ward_code: order.ghn_ward_code,
-            to_district_id: order.ghn_district_id,
-            weight: 500,
-            cod_amount: order.payment_method === 'cod' ? Number(order.final_amount) : 0,
-            items: order.items.map(item => ({
-              name: item.product_name,
-              quantity: item.quantity,
-              weight: 200,
-              price: item.price,
-            })),
-          });
-          order.tracking_code = ghnOrder.order_code;
-        } catch (err) {
-          // Nếu GHN lỗi (do chưa có token) thì vẫn xác nhận đơn, chỉ không có tracking
-          console.error('GHN createOrder failed:', err.message);
-        }
-      }
-      order.status = updateOrderDto.status;
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
     }
 
-    if (updateOrderDto.status) {
-      // Nếu xác nhận đơn và chưa có tracking_code → tạo GHN
-      if (updateOrderDto.status === OrderStatus.CONFIRMED && !order.tracking_code && order.ghn_district_id) {
-        try {
-          const ghnOrder = await this.ghnService.createOrder({
-            to_name: order.receiver_name,
-            to_phone: order.receiver_phone,
-            to_address: order.shipping_address,
-            to_ward_code: order.ghn_ward_code,
-            to_district_id: order.ghn_district_id,
-            weight: 500,
-            cod_amount: order.payment_method === 'cod' ? Number(order.final_amount) : 0,
-            items: order.items.map(item => ({
-              name: item.product_name,
-              quantity: item.quantity,
-              weight: 200,
-              price: item.price,
-            })),
-          });
-          order.tracking_code = ghnOrder.order_code;
-        } catch (err) {
-          console.error('GHN createOrder failed:', err.message);
-        }
-      }
+    const actors: OrderActor[] = [];
+    if (user.role === 'admin') actors.push(OrderActor.ADMIN);
+    if (order.user?.id === user.id) actors.push(OrderActor.BUYER);
+    // Một đơn có thể gồm hàng của nhiều người bán; là người bán của bất kỳ
+    // món nào cũng đủ để xử lý đơn.
+    if (order.items?.some((item) => item.product?.seller?.id === user.id)) {
+      actors.push(OrderActor.SELLER);
+    }
 
-      // Tạo escrow khi order được đánh dấu là đã thanh toán (PAID)
-      if (updateOrderDto.is_paid === true && !order.is_paid) {
-        try {
-          await this.escrowsService.createOrderEscrows(order.id);
-          order.is_paid = true;
-          order.paid_at = new Date();
-        } catch (err) {
-          console.error('Escrow creation failed:', err.message);
-        }
-      }
+    if (!actors.length) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
 
-      // Giải ngân khi giao hàng thành công
-      if (updateOrderDto.status === OrderStatus.DELIVERED) {
-        try {
-          await this.escrowsService.release(order.id);
-        } catch (err) {
-          console.error('Escrow release failed:', err.message);
-        }
-      }
+    return { order, actors };
+  }
 
-      // Hoàn tiền khi hủy hoặc refund
-      if (updateOrderDto.status === OrderStatus.CANCELLED || updateOrderDto.status === OrderStatus.REFUNDED) {
-        try {
-          await this.escrowsService.refund(order.id);
-        } catch (err) {
-          console.error('Escrow refund failed:', err.message);
-        }
-      }
+  /**
+   * Đổi trạng thái đơn hàng.
+   *
+   * Luật ai-được-làm-gì nằm ở `order-status.policy.ts`. Ở đây chỉ điều phối.
+   *
+   * Thứ tự cố ý: LƯU trạng thái trước, chuyển tiền sau. Chưa có transaction
+   * chung giữa Ordering và Money (việc của tuần 3, khi escrow đi qua ledger),
+   * nên phải chọn kiểu hỏng ít tệ hơn:
+   *  - Tiền trước, lưu sau: nếu lưu hỏng thì đơn vẫn là `shipping`, người mua
+   *    bấm lại là nhả tiền LẦN HAI. Mất tiền thật.
+   *  - Lưu trước, tiền sau: nếu tiền hỏng thì đơn đã là `delivered`, bấm lại
+   *    bị bảng chuyển trạng thái chặn, và job đối soát sẽ phát hiện lệch.
+   *    Admin chạy lại giải ngân là xong.
+   * Chọn cái thứ hai.
+   */
+  async updateStatus(id: number, updateOrderDto: UpdateOrderDto, user: IUser) {
+    const { order, actors } = await this.findOneForActor(id, user);
+    const isAdmin = actors.includes(OrderActor.ADMIN);
+    const nextStatus = updateOrderDto.status;
 
-      order.status = updateOrderDto.status;
+    if (nextStatus) {
+      assertTransitionAllowed(order.status, nextStatus, actors);
+    }
+
+    // Đánh dấu đã thanh toán là thao tác tiền, không phải thao tác đơn hàng.
+    // Đường đi bình thường là webhook PayOS; ở đây chỉ dành cho admin xác nhận
+    // tay các đơn COD.
+    if (updateOrderDto.is_paid !== undefined && !isAdmin) {
+      throw new ForbiddenException(
+        'Chỉ admin mới được đánh dấu đơn hàng đã thanh toán',
+      );
+    }
+
+    // Mã vận đơn do người bán hoặc admin điền
+    if (updateOrderDto.tracking_code !== undefined) {
+      if (!isAdmin && !actors.includes(OrderActor.SELLER)) {
+        throw new ForbiddenException(
+          'Chỉ người bán hoặc admin mới được sửa mã vận đơn',
+        );
+      }
+      order.tracking_code = updateOrderDto.tracking_code;
+    }
+
+    this.applyDeliveryInfo(order, updateOrderDto, actors);
+
+    // Tạo vận đơn GHN khi người bán xác nhận. Lỗi GHN KHÔNG chặn việc xác
+    // nhận — vận đơn không phải tiền, thiếu thì điền tay sau được.
+    if (
+      nextStatus === OrderStatus.CONFIRMED &&
+      !order.tracking_code &&
+      order.ghn_district_id
+    ) {
+      await this.tryCreateGhnOrder(order);
+    }
+
+    if (updateOrderDto.is_paid === true && !order.is_paid) {
+      await this.escrowsService.createOrderEscrows(order.id);
+      order.is_paid = true;
+      order.paid_at = new Date();
+    }
+
+    if (nextStatus) {
+      order.status = nextStatus;
+    }
+
+    await this.orderRepository.save(order);
+
+    // Tiền đi sau khi trạng thái đã lưu. Lỗi ở đây được NÉM RA, không nuốt:
+    // trước đây `catch { console.error }` khiến API trả 200 trong khi tiền
+    // không hề chuyển, và không ai biết cho tới lúc đối soát.
+    if (nextStatus === OrderStatus.DELIVERED) {
+      await this.releaseEscrowOrExplain(order.id, 'giải ngân');
+    }
+    if (nextStatus === OrderStatus.REFUNDED) {
+      await this.releaseEscrowOrExplain(order.id, 'hoàn tiền');
+    }
+
+    return this.orderRepository.findOne({
+      where: { id: order.id },
+      relations: ['user', 'items', 'items.product'],
+    });
+  }
+
+  /**
+   * Các trường địa chỉ giao hàng. Trước đây DTO nhận chúng rồi bỏ đi im lặng —
+   * client sửa địa chỉ, API trả 200, không có gì thay đổi.
+   */
+  private applyDeliveryInfo(
+    order: Order,
+    dto: UpdateOrderDto,
+    actors: OrderActor[],
+  ): void {
+    const fields = [
+      'shipping_address',
+      'receiver_name',
+      'receiver_phone',
+      'province',
+      'district',
+      'note',
+    ] as const;
+
+    const touched = fields.filter((f) => dto[f] !== undefined);
+    if (!touched.length) return;
+
+    const isAdmin = actors.includes(OrderActor.ADMIN);
+    if (!isAdmin) {
+      if (!actors.includes(OrderActor.BUYER)) {
+        throw new ForbiddenException(
+          'Chỉ người mua hoặc admin mới được sửa thông tin giao hàng',
+        );
+      }
+      // Hàng đã rời kho thì đổi địa chỉ không còn nghĩa lý gì
+      if (order.status !== OrderStatus.PENDING) {
+        throw new BadRequestException(
+          'Chỉ sửa được thông tin giao hàng khi đơn còn ở trạng thái Chờ xác nhận',
+        );
+      }
+    }
+
+    for (const field of touched) {
+      (order as any)[field] = dto[field];
+    }
+  }
+
+  private async tryCreateGhnOrder(order: Order): Promise<void> {
+    try {
+      const ghnOrder = await this.ghnService.createOrder({
+        to_name: order.receiver_name,
+        to_phone: order.receiver_phone,
+        to_address: order.shipping_address,
+        to_ward_code: order.ghn_ward_code,
+        to_district_id: order.ghn_district_id,
+        weight: 500,
+        cod_amount:
+          order.payment_method === 'cod' ? Number(order.final_amount) : 0,
+        items: order.items.map((item) => ({
+          name: item.product_name,
+          quantity: item.quantity,
+          weight: 200,
+          price: item.price,
+        })),
+      });
+      order.tracking_code = ghnOrder.order_code;
+    } catch (err) {
+      console.error('Tạo vận đơn GHN thất bại:', (err as Error).message);
+    }
+  }
+
+  private async releaseEscrowOrExplain(
+    orderId: number,
+    action: 'giải ngân' | 'hoàn tiền',
+  ): Promise<void> {
+    try {
+      if (action === 'giải ngân') {
+        await this.escrowsService.release(orderId);
+      } else {
+        await this.escrowsService.refund(orderId);
+      }
+    } catch (err) {
+      throw new BadRequestException(
+        `Đã cập nhật trạng thái đơn hàng nhưng ${action} ký quỹ thất bại: ` +
+          `${(err as Error).message}. Trạng thái đơn đã lưu, cần admin chạy lại ` +
+          `bước ${action}.`,
+      );
     }
   }
 
   async cancel(id: number, user: IUser) {
     const order = await this.findOne(id, user);
 
-    if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.CONFIRMED) {
-      throw new BadRequestException('Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận hoặc Đã xác nhận');
+    if (
+      order.status !== OrderStatus.PENDING &&
+      order.status !== OrderStatus.CONFIRMED
+    ) {
+      throw new BadRequestException(
+        'Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận hoặc Đã xác nhận',
+      );
     }
 
     order.status = OrderStatus.CANCELLED;
@@ -344,7 +499,11 @@ export class OrdersService {
 
     for (const item of order.items) {
       if (item.product) {
-        await this.productRepository.increment({ id: item.product.id }, 'stock', item.quantity);
+        await this.productRepository.increment(
+          { id: item.product.id },
+          'stock',
+          item.quantity,
+        );
       }
     }
 
@@ -371,7 +530,9 @@ export class OrdersService {
       (item) => item.product?.seller?.id === sellerId,
     );
     if (!isSeller) {
-      throw new ForbiddenException('Bạn không phải người bán trong đơn hàng này');
+      throw new ForbiddenException(
+        'Bạn không phải người bán trong đơn hàng này',
+      );
     }
 
     return order;
@@ -380,7 +541,10 @@ export class OrdersService {
   async cancelSale(orderId: number, user: IUser) {
     const order = await this.findOneForSeller(orderId, user.id);
 
-    if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.CONFIRMED) {
+    if (
+      order.status !== OrderStatus.PENDING &&
+      order.status !== OrderStatus.CONFIRMED
+    ) {
       throw new BadRequestException(
         'Chỉ có thể hủy bán đơn hàng ở trạng thái Chờ xác nhận hoặc Đã xác nhận',
       );
@@ -405,7 +569,10 @@ export class OrdersService {
       try {
         await this.escrowsService.refund(order.id);
       } catch (err) {
-        console.error('Hoàn tiền ký quỹ cho giao dịch bị hủy không thành công:', err.message);
+        console.error(
+          'Hoàn tiền ký quỹ cho giao dịch bị hủy không thành công:',
+          err.message,
+        );
       }
     }
 
