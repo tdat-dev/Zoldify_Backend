@@ -25,7 +25,8 @@
     "boundaries:check": "node scripts/check-boundaries.mjs",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
+    "test:db": "docker run -d --name zoldify-test-mysql -e MYSQL_ROOT_PASSWORD=testpw -e MYSQL_DATABASE=zoldify_test -p 3307:3306 mysql:8"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.6",

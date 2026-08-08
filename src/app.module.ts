@@ -32,6 +32,7 @@ import { SitemapModule } from '@catalog/sitemap/sitemap.module';
 import { AdminModule } from '@ops/admin/admin.module';
 import { SettingsModule } from '@ops/settings/settings.module';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
+import { LedgerModule } from '@money/ledger/ledger.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -107,6 +108,8 @@ import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
     AdminModule,
     SettingsModule,
     WithdrawalsModule,
+
+    LedgerModule,
   ],
   controllers: [AppController],
   providers: [
