@@ -1,10 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
-import { EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
+import { LedgerService } from '@money/ledger/ledger.service';
+import { PlatformFeeService } from '@money/ledger/platform-fee.service';
+import {
+  LedgerOwnerType,
+  LedgerPurpose,
+  LedgerTxType,
+} from '@money/ledger/ledger.types';
 
 @Injectable()
 export class EscrowsService {
@@ -17,6 +24,10 @@ export class EscrowsService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+    private readonly ledger: LedgerService,
+    private readonly platformFee: PlatformFeeService,
   ) {}
   /**
    * Tách tiền của đơn thành từng khoản ký quỹ, mỗi người bán một khoản.
@@ -75,49 +86,137 @@ export class EscrowsService {
     return escrowRepo.save(escrows);
   }
 
+  /**
+   * Giải ngân cho người bán, trừ phí sàn.
+   *
+   * Một đơn có thể chia cho nhiều người bán, nên hàm này chạy nhiều khoản.
+   * TẤT CẢ nằm trong MỘT transaction: hoặc mọi người bán cùng nhận tiền, hoặc
+   * không ai nhận. Nửa vời sẽ để lại escrow lệch trạng thái mà không ai biết.
+   *
+   * Khoá chống trùng gắn theo TỪNG khoản ký quỹ chứ không theo đơn, vì mỗi
+   * khoản là một lần tiền đổi chủ riêng.
+   *
+   * Bản cũ cộng thẳng vào `users.balance` bằng `increment()`, không transaction
+   * và không để lại dấu vết nào — không trả lời được câu "vì sao ví có số này".
+   */
   async release(orderId: number) {
-    const escrows = await this.escrowRepository.find({
-      where: { order: { id: orderId }, status: EscrowStatus.HOLDING },
-      relations: ['seller'],
-    });
+    return this.dataSource.transaction(async (em) => {
+      const escrows = await em.find(Escrow, {
+        where: { order: { id: orderId }, status: EscrowStatus.HOLDING },
+        relations: ['seller'],
+      });
 
-    if (!escrows.length) {
-      throw new NotFoundException('Không tìm thấy escrow nào để giải ngân');
-    }
+      if (!escrows.length) {
+        throw new NotFoundException('Không tìm thấy escrow nào để giải ngân');
+      }
 
-    for (const escrow of escrows) {
-      escrow.status = EscrowStatus.RELEASED;
-      escrow.released_at = new Date();
-      await this.userRepository.increment(
-        { id: escrow.seller.id },
-        'balance',
-        Number(escrow.amount),
+      const percent = await this.platformFee.getPercent(em);
+      const hold = await this.ledger.getOrCreateAccount(
+        LedgerOwnerType.PLATFORM,
+        null,
+        LedgerPurpose.ESCROW_HOLD,
+        em,
       );
-    }
+      const revenue = await this.ledger.getOrCreateAccount(
+        LedgerOwnerType.PLATFORM,
+        null,
+        LedgerPurpose.REVENUE,
+        em,
+      );
 
-    return this.escrowRepository.save(escrows);
+      for (const escrow of escrows) {
+        const amount = BigInt(Math.round(Number(escrow.amount)));
+        const fee = this.platformFee.computeFee(amount, percent);
+
+        const sellerAcc = await this.ledger.getOrCreateAccount(
+          LedgerOwnerType.USER,
+          escrow.seller.id,
+          LedgerPurpose.AVAILABLE,
+          em,
+        );
+
+        const entries = [
+          { accountId: Number(hold.id), amount: -amount },
+          { accountId: Number(sellerAcc.id), amount: amount - fee },
+        ];
+        // Phí bằng 0 thì bỏ hẳn chân này. Bút toán 0 đồng không sai nhưng
+        // làm sổ khó đọc.
+        if (fee > 0n) {
+          entries.push({ accountId: Number(revenue.id), amount: fee });
+        }
+
+        await this.ledger.post(
+          {
+            idempotencyKey: `escrow_release:${escrow.id}`,
+            type: LedgerTxType.ESCROW_RELEASE,
+            reference: { type: 'escrow', id: escrow.id },
+            metadata: { orderId, feePercent: percent, fee: fee.toString() },
+            entries,
+          },
+          em,
+        );
+
+        escrow.status = EscrowStatus.RELEASED;
+        escrow.released_at = new Date();
+        await em.save(Escrow, escrow);
+      }
+
+      return escrows;
+    });
   }
 
+  /**
+   * Trả tiền lại cho người mua khi đơn huỷ hoặc giao thất bại.
+   *
+   * KHÔNG thu phí: sàn chưa làm xong việc thì không có gì để thu.
+   */
   async refund(orderId: number) {
-    const escrows = await this.escrowRepository.find({
-      where: { order: { id: orderId }, status: EscrowStatus.HOLDING },
-      relations: ['buyer'],
-    });
+    return this.dataSource.transaction(async (em) => {
+      const escrows = await em.find(Escrow, {
+        where: { order: { id: orderId }, status: EscrowStatus.HOLDING },
+        relations: ['buyer'],
+      });
 
-    if (!escrows.length) {
-      throw new NotFoundException('Không tìm thấy escrow nào để hoàn tiền');
-    }
+      if (!escrows.length) {
+        throw new NotFoundException('Không tìm thấy escrow nào để hoàn tiền');
+      }
 
-    for (const escrow of escrows) {
-      escrow.status = EscrowStatus.REFUNDED;
-      await this.userRepository.increment(
-        { id: escrow.buyer.id },
-        'balance',
-        Number(escrow.amount),
+      const hold = await this.ledger.getOrCreateAccount(
+        LedgerOwnerType.PLATFORM,
+        null,
+        LedgerPurpose.ESCROW_HOLD,
+        em,
       );
-    }
 
-    return this.escrowRepository.save(escrows);
+      for (const escrow of escrows) {
+        const amount = BigInt(Math.round(Number(escrow.amount)));
+        const buyerAcc = await this.ledger.getOrCreateAccount(
+          LedgerOwnerType.USER,
+          escrow.buyer.id,
+          LedgerPurpose.AVAILABLE,
+          em,
+        );
+
+        await this.ledger.post(
+          {
+            idempotencyKey: `escrow_refund:${escrow.id}`,
+            type: LedgerTxType.ESCROW_REFUND,
+            reference: { type: 'escrow', id: escrow.id },
+            metadata: { orderId },
+            entries: [
+              { accountId: Number(hold.id), amount: -amount },
+              { accountId: Number(buyerAcc.id), amount },
+            ],
+          },
+          em,
+        );
+
+        escrow.status = EscrowStatus.REFUNDED;
+        await em.save(Escrow, escrow);
+      }
+
+      return escrows;
+    });
   }
 
   async findByOrder(orderId: number) {

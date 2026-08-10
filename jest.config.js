@@ -16,6 +16,18 @@ module.exports = {
   collectCoverageFrom: ['**/*.(t|j)s'],
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
+
+  // Chạy TUẦN TỰ, không song song.
+  //
+  // Các spec về tiền chạy trên MySQL thật và dùng CHUNG một database
+  // zoldify_test; mỗi spec xoá sạch bảng của mình ở beforeEach. Để jest chạy
+  // song song thì chúng xoá dữ liệu của nhau giữa chừng và tranh khoá dòng —
+  // triệu chứng là "Deadlock found when trying to get lock", đỏ ngẫu nhiên
+  // mỗi lần một khác. Từng file chạy riêng đều xanh.
+  //
+  // Đánh đổi: suite chậm hơn. Với vài file thì không đáng kể, và test tiền
+  // đỏ chập chờn thì tệ hơn nhiều.
+  maxWorkers: 1,
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, {
     prefix: '<rootDir>/../',
   }),

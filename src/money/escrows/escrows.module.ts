@@ -6,11 +6,15 @@ import { Escrow } from './entities/escrow.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
+import { LedgerModule } from '@money/ledger/ledger.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Escrow, Order, User, OrderItem])],
+  imports: [
+    TypeOrmModule.forFeature([Escrow, Order, User, OrderItem]),
+    LedgerModule,
+  ],
   controllers: [EscrowsController],
   providers: [EscrowsService],
   exports: [EscrowsService],
 })
-export class EscrowsModule { }
+export class EscrowsModule {}

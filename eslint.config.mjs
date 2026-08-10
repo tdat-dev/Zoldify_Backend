@@ -60,6 +60,17 @@ export default tseslint.config(
   // không viết ra được nữa. Máy chặn, không dựa vào việc nhớ.
   {
     files: ['src/**/*.ts'],
+    // Bỏ qua file test.
+    //
+    // Luật này tồn tại để chặn COUPLING trong mã chạy thật. Một spec tích hợp
+    // phải nạp entity của nhiều nhóm để dựng lược đồ database mà chạy — ví dụ
+    // escrows.service.spec.ts cần Order, Product, Category, Setting chỉ để
+    // TypeORM tạo bảng. Đó không phải là phụ thuộc nghiệp vụ và nó không đi
+    // vào sản phẩm.
+    //
+    // Nói rõ để không ai lách: cách này KHÔNG dùng để giấu vi phạm thật. Vi
+    // phạm trong mã sản phẩm vẫn bị đếm đủ, và mốc chỉ được phép giảm.
+    ignores: ['src/**/*.spec.ts', 'src/**/*.e2e-spec.ts'],
     plugins: { boundaries },
     settings: {
       // Bắt buộc phải có. Không có resolver này thì plugin không map được
