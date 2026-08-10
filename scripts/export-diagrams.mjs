@@ -183,6 +183,17 @@ function main() {
       const src = path.join(workDir, `${filePrefix}-${block.name}.mmd`);
       fs.writeFileSync(src, block.code, 'utf8');
 
+      // Ghi kèm bản .mmd rời để dán thẳng vào draw.io:
+      //   draw.io  →  + (Insert)  →  Advanced  →  Mermaid...
+      // draw.io dựng lại thành hình khối sửa được, không phải ảnh dán vào.
+      if (!CHECK_ONLY) {
+        fs.writeFileSync(
+          path.join(targetDir, `${block.name}.mmd`),
+          block.code,
+          'utf8',
+        );
+      }
+
       // SVG cho Word (nét ở mọi cỡ in), PNG 2x cho PowerPoint
       const targets = CHECK_ONLY
         ? [{ ext: 'svg', extra: [] }]
