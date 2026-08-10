@@ -61,4 +61,11 @@ firebase-service-account.json
 src/.claude/
 
 # Ảnh sơ đồ sinh ra từ npm run diagrams:export — dựng lại được, không commit
+# Anh so do sinh ra tu diagrams:export — dung lai duoc, khong commit.
+# Bat o moi vi tri vi thu muc nay tung bi di chuyen.
+docs/system-design/**/exports/
 docs/system-design/exports/
+
+# File sao luu tam cua draw.io
+.$*
+*.bkp
