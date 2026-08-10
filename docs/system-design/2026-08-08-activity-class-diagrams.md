@@ -205,17 +205,25 @@ flowchart TD
     Join --> End
 
     classDef todo fill:#fee2e2,stroke:#dc2626,stroke-width:2px
-    class O3,W3,W4,W5,W8,N2 todo
+    classDef done fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    class O3,N2 todo
+    class W3,W4,W5,W7,W8 done
 ```
+
+**Đã xong (🟢)** — commit `2daf37e`, ngày 10/08
+
+| Ô | Đã làm gì |
+|---|---|
+| `W3`,`W8` | Toàn bộ webhook nằm trong **một** `dataSource.transaction`. Trước đó là 5 lệnh `save()` rời rạc |
+| `W4` | Dấu chống trùng chuyển sang `ledger_transactions.idempotency_key`, khoá `payos:{orderCode}:{paymentLinkId}`, nằm cùng transaction với tiền. Bảng `payos_webhook_log` không còn được ghi |
+| `W5` | Bút toán kép qua `LedgerService.post()` thay cho `wallet.balance = Number(...) + Number(...)` (đọc-sửa-ghi không khoá, mất tiền khi hai webhook trùng lúc) |
+| `W7` | Tách khoản ký quỹ theo người bán, **trong cùng transaction**. Trước đó webhook `ORDER_PAYMENT` không hề tạo escrow — đơn trả qua PayOS chưa bao giờ có bản ghi ký quỹ nào |
 
 **Còn thiếu (🔴)**
 
 | Ô | Việc phải làm | Ai | Chi phí |
 |---|---|---|---|
 | `O3` | `SELECT ... FOR UPDATE` khi trừ kho. Hiện đọc rồi ghi không khoá → hai người mua món cuối cùng cùng lúc thì kho về âm | A | 3 giờ |
-| `W3`,`W8` | Gói webhook vào **một** transaction. Hiện log chống lặp ghi **trước** và **ngoài** transaction: sập giữa chừng là tiền vào mà đơn không đổi trạng thái | A | 1 ngày |
-| `W4` | Dùng `ledger_transactions.idempotency_key` thay cho bảng `payos_webhook_log` | A | trong cùng task |
-| `W5` | Ghi bút toán kép thay vì `users.balance += X` | A | trong cùng task |
 | `N2` | Tạo vận đơn GHN tự động sau khi trả tiền | B | 0,5 ngày |
 
 **Vì sao có hai nhánh COMMIT.** Với COD, đơn chốt xong là hết. Với PayOS thì phải
@@ -307,20 +315,29 @@ flowchart TD
 
     classDef todo fill:#fee2e2,stroke:#dc2626,stroke-width:2px
     classDef done fill:#dcfce7,stroke:#16a34a,stroke-width:2px
-    class T2,T3,T4,G2,G3,L4,L5,L7,L8 todo
-    class L1,L2,L3,L6,L9 done
+    class T2,T3,T4,L4,L5,L7,L8 todo
+    class L1,L2,L3,L6,L9,G2,G3 done
 ```
 
-**Đã có (🟢)** — `L1`, `L2`, `L3`, `L6`, `L9` chính là `LedgerService.post()` đã viết
-xong và có 6 test chạy trên MySQL thật.
+**Đã có (🟢)**
+
+`L1`, `L2`, `L3`, `L6`, `L9` là `LedgerService.post()` — commit `28d3b83`, 6 test trên
+MySQL thật.
+
+`G2`, `G3` là bảng phân quyền và bảng chuyển trạng thái — commit `a233d97`,
+`order-status.policy.ts` + 12 test. Luật: **ai được lợi thì không được tự bấm.** Người
+bán không đặt được `delivered`, người mua không đặt được `refunded`.
+
+> Ghi chú sửa lại mô tả cũ: lỗ hổng **không phải** "ai xem được đơn cũng đặt được".
+> `findOne()` lọc theo `order.user_id` nên người ngoài nhận 404. Lỗ hổng thật là
+> **chính người mua** đặt được `refunded` → tiền về ví họ trong khi vẫn giữ hàng, và
+> vì hàm cũ không hề `save()` nên gọi lại được vô hạn.
 
 **Còn thiếu (🔴)**
 
 | Ô | Việc phải làm | Ai | Chi phí |
 |---|---|---|---|
-| `G2` | **Lỗ hổng bảo mật.** `PATCH /orders/:id/status` không kiểm vai trò. Ai xem được đơn cũng đặt được `delivered`, tức tự nhả tiền cho chính mình | A | 2 giờ · **làm trước tiên** |
-| `G3` | Bảng chuyển trạng thái hợp lệ. Hiện nhảy từ `pending` thẳng sang `delivered` được | A | 2 giờ |
-| `T2` | Nút "Đã nhận hàng" ở app + web. Grep toàn bộ frontend: **không nơi nào** gửi `status = delivered`, chỉ có một nhãn tab lọc | B (web) · C (app) | 0,5 ngày |
+| `T2` | Nút "Đã nhận hàng" ở app + web. Grep toàn bộ frontend: **không nơi nào** gửi `status = delivered`, chỉ có một nhãn tab lọc | D (web) · C (app) | 0,5 ngày |
 | `T3` | Webhook GHN | B | 0,5 ngày |
 | `T4` | Cron tự giải ngân sau 3 ngày | A | 0,5 ngày |
 | `L4`,`L5` | Phí sàn đọc từ `settings`, chia 3 chân thay vì 2 | A | 0,5 ngày |
