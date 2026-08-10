@@ -78,11 +78,14 @@ export class PaymentsService {
     const method = paymentMethod || order.payment_method;
 
     if (method === PaymentMethod.WALLET) {
-      // Dùng WalletsService thay vì tự check balance
+      // Khoá chống trùng tất định theo đơn: bấm thanh toán hai lần thì chỉ
+      // trừ tiền một lần.
       await this.walletsService.deduct(
         user.id,
         Number(order.final_amount),
         `order_${orderId}`,
+        undefined,
+        `order_pay:${orderId}`,
       );
 
       await this.orderRepository.update(orderId, {
@@ -215,14 +218,14 @@ export class PaymentsService {
     return this.findOne(id, user);
   }
 
+  /**
+   * Số dư đọc từ sổ cái, không đọc cột `users.balance` nữa.
+   *
+   * Cột đó từng là nguồn sự thật thứ hai và giờ không còn ai ghi vào, nên
+   * đọc nó là đọc một con số đã đứng yên từ lâu.
+   */
   async getBalance(user: IUser) {
-    const currentUser = await this.userRepository.findOne({
-      where: { id: user.id },
-    });
-    if (!currentUser) {
-      throw new NotFoundException('Không tìm thấy người dùng');
-    }
-    return { balance: Number(currentUser.balance) };
+    return this.walletsService.getBalance(user.id);
   }
 
   async remove(id: number, user: IUser) {

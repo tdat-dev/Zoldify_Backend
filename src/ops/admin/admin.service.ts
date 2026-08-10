@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -7,7 +11,11 @@ import { Product } from '@catalog/products/entities/product.entity';
 import { ILike, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
-import { Withdrawal, WithdrawalStatus } from '@money/withdrawals/entities/withdrawal.entity';
+import {
+  Withdrawal,
+  WithdrawalStatus,
+} from '@money/withdrawals/entities/withdrawal.entity';
+import { WithdrawalsService } from '@money/withdrawals/withdrawals.service';
 
 @Injectable()
 export class AdminService {
@@ -22,8 +30,15 @@ export class AdminService {
     private readonly settingRepository: Repository<Setting>,
     @InjectRepository(Withdrawal)
     private readonly withdrawalRepository: Repository<Withdrawal>,
-  ) { }
-  async getUsers(page: number, limit: number, q?: string, role?: string, is_locked?: string) {
+    private readonly withdrawalsService: WithdrawalsService,
+  ) {}
+  async getUsers(
+    page: number,
+    limit: number,
+    q?: string,
+    role?: string,
+    is_locked?: string,
+  ) {
     const where: any = {};
     if (q) where.full_name = ILike(`%${q}%`);
     if (role) where.role = role;
@@ -37,7 +52,12 @@ export class AdminService {
     });
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }
@@ -51,13 +71,18 @@ export class AdminService {
       this.productRepository.count({ where: { seller: { id } } }),
     ]);
 
-    return { ...user, orders_count: ordersCount, products_count: productsCount };
+    return {
+      ...user,
+      orders_count: ordersCount,
+      products_count: productsCount,
+    };
   }
 
   async toggleUserLock(id: number) {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
-    if (user.role === 'admin') throw new BadRequestException('Không thể khóa tài khoản admin');
+    if (user.role === 'admin')
+      throw new BadRequestException('Không thể khóa tài khoản admin');
 
     user.is_locked = !user.is_locked;
     await this.userRepository.save(user);
@@ -73,7 +98,8 @@ export class AdminService {
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
 
     const validRoles = ['buyer', 'seller', 'admin', 'moderator'];
-    if (!validRoles.includes(role)) throw new BadRequestException('Vai trò không hợp lệ');
+    if (!validRoles.includes(role))
+      throw new BadRequestException('Vai trò không hợp lệ');
 
     user.role = role as any;
     await this.userRepository.save(user);
@@ -91,23 +117,25 @@ export class AdminService {
   async deleteUser(id: number) {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
-    if (user.role === 'admin') throw new BadRequestException('Không thể xóa tài khoản admin');
+    if (user.role === 'admin')
+      throw new BadRequestException('Không thể xóa tài khoản admin');
 
     await this.userRepository.softDelete(id);
     return { message: 'Xóa người dùng thành công' };
   }
 
   async getDashboardStats() {
-    const [totalUsers, totalProducts, totalOrders, revenueResult] = await Promise.all([
-      this.userRepository.count(),
-      this.productRepository.count(),
-      this.orderRepository.count(),
-      this.orderRepository
-        .createQueryBuilder('order')
-        .select('COALESCE(SUM(order.final_amount), 0)', 'total')
-        .where('order.status = :status', { status: 'delivered' })
-        .getRawOne(),
-    ]);
+    const [totalUsers, totalProducts, totalOrders, revenueResult] =
+      await Promise.all([
+        this.userRepository.count(),
+        this.productRepository.count(),
+        this.orderRepository.count(),
+        this.orderRepository
+          .createQueryBuilder('order')
+          .select('COALESCE(SUM(order.final_amount), 0)', 'total')
+          .where('order.status = :status', { status: 'delivered' })
+          .getRawOne(),
+      ]);
 
     const pendingOrders = await this.orderRepository.count({
       where: { status: OrderStatus.PENDING },
@@ -158,50 +186,35 @@ export class AdminService {
     });
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }
 
-  async approveWithdrawal(id: number, adminId: number) {
-    const withdrawal = await this.withdrawalRepository.findOne({
-      where: { id },
-      relations: ['user'],
-    });
-    if (!withdrawal) throw new NotFoundException('Không tìm thấy yêu cầu rút tiền');
-    if (withdrawal.status !== WithdrawalStatus.PENDING) {
-      throw new BadRequestException('Yêu cầu đã được xử lý');
-    }
+  // Ba hàm dưới đây uỷ quyền hết cho WithdrawalsService.
+  //
+  // Trước đây admin có BẢN SAO riêng của cùng logic, và bản sao đó cộng thẳng
+  // vào users.balance. Hai chỗ cùng làm một việc theo hai cách khác nhau thì
+  // sớm muộn cũng lệch — ở đây là lệch về tiền. Chỗ duy nhất được đổi số dư
+  // vẫn phải là sổ cái.
+  //
+  // ops gọi money là chiều phụ thuộc hợp lệ, nên import này không phá ranh giới.
 
-    withdrawal.status = WithdrawalStatus.APPROVED;
-    withdrawal.approved_by = { id: adminId } as any;
-    withdrawal.processed_at = new Date();
-    return this.withdrawalRepository.save(withdrawal);
+  async approveWithdrawal(id: number, adminId: number) {
+    return this.withdrawalsService.approve(id, adminId);
+  }
+
+  /** Admin xác nhận đã chuyển khoản xong — tiền rời khỏi hệ thống ở bước này */
+  async completeWithdrawal(id: number, adminId: number) {
+    return this.withdrawalsService.complete(id, adminId);
   }
 
   async rejectWithdrawal(id: number, adminId: number, note?: string) {
-    const withdrawal = await this.withdrawalRepository.findOne({
-      where: { id },
-      relations: ['user'],
-    });
-    if (!withdrawal) throw new NotFoundException('Không tìm thấy yêu cầu rút tiền');
-    if (withdrawal.status !== WithdrawalStatus.PENDING) {
-      throw new BadRequestException('Yêu cầu đã được xử lý');
-    }
-
-    await this.userRepository.increment(
-      { id: withdrawal.user.id },
-      'balance',
-      Number(withdrawal.amount),
-    );
-
-    withdrawal.status = WithdrawalStatus.REJECTED;
-    withdrawal.note = note || '';
-    withdrawal.approved_by = { id: adminId } as any;
-    withdrawal.processed_at = new Date();
-    return this.withdrawalRepository.save(withdrawal);
+    return this.withdrawalsService.reject(id, adminId, note);
   }
-
-
-
 }

@@ -7,9 +7,13 @@ import { Order } from '@ordering/orders/entities/order.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
 import { Withdrawal } from '@money/withdrawals/entities/withdrawal.entity';
+import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Order, Product, Setting, Withdrawal])],
+  imports: [
+    TypeOrmModule.forFeature([User, Order, Product, Setting, Withdrawal]),
+    WithdrawalsModule,
+  ],
   controllers: [AdminController],
   providers: [AdminService],
 })

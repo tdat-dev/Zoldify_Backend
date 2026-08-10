@@ -54,9 +54,12 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   avatar: string;
 
-  // Số dư tài khoản (legacy, dùng bảng wallets) - DECIMAL(15,2)
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.0 })
-  balance: number;
+  // Không còn cột `balance` ở đây.
+  //
+  // Số dư nằm ở `ledger_accounts`, đọc bằng
+  // `LedgerService.getBalance(USER, id, AVAILABLE)`. Cột cũ là một trong ba
+  // nguồn sự thật từng tồn tại song song và lệch nhau; xem migration
+  // 1786600000000-DropUserBalanceColumn.
 
   // 1 = đã xác thực email - TINYINT(1) (boolean)
   @Column({ type: 'tinyint', width: 1, default: 0 })
