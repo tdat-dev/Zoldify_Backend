@@ -28,7 +28,9 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "test:db": "docker run -d --name zoldify-test-mysql -e MYSQL_ROOT_PASSWORD=testpw -e MYSQL_DATABASE=zoldify_test -p 3307:3306 mysql:8",
     "diagrams:export": "node scripts/export-diagrams.mjs",
-    "diagrams:check": "node scripts/export-diagrams.mjs --check"
+    "diagrams:check": "node scripts/export-diagrams.mjs --check",
+    "drawio:make": "node scripts/make-drawio.mjs",
+    "drawio:check": "node scripts/check-drawio.mjs"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.6",

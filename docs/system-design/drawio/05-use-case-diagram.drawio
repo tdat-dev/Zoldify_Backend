@@ -1,0 +1,56 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="d1" name="Use Case Diagram">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1320" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="n1" value="Buyer" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;" vertex="1" parent="1"><mxGeometry x="70" y="250" width="30" height="60" as="geometry"/></mxCell>
+        <mxCell id="n2" value="Seller" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;" vertex="1" parent="1"><mxGeometry x="70" y="830" width="30" height="60" as="geometry"/></mxCell>
+        <mxCell id="n3" value="Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;" vertex="1" parent="1"><mxGeometry x="1230" y="300" width="30" height="60" as="geometry"/></mxCell>
+        <mxCell id="n4" value="PayOS" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;" vertex="1" parent="1"><mxGeometry x="1230" y="520" width="30" height="60" as="geometry"/></mxCell>
+        <mxCell id="n5" value="GHN" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;" vertex="1" parent="1"><mxGeometry x="1230" y="750" width="30" height="60" as="geometry"/></mxCell>
+        <mxCell id="n6" value="Zoldify" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fillColor=none;strokeColor=#333333;fontSize=14;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="250" y="50" width="900" height="1110" as="geometry"/></mxCell>
+        <mxCell id="n7" value="Search products" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="110" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n8" value="Manage cart" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="190" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n9" value="Place order" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="270" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n10" value="Top up wallet" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="350" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n11" value="Track order" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="430" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n12" value="Confirm delivery received" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="510" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n13" value="Register / Log in" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="620" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n14" value="Send messages" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="700" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n15" value="List an item for sale" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="810" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n16" value="Manage sales orders" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="890" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n17" value="View wallet and transactions" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="970" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n18" value="Request withdrawal" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="320" y="1050" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n19" value="Approve withdrawal" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="780" y="270" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n20" value="Reconcile the ledger" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="780" y="350" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n21" value="Manage users" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="780" y="430" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n22" value="Process payment webhook" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="780" y="540" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n23" value="Create shipment" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="780" y="770" width="230" height="54" as="geometry"/></mxCell>
+        <mxCell id="n24" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n13"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n25" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n26" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n27" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n9"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n28" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n10"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n29" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n11"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n30" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n12"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n31" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n1" target="n14"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n32" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n13"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n33" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n14"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n34" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n15"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n35" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n16"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n36" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n23"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n37" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n17"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n38" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n2" target="n18"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n39" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n3" target="n19"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n40" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n3" target="n20"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n41" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n3" target="n21"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n42" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n4" target="n22"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n43" value="" style="endArrow=none;html=1;strokeColor=#333333;" edge="1" parent="1" source="n5" target="n23"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n44" value="«include»" style="endArrow=open;endFill=0;dashed=1;html=1;strokeColor=#666666;fontSize=11;" edge="1" parent="1" source="n9" target="n22"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n45" value="«include»" style="endArrow=open;endFill=0;dashed=1;html=1;strokeColor=#666666;fontSize=11;" edge="1" parent="1" source="n12" target="n17"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="n46" value="Actors are stick figures and use cases are ellipses, as required by UML.&lt;br&gt;The system boundary separates what Zoldify does from who asks for it.&lt;br&gt;Buyer-only cases sit at the top, seller-only cases at the bottom, and the&lt;br&gt;two shared cases in between, so the association lines stay short." style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" vertex="1" parent="1"><mxGeometry x="250" y="1190" width="520" height="85" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
