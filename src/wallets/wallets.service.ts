@@ -7,7 +7,6 @@ import { TransactionType, WalletTransaction } from './entities/wallet-transactio
 import { User } from '../users/entities/user.entity';
 import { Repository } from 'typeorm';
 
-
 @Injectable()
 export class WalletsService {
   constructor(
