@@ -160,6 +160,7 @@ function main() {
   }
 
   const failures = [];
+  const index = [];
   let rendered = 0;
 
   for (const file of mdFiles) {
@@ -237,6 +238,7 @@ function main() {
 
       if (ok) {
         rendered += 1;
+        index.push({ dir: filePrefix, name: block.name, heading: block.heading });
         console.log(`  OK  ${block.name}`);
       } else {
         console.log(`  LOI ${block.name}  (dòng ${block.line})`);
@@ -245,6 +247,27 @@ function main() {
   }
 
   fs.rmSync(workDir, { recursive: true, force: true });
+
+  // Tên file bắt đầu bằng số thứ tự trong markdown, không phải số sơ đồ, nên
+  // nhìn tên không đoán được nội dung. Ghi kèm một bảng tra để khỏi phải mở
+  // từng ảnh ra xem.
+  if (!CHECK_ONLY && index.length) {
+    const rows = index
+      .map((e) => `| \`${e.dir}/${e.name}\` | ${e.heading} |`)
+      .join('\n');
+    fs.writeFileSync(
+      path.join(OUT_DIR, 'INDEX.md'),
+      '# Sơ đồ đã xuất — bảng tra\n\n' +
+        '> Sinh tự động bởi `npm run diagrams:export`. Đừng sửa tay.\n\n' +
+        'Mỗi sơ đồ có ba file cùng tên: `.svg` cho Word, `.png` (2x) cho\n' +
+        'PowerPoint, `.mmd` để dán vào draw.io.\n\n' +
+        '| File | Sơ đồ |\n|---|---|\n' +
+        rows +
+        '\n',
+      'utf8',
+    );
+    console.log(`Bảng tra: ${path.relative(ROOT, path.join(OUT_DIR, 'INDEX.md'))}`);
+  }
 
   console.log(
     `\n${rendered} sơ đồ hợp lệ, ${failures.length} lỗi.` +
