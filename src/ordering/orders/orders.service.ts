@@ -224,14 +224,42 @@ export class OrdersService {
     const idsRaw = await filterQb
       .orderBy('order.created_at', 'DESC')
       .getRawMany();
-    const ids = idsRaw.map((r) => Number(r.order_id)).filter((n) => !isNaN(n));
+
+    /**
+     * Câu trên JOIN sang order.items, nên mỗi ĐƠN trả về một dòng CHO MỖI MÓN.
+     * Hai lỗi từ đó:
+     *
+     * 1. `ids.length` đếm dòng đã join chứ không phải số đơn. Đo được với dữ
+     *    liệu thật: 3 đơn có 1 + 2 + 1 = 4 món, API trả về meta.total = 4 trong
+     *    khi result chỉ có 3 phần tử — vì `In(ids)` tự khử trùng. Giao diện
+     *    người bán hiện "4 đơn hàng" rồi liệt kê 3.
+     *
+     * 2. `offset` và `numLimit` được tính ở đầu hàm rồi KHÔNG BAO GIỜ dùng.
+     *    Không có skip/take ở đâu cả, nên mọi lần gọi đều trả về TOÀN BỘ đơn
+     *    khớp điều kiện, bất kể currentPage và limit. Người bán có 500 đơn thì
+     *    tải cả 500 về mỗi lần mở trang.
+     *
+     * Khử trùng bằng Set thay vì DISTINCT của SQL: thứ tự đã do ORDER BY quyết
+     * định, còn DISTINCT kèm ORDER BY trên cột không nằm trong SELECT là chỗ
+     * MySQL hay từ chối tuỳ chế độ.
+     */
+    const seen = new Set<number>();
+    const allIds: number[] = [];
+    for (const row of idsRaw) {
+      const n = Number(row.order_id);
+      if (!isNaN(n) && !seen.has(n)) {
+        seen.add(n);
+        allIds.push(n);
+      }
+    }
+
+    const totalItems = allIds.length;
+    const pageIds = allIds.slice(offset, offset + numLimit);
 
     let result: any[] = [];
-    let totalItems = ids.length;
-
-    if (ids.length > 0) {
+    if (pageIds.length > 0) {
       result = await this.orderRepository.find({
-        where: { id: In(ids) },
+        where: { id: In(pageIds) },
         relations: ['user', 'items', 'items.product'],
         order: { created_at: 'DESC' },
       });
