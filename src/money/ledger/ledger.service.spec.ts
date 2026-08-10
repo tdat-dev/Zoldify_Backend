@@ -273,4 +273,150 @@ describe('LedgerService', () => {
 
     expect(BigInt(total)).toBe(0n);
   });
+
+  /**
+   * Nhánh `post(input, manager)` — dùng khi người gọi đã mở transaction riêng.
+   *
+   * Đây là thứ webhook PayOS cần: cộng tiền, đổi trạng thái đơn và tạo ký quỹ
+   * phải cùng thành công hoặc cùng huỷ. Bản cũ ghi dấu chống trùng ra ngoài
+   * transaction, nên sập giữa chừng là mất tiền vĩnh viễn.
+   */
+  describe('post() bên trong transaction của người gọi', () => {
+    it('người gọi rollback thì bút toán biến mất theo', async () => {
+      const { wallet } = await makeAccounts(10);
+      const gateway = await ledger.getOrCreateAccount(
+        LedgerOwnerType.EXTERNAL,
+        null,
+        LedgerPurpose.GATEWAY_CLEARING,
+      );
+
+      await expect(
+        dataSource.transaction(async (em) => {
+          await ledger.post(
+            {
+              idempotencyKey: 'payos:sap-giua-chung',
+              type: LedgerTxType.TOPUP,
+              entries: [
+                { accountId: Number(gateway.id), amount: -700_000n },
+                { accountId: wallet, amount: 700_000n },
+              ],
+            },
+            em,
+          );
+
+          // Giả lập việc tiếp theo trong cùng transaction bị hỏng — ví dụ
+          // cập nhật đơn hàng thất bại, hoặc tiến trình bị kill
+          throw new Error('mô phỏng sập giữa chừng');
+        }),
+      ).rejects.toThrow('mô phỏng sập giữa chừng');
+
+      // Không còn dấu vết nào: không giao dịch, không bút toán, số dư nguyên
+      const tx = await dataSource.manager.findOne(LedgerTransaction, {
+        where: { idempotency_key: 'payos:sap-giua-chung' },
+      });
+      expect(tx).toBeNull();
+
+      const entryCount = await dataSource.manager.count(LedgerEntry);
+      expect(entryCount).toBe(0);
+
+      const balance = await ledger.getBalance(
+        LedgerOwnerType.USER,
+        10,
+        LedgerPurpose.AVAILABLE,
+      );
+      expect(balance).toBe(0n);
+    });
+
+    it('PayOS gửi lại sau khi sập thì tiền vào ĐÚNG MỘT LẦN', async () => {
+      const { wallet } = await makeAccounts(11);
+      const gateway = await ledger.getOrCreateAccount(
+        LedgerOwnerType.EXTERNAL,
+        null,
+        LedgerPurpose.GATEWAY_CLEARING,
+      );
+      const key = 'payos:99887:link-abc';
+
+      const topup = (em: any) =>
+        ledger.post(
+          {
+            idempotencyKey: key,
+            type: LedgerTxType.TOPUP,
+            entries: [
+              { accountId: Number(gateway.id), amount: -500_000n },
+              { accountId: wallet, amount: 500_000n },
+            ],
+          },
+          em,
+        );
+
+      // Lần 1: sập giữa chừng, rollback
+      await expect(
+        dataSource.transaction(async (em) => {
+          await topup(em);
+          throw new Error('sập');
+        }),
+      ).rejects.toThrow('sập');
+
+      // Lần 2 và 3: PayOS gửi lại, lần này chạy trọn
+      await dataSource.transaction(topup);
+      await dataSource.transaction(topup);
+
+      const txCount = await dataSource.manager.count(LedgerTransaction, {
+        where: { idempotency_key: key },
+      });
+      expect(txCount).toBe(1);
+
+      const balance = await ledger.getBalance(
+        LedgerOwnerType.USER,
+        11,
+        LedgerPurpose.AVAILABLE,
+      );
+      // Đúng 500k, không phải 1 triệu và cũng không phải 0
+      expect(balance).toBe(500_000n);
+    });
+
+    it('hai webhook cùng khoá chạy song song chỉ cộng tiền một lần', async () => {
+      const { wallet } = await makeAccounts(12);
+      const gateway = await ledger.getOrCreateAccount(
+        LedgerOwnerType.EXTERNAL,
+        null,
+        LedgerPurpose.GATEWAY_CLEARING,
+      );
+      const key = 'payos:song-song';
+
+      const attempts = Array.from({ length: 8 }, () =>
+        dataSource.transaction((em) =>
+          ledger.post(
+            {
+              idempotencyKey: key,
+              type: LedgerTxType.TOPUP,
+              entries: [
+                { accountId: Number(gateway.id), amount: -200_000n },
+                { accountId: wallet, amount: 200_000n },
+              ],
+            },
+            em,
+          ),
+        ),
+      );
+
+      // Một số lần sẽ đụng UNIQUE và ném lỗi — đó là ĐÚNG, PayOS sẽ gửi lại.
+      // Điều bắt buộc là số dư không được nhân lên.
+      const results = await Promise.allSettled(attempts);
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      expect(ok).toBeGreaterThanOrEqual(1);
+
+      const txCount = await dataSource.manager.count(LedgerTransaction, {
+        where: { idempotency_key: key },
+      });
+      expect(txCount).toBe(1);
+
+      const balance = await ledger.getBalance(
+        LedgerOwnerType.USER,
+        12,
+        LedgerPurpose.AVAILABLE,
+      );
+      expect(balance).toBe(200_000n);
+    });
+  });
 });

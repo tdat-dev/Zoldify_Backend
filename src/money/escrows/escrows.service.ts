@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
 
 @Injectable()
@@ -17,15 +17,38 @@ export class EscrowsService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
-  ) { }
-  async createOrderEscrows(orderId: number) {
-    const order = await this.orderRepository.findOne({
+  ) {}
+  /**
+   * Tách tiền của đơn thành từng khoản ký quỹ, mỗi người bán một khoản.
+   *
+   * Nhận `manager` để chạy được bên trong transaction của người gọi — webhook
+   * PayOS cần việc cộng tiền, đổi trạng thái đơn và tạo ký quỹ cùng thành
+   * công hoặc cùng huỷ. Không truyền thì tự dùng repository như cũ.
+   */
+  async createOrderEscrows(orderId: number, manager?: EntityManager) {
+    const orderRepo = manager
+      ? manager.getRepository(Order)
+      : this.orderRepository;
+    const escrowRepo = manager
+      ? manager.getRepository(Escrow)
+      : this.escrowRepository;
+
+    const order = await orderRepo.findOne({
       where: { id: orderId },
       relations: ['items', 'items.product', 'items.product.seller', 'user'],
     });
 
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
+
+    // Đã tách rồi thì thôi. Không có dòng này, một lần gọi lại sẽ nhân đôi
+    // số khoản ký quỹ của cùng một đơn.
+    const already = await escrowRepo.count({
+      where: { order: { id: orderId } },
+    });
+    if (already > 0) {
+      return escrowRepo.find({ where: { order: { id: orderId } } });
     }
 
     const sellerMap = new Map<number, { seller: User; total: number }>();
@@ -39,7 +62,7 @@ export class EscrowsService {
 
     const escrows: Escrow[] = [];
     for (const [, entry] of sellerMap) {
-      const escrow = this.escrowRepository.create({
+      const escrow = escrowRepo.create({
         order: { id: order.id },
         buyer: { id: order.user.id },
         seller: { id: entry.seller.id },
@@ -49,7 +72,7 @@ export class EscrowsService {
       escrows.push(escrow);
     }
 
-    return this.escrowRepository.save(escrows);
+    return escrowRepo.save(escrows);
   }
 
   async release(orderId: number) {
@@ -104,7 +127,12 @@ export class EscrowsService {
     });
   }
 
-  async findBySeller(sellerId: number, page: number, limit: number, status?: string) {
+  async findBySeller(
+    sellerId: number,
+    page: number,
+    limit: number,
+    status?: string,
+  ) {
     const where: any = { seller: { id: sellerId } };
     if (status) where.status = status;
 
@@ -117,7 +145,12 @@ export class EscrowsService {
     });
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }
@@ -135,7 +168,12 @@ export class EscrowsService {
     });
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }

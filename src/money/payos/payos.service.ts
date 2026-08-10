@@ -1,13 +1,28 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { LedgerService } from '@money/ledger/ledger.service';
+import {
+  LedgerOwnerType,
+  LedgerPurpose,
+  LedgerTxType,
+} from '@money/ledger/ledger.types';
+import { EscrowsService } from '@money/escrows/escrows.service';
 import { PayOS } from '@payos/node';
 import { Payment } from '@money/payments/entities/payment.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
-import { PayosWebhookLog } from './entities/payos-webhook-log.entity';
-import { PaymentStatus, PaymentType, PaymentMethod } from '@common/enums/payment.enum';
+import {
+  PaymentStatus,
+  PaymentType,
+  PaymentMethod,
+} from '@common/enums/payment.enum';
 import { OrderStatus } from '@ordering/orders/entities/order.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
@@ -29,13 +44,22 @@ export class PayosService {
     private readonly walletRepository: Repository<Wallet>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(PayosWebhookLog)
-    private readonly webhookLogRepository: Repository<PayosWebhookLog>,
+    // Bảng payos_webhook_log KHÔNG còn được ghi nữa. Vai trò chống trùng của
+    // nó đã chuyển sang ledger_transactions.idempotency_key, nơi khoá nằm
+    // trong CÙNG transaction với việc cộng tiền. Bảng cũ giữ lại vì còn dữ
+    // liệu lịch sử; xoá bằng migration riêng khi không cần tra cứu nữa.
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+    private readonly ledgerService: LedgerService,
+    private readonly escrowsService: EscrowsService,
   ) {
     const clientId = this.configService.get<string>('PAYOS_CLIENT_ID') || '';
     const apiKey = this.configService.get<string>('PAYOS_API_KEY') || '';
-    const checksumKey = this.configService.get<string>('PAYOS_CHECKSUM_KEY') || '';
-    const baseURL = this.configService.get<string>('PAYOS_HOST') || 'https://api-merchant.payos.vn';
+    const checksumKey =
+      this.configService.get<string>('PAYOS_CHECKSUM_KEY') || '';
+    const baseURL =
+      this.configService.get<string>('PAYOS_HOST') ||
+      'https://api-merchant.payos.vn';
 
     this.payos = new PayOS({ clientId, apiKey, checksumKey, baseURL });
   }
@@ -51,13 +75,16 @@ export class PayosService {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
     if (order.user.id !== userId) {
-      throw new BadRequestException('Bạn không có quyền thanh toán đơn hàng này');
+      throw new BadRequestException(
+        'Bạn không có quyền thanh toán đơn hàng này',
+      );
     }
     if (order.is_paid) {
       throw new BadRequestException('Đơn hàng đã được thanh toán');
     }
 
-    const frontendUrl = this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
+    const frontendUrl =
+      this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
 
     // Tạo payment link qua PayOS
     const link = await this.payos.paymentRequests.create({
@@ -120,7 +147,8 @@ export class PayosService {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
 
-    const frontendUrl = this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
+    const frontendUrl =
+      this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
     // orderCode phải unique → dùng timestamp + userId
     const orderCode = Number(`${Date.now().toString().slice(-7)}${userId}`);
 
@@ -162,7 +190,9 @@ export class PayosService {
   // ============ QUERY ============
 
   async getOrderStatus(orderId: number) {
-    const order = await this.orderRepository.findOne({ where: { id: orderId } });
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
@@ -217,21 +247,31 @@ export class PayosService {
       order: { created_at: 'DESC' },
     });
     if (!payment?.payos_order_code) {
-      throw new NotFoundException('Không tìm thấy payment PayOS cho đơn hàng này');
+      throw new NotFoundException(
+        'Không tìm thấy payment PayOS cho đơn hàng này',
+      );
     }
 
     // Gọi PayOS API để lấy status thật
     let link;
     try {
-      link = await this.payos.paymentRequests.get(Number(payment.payos_order_code));
+      link = await this.payos.paymentRequests.get(
+        Number(payment.payos_order_code),
+      );
     } catch (e: any) {
-      this.logger.warn(`PayOS API error for orderCode=${payment.payos_order_code}: ${e.message}`);
-      throw new BadRequestException('Không kiểm tra được trạng thái từ PayOS: ' + e.message);
+      this.logger.warn(
+        `PayOS API error for orderCode=${payment.payos_order_code}: ${e.message}`,
+      );
+      throw new BadRequestException(
+        'Không kiểm tra được trạng thái từ PayOS: ' + e.message,
+      );
     }
 
     // Nếu PayOS báo PAID mà DB chưa update → update
     if (link.status === 'PAID' && payment.status !== PaymentStatus.SUCCESS) {
-      this.logger.log(`Manually updating payment ${payment.id} to SUCCESS (PayOS reported PAID)`);
+      this.logger.log(
+        `Manually updating payment ${payment.id} to SUCCESS (PayOS reported PAID)`,
+      );
       payment.status = PaymentStatus.SUCCESS;
       payment.paid_at = new Date();
       payment.transaction_code = String(link.id);
@@ -287,7 +327,8 @@ export class PayosService {
       orderId: order.id,
       is_paid: order.is_paid || link.status === 'PAID',
       payos_status: link.status,
-      payment_status: link.status === 'PAID' ? PaymentStatus.SUCCESS : payment.status,
+      payment_status:
+        link.status === 'PAID' ? PaymentStatus.SUCCESS : payment.status,
       amount: link.amount,
     };
   }
@@ -302,9 +343,14 @@ export class PayosService {
       throw new NotFoundException('Không tìm thấy payment');
     }
     if (payment.status !== PaymentStatus.PENDING) {
-      throw new BadRequestException('Chỉ có thể hủy payment đang chờ thanh toán');
+      throw new BadRequestException(
+        'Chỉ có thể hủy payment đang chờ thanh toán',
+      );
     }
-    await this.payos.paymentRequests.cancel(Number(payosOrderCode), 'User cancelled');
+    await this.payos.paymentRequests.cancel(
+      Number(payosOrderCode),
+      'User cancelled',
+    );
     payment.status = PaymentStatus.FAILED;
     await this.paymentRepository.save(payment);
     return { cancelled: true, payos_order_code: payosOrderCode };
@@ -312,110 +358,185 @@ export class PayosService {
 
   // ============ WEBHOOK ============
 
+  /**
+   * Xử lý webhook PayOS báo kết quả thanh toán.
+   *
+   * TOÀN BỘ việc ghi nằm trong MỘT transaction. Bản cũ gọi `save()` năm lần
+   * rời rạc, và tệ nhất là nó ghi dấu chống trùng vào `payos_webhook_log`
+   * TRƯỚC rồi mới cộng tiền. Sập giữa hai bước đó thì lần PayOS gửi lại sẽ bị
+   * coi là trùng và bỏ qua — khách mất tiền, ví không có gì, không cảnh báo
+   * nào nổ ra vì cả hai bên đều tưởng đã xong.
+   *
+   * Giờ dấu chống trùng là `ledger_transactions.idempotency_key`, được INSERT
+   * trong cùng transaction với các bút toán. Hai việc chung một số phận: hoặc
+   * cùng có, hoặc cùng không. Gửi lại bao nhiêu lần cũng chỉ vào tiền một lần.
+   *
+   * Thông báo cho người dùng nằm NGOÀI transaction, chạy sau khi commit —
+   * gửi thông báo hỏng thì không được phép làm rollback tiền.
+   */
   async handleWebhook(rawBody: any) {
-    // 1. Verify signature
     let webhookData;
     try {
       webhookData = await this.payos.webhooks.verify(rawBody);
     } catch (err: any) {
-      this.logger.warn(`Invalid webhook signature: ${err.message}`);
+      this.logger.warn(`Chữ ký webhook không hợp lệ: ${err.message}`);
       return { success: false, message: 'Invalid signature' };
     }
 
     const orderCode = String(webhookData.orderCode);
-    const paymentLinkId = webhookData.paymentLinkId;
+    const paymentLinkId = String(webhookData.paymentLinkId);
+    const isSuccess = webhookData.code === '00' && rawBody.success === true;
 
-    // 2. Idempotency: INSERT IGNORE webhook log
-    try {
-      const log = this.webhookLogRepository.create({
-        transaction_id: `${orderCode}-${paymentLinkId}`,
-        body: rawBody,
-        processed: webhookData.code === '00' && (rawBody.success === true || webhookData.code === '00'),
+    const outcome = await this.dataSource.transaction(async (em) => {
+      const payment = await em.findOne(Payment, {
+        where: { payos_order_code: orderCode },
+        relations: ['order', 'user'],
       });
-      await this.webhookLogRepository.save(log);
-    } catch (err: any) {
-      // Trùng transaction_id → đã xử lý trước đó
-      this.logger.log(`Duplicate webhook ignored: ${orderCode}`);
-      return { success: true, duplicate: true };
-    }
 
-    // 3. Tìm payment theo payos_order_code
-    const payment = await this.paymentRepository.findOne({
-      where: { payos_order_code: orderCode },
-      relations: ['order', 'user'],
-    });
-    if (!payment) {
-      this.logger.warn(`Payment not found for orderCode=${orderCode}`);
-      return { success: true, processed: false, reason: 'Payment not found' };
-    }
-
-    // 4. Chỉ xử lý nếu thành công (code = '00' = success)
-    if (webhookData.code !== '00' || rawBody.success !== true) {
-      this.logger.log(`Payment not successful: code=${webhookData.code} desc=${webhookData.desc}`);
-      payment.status = PaymentStatus.FAILED;
-      await this.paymentRepository.save(payment);
-      return { success: true, processed: false, reason: 'Payment not successful' };
-    }
-
-    if (payment.status === PaymentStatus.SUCCESS) {
-      return { success: true, processed: false, reason: 'Already paid' };
-    }
-
-    // 5. Mark payment as SUCCESS
-    payment.status = PaymentStatus.SUCCESS;
-    payment.paid_at = new Date();
-    payment.transaction_code = webhookData.reference || paymentLinkId;
-    await this.paymentRepository.save(payment);
-
-    // 6. Xử lý theo loại payment
-    if (payment.type === PaymentType.ORDER_PAYMENT && payment.order) {
-      // Update order → paid, tạo escrow
-      payment.order.is_paid = true;
-      payment.order.paid_at = new Date();
-      payment.order.status = OrderStatus.CONFIRMED;
-      await this.orderRepository.save(payment.order);
-
-      // Gửi notification cho user
-      try {
-        await this.notificationsService.create({
-          user_id: payment.user.id,
-          type: NotificationType.PAYMENT,
-          title: 'Thanh toán đơn hàng thành công',
-          content: `Đơn hàng #${payment.order.id} đã được thanh toán ${Number(payment.amount).toLocaleString('vi-VN')}đ qua PayOS.`,
-          data: { orderId: payment.order.id, paymentId: payment.id },
-        });
-      } catch (e) {
-        this.logger.warn(`Failed to send notification: ${e.message}`);
+      if (!payment) {
+        this.logger.warn(`Không tìm thấy payment cho orderCode=${orderCode}`);
+        return {
+          processed: false as const,
+          reason: 'Payment not found' as const,
+        };
       }
-    } else if (payment.type === PaymentType.WALLET_TOPUP && payment.user) {
-      // Cộng tiền vào ví (nếu user có wallet) hoặc user.balance
-      const wallet = await this.walletRepository.findOne({
-        where: { user: { id: payment.user.id } },
-      });
-      if (wallet) {
-        wallet.balance = Number(wallet.balance) + Number(payment.amount);
-        await this.walletRepository.save(wallet);
+
+      if (!isSuccess) {
+        payment.status = PaymentStatus.FAILED;
+        await em.save(Payment, payment);
+        return {
+          processed: false as const,
+          reason: 'Payment not successful' as const,
+        };
+      }
+
+      if (payment.status === PaymentStatus.SUCCESS) {
+        return { processed: false as const, reason: 'Already paid' as const };
+      }
+
+      // Khoá tất định, dựng từ dữ liệu của PayOS chứ không random. Cùng một
+      // lần trả tiền thì mọi lần gửi lại đều sinh ra đúng khoá này.
+      const idempotencyKey = `payos:${orderCode}:${paymentLinkId}`;
+      const amount = BigInt(Math.round(Number(payment.amount)));
+
+      const gateway = await this.ledgerService.getOrCreateAccount(
+        LedgerOwnerType.EXTERNAL,
+        null,
+        LedgerPurpose.GATEWAY_CLEARING,
+        em,
+      );
+
+      if (payment.type === PaymentType.WALLET_TOPUP) {
+        // Tiền từ cổng thanh toán vào thẳng ví người dùng
+        const wallet = await this.ledgerService.getOrCreateAccount(
+          LedgerOwnerType.USER,
+          payment.user.id,
+          LedgerPurpose.AVAILABLE,
+          em,
+        );
+        await this.ledgerService.post(
+          {
+            idempotencyKey,
+            type: LedgerTxType.TOPUP,
+            reference: { type: 'payment', id: payment.id },
+            metadata: { orderCode, paymentLinkId },
+            entries: [
+              { accountId: Number(gateway.id), amount: -amount },
+              { accountId: Number(wallet.id), amount },
+            ],
+          },
+          em,
+        );
+      } else if (payment.type === PaymentType.ORDER_PAYMENT && payment.order) {
+        // Tiền từ cổng thanh toán vào thẳng ô giữ hộ, KHÔNG đi qua ví người
+        // mua — người mua chưa bao giờ cầm số tiền này.
+        const hold = await this.ledgerService.getOrCreateAccount(
+          LedgerOwnerType.PLATFORM,
+          null,
+          LedgerPurpose.ESCROW_HOLD,
+          em,
+        );
+        await this.ledgerService.post(
+          {
+            idempotencyKey,
+            type: LedgerTxType.ORDER_HOLD,
+            reference: { type: 'order', id: payment.order.id },
+            metadata: { orderCode, paymentLinkId, paymentId: payment.id },
+            entries: [
+              { accountId: Number(gateway.id), amount: -amount },
+              { accountId: Number(hold.id), amount },
+            ],
+          },
+          em,
+        );
+
+        payment.order.is_paid = true;
+        payment.order.paid_at = new Date();
+        payment.order.status = OrderStatus.CONFIRMED;
+        await em.save(Order, payment.order);
+
+        // Tách thành từng khoản theo người bán, trong CÙNG transaction.
+        // Bản cũ không hề gọi bước này, nên đơn trả qua PayOS chưa bao giờ
+        // sinh ra bản ghi ký quỹ nào.
+        await this.escrowsService.createOrderEscrows(payment.order.id, em);
       } else {
-        await this.userRepository.increment(
-          { id: payment.user.id },
-          'balance',
-          Number(payment.amount),
+        throw new BadRequestException(
+          `Payment #${payment.id} có type=${payment.type} nhưng thiếu dữ liệu đi kèm`,
         );
       }
-      try {
-        await this.notificationsService.create({
-          user_id: payment.user.id,
-          type: NotificationType.PAYMENT,
-          title: 'Nạp ví thành công',
-          content: `Bạn đã nạp ${Number(payment.amount).toLocaleString('vi-VN')}đ vào ví qua PayOS.`,
-          data: { paymentId: payment.id },
-        });
-      } catch (e) {
-        this.logger.warn(`Failed to send notification: ${e.message}`);
-      }
+
+      payment.status = PaymentStatus.SUCCESS;
+      payment.paid_at = new Date();
+      payment.transaction_code = webhookData.reference || paymentLinkId;
+      await em.save(Payment, payment);
+
+      return {
+        processed: true as const,
+        paymentId: payment.id,
+        userId: payment.user?.id,
+        orderId: payment.order?.id,
+        type: payment.type,
+        amount: Number(payment.amount),
+      };
+    });
+
+    if (!outcome.processed) {
+      return { success: true, processed: false, reason: outcome.reason };
     }
 
-    this.logger.log(`Payment processed successfully: orderCode=${orderCode} type=${payment.type}`);
+    await this.notifyPaid(outcome);
+
+    this.logger.log(
+      `Đã xử lý thanh toán: orderCode=${orderCode} type=${outcome.type}`,
+    );
     return { success: true, processed: true };
+  }
+
+  /** Chạy sau commit. Hỏng thì chỉ mất thông báo, tiền đã vào sổ rồi. */
+  private async notifyPaid(o: {
+    paymentId: number;
+    userId?: number;
+    orderId?: number;
+    type: PaymentType;
+    amount: number;
+  }): Promise<void> {
+    if (!o.userId) return;
+
+    const money = o.amount.toLocaleString('vi-VN');
+    const isOrder = o.type === PaymentType.ORDER_PAYMENT;
+
+    try {
+      await this.notificationsService.create({
+        user_id: o.userId,
+        type: NotificationType.PAYMENT,
+        title: isOrder ? 'Thanh toán đơn hàng thành công' : 'Nạp ví thành công',
+        content: isOrder
+          ? `Đơn hàng #${o.orderId} đã được thanh toán ${money}đ qua PayOS.`
+          : `Bạn đã nạp ${money}đ vào ví qua PayOS.`,
+        data: { orderId: o.orderId, paymentId: o.paymentId },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Không gửi được thông báo: ${e.message}`);
+    }
   }
 }

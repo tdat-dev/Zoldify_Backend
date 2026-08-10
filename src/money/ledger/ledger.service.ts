@@ -110,66 +110,28 @@ export class LedgerService {
    *  3. Kiểm tổng bằng 0 và không tài khoản người dùng nào âm.
    *  4. INSERT entries + UPDATE balance.
    */
-  async post(input: PostLedgerTxInput): Promise<LedgerTransaction> {
+  async post(
+    input: PostLedgerTxInput,
+    manager?: EntityManager,
+  ): Promise<LedgerTransaction> {
     this.validateInput(input);
 
+    // Người gọi đã mở transaction riêng (ví dụ webhook PayOS cần cộng tiền và
+    // cập nhật đơn hàng chung một số phận). Không mở transaction lồng, cứ ghi
+    // vào transaction của họ.
+    //
+    // Ở nhánh này KHÔNG bắt lỗi trùng khoá: một lỗi UNIQUE giữa chừng phải làm
+    // hỏng cả transaction của người gọi, chứ không phải chỉ riêng phần sổ cái.
+    // Lần gửi lại sau đó sẽ thấy giao dịch cũ ở bước kiểm đầu hàm và trả về
+    // luôn.
+    if (manager) {
+      return this.postWithin(manager, input);
+    }
+
     try {
-      return await this.dataSource.transaction(async (em) => {
-        const tx = await em.save(
-          LedgerTransaction,
-          em.create(LedgerTransaction, {
-            type: input.type,
-            idempotency_key: input.idempotencyKey,
-            reference_type: input.reference?.type ?? null,
-            reference_id: input.reference ? String(input.reference.id) : null,
-            metadata: input.metadata ?? null,
-          }),
-        );
-
-        const accounts = await this.lockAccounts(
-          em,
-          input.entries.map((e) => e.accountId),
-        );
-
-        for (const entry of input.entries) {
-          const account = accounts.get(entry.accountId);
-          if (!account) {
-            throw new BadRequestException(
-              `Không tìm thấy tài khoản sổ cái id=${entry.accountId}`,
-            );
-          }
-
-          const balanceAfter = account.balance + entry.amount;
-
-          // Tài khoản của người dùng không được âm. Tài khoản hệ thống
-          // (platform, external) thì được — gateway_clearing âm dần chính
-          // là số tiền đã chảy vào từ cổng thanh toán.
-          if (
-            account.owner_type === LedgerOwnerType.USER &&
-            balanceAfter < 0n
-          ) {
-            throw new BadRequestException(
-              `Số dư không đủ. Cần ${(-entry.amount).toString()}đ, ` +
-                `hiện có ${account.balance.toString()}đ`,
-            );
-          }
-
-          await em.save(
-            LedgerEntry,
-            em.create(LedgerEntry, {
-              transaction: tx,
-              account,
-              amount: entry.amount,
-              balance_after: balanceAfter,
-            }),
-          );
-
-          account.balance = balanceAfter;
-          await em.save(LedgerAccount, account);
-        }
-
-        return tx;
-      });
+      return await this.dataSource.transaction((em) =>
+        this.postWithin(em, input),
+      );
     } catch (err) {
       if (this.isDuplicateKey(err)) {
         // Đã xử lý trước đó rồi. Đây là đường đi BÌNH THƯỜNG khi PayOS
@@ -185,6 +147,80 @@ export class LedgerService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Phần thân, luôn chạy bên trong một transaction có sẵn.
+   *
+   * Kiểm khoá trùng bằng SELECT trước rồi mới INSERT. Câu SELECT này KHÔNG
+   * phải là lá chắn — hai request song song vẫn cùng thấy "chưa có" rồi cùng
+   * INSERT. Lá chắn thật vẫn là ràng buộc UNIQUE dưới database; SELECT chỉ để
+   * trường hợp gửi lại thông thường (đã xử lý xong từ lâu) không phải ném lỗi
+   * rồi bắt lại.
+   */
+  private async postWithin(
+    em: EntityManager,
+    input: PostLedgerTxInput,
+  ): Promise<LedgerTransaction> {
+    const existing = await em.findOne(LedgerTransaction, {
+      where: { idempotency_key: input.idempotencyKey },
+    });
+    if (existing) {
+      this.logger.log(`Bỏ qua giao dịch trùng: ${input.idempotencyKey}`);
+      return existing;
+    }
+
+    const tx = await em.save(
+      LedgerTransaction,
+      em.create(LedgerTransaction, {
+        type: input.type,
+        idempotency_key: input.idempotencyKey,
+        reference_type: input.reference?.type ?? null,
+        reference_id: input.reference ? String(input.reference.id) : null,
+        metadata: input.metadata ?? null,
+      }),
+    );
+
+    const accounts = await this.lockAccounts(
+      em,
+      input.entries.map((e) => e.accountId),
+    );
+
+    for (const entry of input.entries) {
+      const account = accounts.get(entry.accountId);
+      if (!account) {
+        throw new BadRequestException(
+          `Không tìm thấy tài khoản sổ cái id=${entry.accountId}`,
+        );
+      }
+
+      const balanceAfter = account.balance + entry.amount;
+
+      // Tài khoản của người dùng không được âm. Tài khoản hệ thống
+      // (platform, external) thì được — gateway_clearing âm dần chính
+      // là số tiền đã chảy vào từ cổng thanh toán.
+      if (account.owner_type === LedgerOwnerType.USER && balanceAfter < 0n) {
+        throw new BadRequestException(
+          `Số dư không đủ. Cần ${(-entry.amount).toString()}đ, ` +
+            `hiện có ${account.balance.toString()}đ`,
+        );
+      }
+
+      await em.save(
+        LedgerEntry,
+        em.create(LedgerEntry, {
+          transaction: tx,
+          account,
+          amount: entry.amount,
+          balance_after: balanceAfter,
+        }),
+      );
+
+      account.balance = balanceAfter;
+      await em.save(LedgerAccount, account);
+    }
+
+    return tx;
   }
 
   /** Số dư hiện tại. Chưa có tài khoản nghĩa là chưa có đồng nào. */
