@@ -5,9 +5,21 @@
 
 > Sơ đồ ở đây **minh hoạ** các quyết định đã lập luận trong design doc, không thay thế nó. Đọc design doc trước để biết *vì sao*; đọc file này để thấy *hình dạng*.
 
+**Nhãn trong sơ đồ viết bằng tiếng Anh, chữ giải thích quanh sơ đồ để tiếng Việt.**
+Báo cáo phải toàn tiếng Anh nên nhãn dịch sẵn; phần chữ là để nhóm đọc, không đi vào
+báo cáo. Cùng quy ước với `2026-08-08-activity-class-diagrams.md`.
+
 Toàn bộ viết bằng Mermaid — render trực tiếp trên GitHub, GitLab và VS Code (extension *Markdown Preview Mermaid Support*). Sửa được bằng text nên **diff review được trong Pull Request**, khác với ảnh PNG hay file draw.io.
 
-Xuất ảnh cho báo cáo: dán vào [mermaid.live](https://mermaid.live) → Export PNG/SVG.
+Xuất ảnh và file nguồn:
+
+```bash
+npm run diagrams:export     # SVG + PNG 2x + .mmd cho từng sơ đồ
+```
+
+Báo cáo yêu cầu sơ đồ vẽ bằng **draw.io**. File `.mmd` sinh ra là để dán vào
+draw.io theo đường **+ (Insert) → Advanced → Mermaid…**, nó dựng lại thành hình khối
+sửa được.
 
 ---
 
@@ -48,32 +60,32 @@ Zoldify nhìn từ bên ngoài: ai dùng, và nó phụ thuộc dịch vụ nào
 
 ```mermaid
 flowchart TB
-    buyer["Người mua<br/>(sinh viên)"]
-    seller["Người bán<br/>(sinh viên)"]
-    admin["Admin<br/>(vận hành)"]
+    buyer["Buyer<br/>(student)"]
+    seller["Seller<br/>(student)"]
+    admin["Admin<br/>(operations)"]
 
-    zoldify["<b>ZOLDIFY</b><br/>Marketplace đồ cũ<br/>có ví và ký quỹ"]
+    zoldify["<b>ZOLDIFY</b><br/>Second-hand marketplace<br/>with wallet and escrow"]
 
-    payos["PayOS<br/>Cổng thanh toán"]
-    sepay["SePay<br/>Đối soát chuyển khoản"]
-    ghn["GHN<br/>Vận chuyển"]
-    fcm["Firebase FCM<br/>Push notification"]
-    r2["Cloudflare R2<br/>Lưu trữ ảnh"]
+    payos["PayOS<br/>Payment gateway"]
+    sepay["SePay<br/>Bank transfer reconciliation"]
+    ghn["GHN<br/>Shipping"]
+    fcm["Firebase FCM<br/>Push notifications"]
+    r2["Cloudflare R2<br/>Image storage"]
     smtp["Gmail SMTP<br/>Email"]
-    bank["Ngân hàng<br/>Chi trả rút tiền"]
+    bank["Bank<br/>Withdrawal payouts"]
 
-    buyer -->|"duyệt · mua · thanh toán · chat"| zoldify
-    seller -->|"đăng bán · xử lý đơn · rút tiền"| zoldify
-    admin -->|"duyệt rút tiền · đối soát"| zoldify
+    buyer -->|"browse · buy · pay · chat"| zoldify
+    seller -->|"list items · fulfil orders · withdraw"| zoldify
+    admin -->|"approve withdrawals · reconcile"| zoldify
 
-    zoldify -->|"tạo link thanh toán"| payos
-    payos -->|"webhook xác nhận"| zoldify
-    zoldify -->|"đối chiếu biến động số dư"| sepay
-    zoldify -->|"tạo vận đơn · tra cứu"| ghn
-    zoldify -->|"gửi thông báo"| fcm
-    zoldify -->|"lưu và đọc ảnh"| r2
-    zoldify -->|"email xác thực"| smtp
-    admin -->|"chuyển khoản thủ công"| bank
+    zoldify -->|"create payment link"| payos
+    payos -->|"confirmation webhook"| zoldify
+    zoldify -->|"match incoming transfers"| sepay
+    zoldify -->|"create and track shipments"| ghn
+    zoldify -->|"send notifications"| fcm
+    zoldify -->|"store and read images"| r2
+    zoldify -->|"verification email"| smtp
+    admin -->|"manual bank transfer"| bank
 
     style zoldify fill:#2C67C8,color:#fff
     style payos fill:#f6d365
@@ -91,24 +103,24 @@ Bên trong Zoldify có những tiến trình nào, chạy ở đâu, nói chuy�
 ```mermaid
 flowchart TB
     web["<b>Web</b><br/>Next.js 14 App Router<br/>SSR"]
-    app["<b>Mobile</b><br/>React Native + Expo<br/>Android"]
+    app["<b>Mobile</b><br/>React Native + Expo<br/>Android and iOS"]
 
-    subgraph vps["VPS đơn — Docker Compose"]
-        caddy["<b>Caddy</b><br/>TLS tự động + cân bằng tải"]
+    subgraph vps["Single VPS — Docker Compose"]
+        caddy["<b>Caddy</b><br/>Automatic TLS + load balancing"]
 
-        subgraph apis["Tiến trình API — KHÔNG giữ trạng thái"]
+        subgraph apis["API processes — STATELESS"]
             api1["API #1<br/>NestJS"]
             api2["API #2"]
             api3["API #3"]
         end
 
-        worker["<b>Worker × 1</b><br/>BullMQ + Cron<br/>đối soát · email · dọn dẹp"]
+        worker["<b>Worker × 1</b><br/>BullMQ + Cron<br/>reconciliation · email · cleanup"]
 
-        mysql[("<b>MySQL 8</b><br/>nguồn sự thật")]
+        mysql[("<b>MySQL 8</b><br/>source of truth")]
         redis[("<b>Redis 7</b><br/>cache · throttle<br/>socket adapter · queue")]
     end
 
-    r2["<b>Cloudflare R2</b><br/>ảnh sản phẩm"]
+    r2["<b>Cloudflare R2</b><br/>product images"]
 
     web -->|"HTTPS /api/v1"| caddy
     app -->|"HTTPS /api/v1"| caddy
@@ -129,8 +141,8 @@ flowchart TB
     worker --> redis
 
     api1 -.->|"upload"| r2
-    web -.->|"đọc ảnh"| r2
-    app -.->|"đọc ảnh"| r2
+    web -.->|"read images"| r2
+    app -.->|"read images"| r2
 
     style redis fill:#dc382d,color:#fff
     style mysql fill:#00758f,color:#fff
@@ -188,11 +200,11 @@ Nhờ vậy `Money` trở thành context **tách ra thành service riêng dễ n
 flowchart LR
     escrow["escrows.service.ts"]
 
-    userRepo[("bảng users")]
+    userRepo[("users table")]
     ledger["LedgerService.post()"]
 
-    escrow -.->|"❌ CẤM — eslint-plugin-boundaries chặn<br/>userRepository.increment('balance')"| userRepo
-    escrow ==>|"✅ ĐÚNG<br/>1 transaction · có idempotency key · có ghi sổ"| ledger
+    escrow -.->|"FORBIDDEN — blocked by eslint-plugin-boundaries<br/>userRepository.increment('balance')"| userRepo
+    escrow ==>|"CORRECT<br/>one transaction · idempotency key · audit trail"| ledger
     ledger --> userRepo
 
     style escrow fill:#ffe0e0
@@ -208,14 +220,14 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph internet["Internet"]
-        users["Người dùng"]
+        users["Users"]
         gh["GitHub Actions"]
         cf["Cloudflare R2"]
     end
 
     subgraph vps["VPS — Ubuntu, Docker Compose"]
         direction TB
-        caddy["caddy:2<br/>:80 :443<br/>TLS tự động"]
+        caddy["caddy:2<br/>:80 :443<br/>automatic TLS"]
 
         api1["zoldify-api<br/>mem_limit 512M"]
         api2["zoldify-api<br/>mem_limit 512M"]
@@ -225,7 +237,7 @@ flowchart TB
         mysql[("mysql:8<br/>max_connections 200<br/>volume: mysql_data")]
         redis[("redis:7<br/>volume: redis_data")]
 
-        cron["cron trên host<br/>mysqldump hằng ngày"]
+        cron["cron on host<br/>daily mysqldump"]
     end
 
     users -->|"HTTPS"| caddy
@@ -244,7 +256,7 @@ flowchart TB
 
     gh -->|"SSH: compose pull && up -d"| vps
     api1 -.-> cf
-    cron -->|"backup nén, giữ 14 ngày"| cf
+    cron -->|"compressed backup, 14-day retention"| cf
 
     style caddy fill:#1f88c0,color:#fff
 ```
@@ -264,18 +276,18 @@ flowchart TB
 
 ```mermaid
 erDiagram
-    users ||--o{ ledger_accounts : "sở hữu nhiều tài khoản"
-    ledger_accounts ||--o{ ledger_entries : "có nhiều bút toán"
-    ledger_transactions ||--|{ ledger_entries : "gồm ≥2 bút toán, tổng = 0"
-    orders ||--o{ escrows : "sinh ra"
-    orders ||--o{ payments : "được trả bởi"
-    users ||--o{ withdrawals : "yêu cầu"
+    users ||--o{ ledger_accounts : "owns several accounts"
+    ledger_accounts ||--o{ ledger_entries : "records many entries"
+    ledger_transactions ||--|{ ledger_entries : "holds 2 or more entries summing to zero"
+    orders ||--o{ escrows : "splits into"
+    orders ||--o{ payments : "is paid by"
+    users ||--o{ withdrawals : "requests"
 
     users {
         int id PK
         varchar email UK
         enum role
-        decimal balance "❌ XOÁ — nguồn sự thật thứ hai"
+        decimal balance "TO BE DROPPED — second source of truth"
     }
 
     ledger_accounts {
@@ -283,15 +295,15 @@ erDiagram
         enum owner_type "user | platform | external"
         bigint owner_id FK
         enum purpose "available | escrow_hold | withdrawal_pending | revenue | gateway_clearing | bank_external"
-        bigint balance "ĐỒNG, không phải decimal"
+        bigint balance "dong as BIGINT, not decimal"
         int version
     }
 
     ledger_transactions {
         bigint id PK
         varchar type
-        varchar idempotency_key UK "🔒 lá chắn chống lặp"
-        varchar reference_type "chuỗi rời — Money không phụ thuộc Ordering"
+        varchar idempotency_key UK "the guard against double processing"
+        varchar reference_type "free string — Money does not depend on Ordering"
         bigint reference_id
         json metadata
     }
@@ -300,9 +312,9 @@ erDiagram
         bigint id PK
         bigint transaction_id FK
         bigint account_id FK
-        bigint amount "âm = ra, dương = vào"
+        bigint amount "negative = out, positive = in"
         bigint balance_after
-        timestamp created_at "APPEND-ONLY, không UPDATE/DELETE"
+        timestamp created_at "APPEND-ONLY, never UPDATE or DELETE"
     }
 
     escrows {
@@ -343,14 +355,14 @@ erDiagram
 
 ```mermaid
 erDiagram
-    users ||--o{ products : "bán"
-    users ||--o{ orders : "đặt"
-    users ||--o{ addresses : "có"
-    categories ||--o{ products : "phân loại"
-    products ||--o{ order_items : "xuất hiện trong"
-    orders ||--|{ order_items : "gồm"
-    orders ||--o{ escrows : "tách theo người bán"
-    users ||--o{ carts : "giữ"
+    users ||--o{ products : "sells"
+    users ||--o{ orders : "places"
+    users ||--o{ addresses : "has"
+    categories ||--o{ products : "classifies"
+    products ||--o{ order_items : "appears in"
+    orders ||--|{ order_items : "contains"
+    orders ||--o{ escrows : "splits per seller"
+    users ||--o{ carts : "holds"
     products ||--o{ carts : ""
 
     products {
@@ -395,21 +407,21 @@ Từng đồng đi qua Zoldify di chuyển theo đúng sơ đồ này. Không c�
 
 ```mermaid
 flowchart LR
-    gateway["gateway_clearing<br/><i>tiền từ PayOS</i>"]
-    buyerAcc["buyer.available<br/><i>ví người mua</i>"]
-    hold["escrow_hold<br/><i>Zoldify giữ hộ</i>"]
-    sellerAcc["seller.available<br/><i>ví người bán</i>"]
-    revenue["platform.revenue<br/><i>doanh thu Zoldify</i>"]
-    pending["withdrawal_pending<br/><i>đang chờ chi</i>"]
-    bank["bank_external<br/><i>đã ra khỏi hệ thống</i>"]
+    gateway["gateway_clearing<br/><i>money arriving from PayOS</i>"]
+    buyerAcc["buyer.available<br/><i>buyer wallet</i>"]
+    hold["escrow_hold<br/><i>held by Zoldify</i>"]
+    sellerAcc["seller.available<br/><i>seller wallet</i>"]
+    revenue["platform.revenue<br/><i>Zoldify revenue</i>"]
+    pending["withdrawal_pending<br/><i>awaiting payout</i>"]
+    bank["bank_external<br/><i>left the system</i>"]
 
-    gateway -->|"1 · nạp ví"| buyerAcc
-    buyerAcc -->|"2 · đặt hàng"| hold
-    hold -->|"3a · giao thành công (95%)"| sellerAcc
-    hold -->|"3b · phí nền tảng (5%)"| revenue
-    hold -->|"4 · huỷ đơn, hoàn tiền"| buyerAcc
-    sellerAcc -->|"5 · admin duyệt rút"| pending
-    pending -->|"6 · đã chuyển khoản"| bank
+    gateway -->|"1 · wallet top-up"| buyerAcc
+    buyerAcc -->|"2 · place order"| hold
+    hold -->|"3a · delivered (95%)"| sellerAcc
+    hold -->|"3b · platform fee (5%)"| revenue
+    hold -->|"4 · order cancelled, refund"| buyerAcc
+    sellerAcc -->|"5 · admin approves withdrawal"| pending
+    pending -->|"6 · bank transfer completed"| bank
 
     style hold fill:#ffd700
     style revenue fill:#90ee90
@@ -431,38 +443,38 @@ Lưu ý bước 5 và 6 tách rời: khoảng giữa hai bước là lúc admin 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor B as Người mua
+    actor B as Buyer
     participant APP as App / Web
     participant API as API (Ordering)
     participant L as LedgerService
     participant DB as MySQL
     participant P as PayOS
 
-    B->>APP: Bấm "Đặt hàng"
+    B->>APP: Press "Place order"
     APP->>API: POST /api/v1/orders
 
     rect rgb(230, 240, 255)
-        note over API,DB: MỘT transaction duy nhất
-        API->>DB: Kiểm tồn kho, khoá sản phẩm
+        note over API,DB: ONE single transaction
+        API->>DB: Check stock, lock product rows
         API->>DB: INSERT orders + order_items
         API->>L: post(escrow_hold, key=order_create:123)
-        L->>DB: buyer.available −500k · escrow_hold +500k
+        L->>DB: buyer.available -500k · escrow_hold +500k
     end
 
-    alt Ví đủ tiền
-        API-->>APP: 201 · đã ký quỹ
-        APP-->>B: Đặt hàng thành công
-    else Ví không đủ
-        API->>P: Tạo link thanh toán
+    alt Wallet has enough balance
+        API-->>APP: 201 · escrow opened
+        APP-->>B: Order placed
+    else Wallet short of funds
+        API->>P: Create payment link
         P-->>API: checkout_url
-        API-->>APP: 201 · cần thanh toán
-        APP->>B: Mở WebView PayOS
-        B->>P: Chuyển khoản / quét QR
-        P->>API: 🔔 Webhook (xem sơ đồ 9)
+        API-->>APP: 201 · payment required
+        APP->>B: Open PayOS WebView
+        B->>P: Bank transfer / scan QR
+        P->>API: Webhook (see diagram 9)
         B->>APP: deep link zoldify://payment/return
         APP->>API: GET /orders/123
-        note right of APP: Chỉ để hiển thị.<br/>KHÔNG tin tham số<br/>trên URL để cộng tiền.
-        API-->>APP: trạng thái thật từ DB
+        note right of APP: Display only.<br/>NEVER trust URL parameters<br/>to credit money.
+        API-->>APP: real status from the database
     end
 ```
 
@@ -483,25 +495,27 @@ sequenceDiagram
     participant DB as MySQL
 
     P->>API: POST /api/v1/payos/webhook
-    API->>API: Xác minh chữ ký
-    alt Chữ ký sai
-        API-->>P: 200 (nuốt lặng, ghi log cảnh báo)
+    API->>API: Verify signature
+    alt Invalid signature
+        API-->>P: Reject, write a warning to the log
     end
 
     rect rgb(230, 255, 230)
-        note over API,DB: MỘT transaction — đây chính là điểm sửa
+        note over API,DB: ONE transaction — this is the fix
         API->>L: post(key="payos:1234:link_abc")
         L->>DB: BEGIN
-        L->>DB: INSERT ledger_transactions (idempotency_key UNIQUE)
+        L->>DB: SELECT ledger_transactions WHERE idempotency_key
 
-        alt Key đã tồn tại (PayOS gửi lại)
-            DB-->>L: ER_DUP_ENTRY
-            L->>DB: ROLLBACK
-            L-->>API: Trả về giao dịch cũ, không cộng thêm
-        else Key mới
-            L->>DB: SELECT ... FOR UPDATE (theo thứ tự account_id)
-            L->>DB: INSERT entries: gateway −500k · buyer.available +500k
+        alt Key already exists (PayOS resent)
+            DB-->>L: row found
+            L-->>API: Return the existing transaction, credit nothing
+        else New key
+            L->>DB: INSERT ledger_transactions (idempotency_key UNIQUE)
+            L->>DB: SELECT ... FOR UPDATE (ordered by account_id)
+            L->>DB: INSERT entries: gateway -500k · escrow_hold +500k
             L->>DB: UPDATE ledger_accounts.balance
+            L->>DB: UPDATE orders SET is_paid, status
+            L->>DB: INSERT escrows (one row per seller)
             L->>DB: COMMIT
         end
     end
@@ -513,16 +527,16 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    subgraph before["❌ HIỆN TẠI — payos.service.ts:328"]
+    subgraph before["BEFORE — five separate saves"]
         direction TB
-        b1["INSERT webhook_log"] --> b2["💥 tiến trình chết ở đây"] --> b3["cộng tiền vào ví"]
-        b4["PayOS gửi lại → log đã có → BỎ QUA<br/><b>Tiền người dùng đã trả nhưng không bao giờ vào ví</b>"]
+        b1["INSERT webhook_log — commits immediately"] --> b2["process dies here"] --> b3["credit the wallet"]
+        b4["PayOS resends, the log row exists, so it is SKIPPED<br/><b>The customer paid but the money never arrives</b>"]
     end
 
-    subgraph after["✅ SAU KHI SỬA"]
+    subgraph after["AFTER — one transaction"]
         direction TB
-        a1["BEGIN"] --> a2["INSERT ledger_transactions"] --> a3["💥 chết ở đây → tự động ROLLBACK"] --> a4["COMMIT"]
-        a5["PayOS gửi lại → không có bản ghi nào → xử lý bình thường ✓"]
+        a1["BEGIN"] --> a2["INSERT ledger_transactions"] --> a3["process dies here, automatic ROLLBACK"] --> a4["COMMIT"]
+        a5["PayOS resends, no record exists, processed normally"]
     end
 
     style before fill:#ffe0e0
@@ -538,32 +552,32 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     autonumber
-    actor B as Người mua
+    actor B as Buyer
     participant API as API (Ordering)
-    participant G as Guard phân quyền
+    participant G as Authorization policy
     participant M as Money
     participant L as LedgerService
     participant N as Notifications
 
-    B->>API: PATCH /orders/123/status → delivered
+    B->>API: PATCH /orders/123/status to delivered
 
-    rect rgb(255, 235, 235)
-        API->>G: Người gọi có quyền không?
-        note right of G: ⚠️ HIỆN TẠI KHÔNG CÓ BƯỚC NÀY.<br/>Ai xem được đơn cũng đặt được delivered<br/>→ tự nhả tiền cho chính mình.
-        G-->>API: Chỉ người mua của đơn này,<br/>hoặc webhook GHN, hoặc admin
+    rect rgb(230, 255, 230)
+        API->>G: Is the caller allowed to do this?
+        note right of G: order-status.policy.ts<br/>Whoever gains must not press the button:<br/>the seller cannot set delivered,<br/>the buyer cannot set refunded.
+        G-->>API: Buyer of this order, GHN webhook, or admin<br/>and only from status shipping
     end
 
     API->>M: releaseEscrows(orderId=123)
 
-    loop mỗi escrow đang HOLDING
+    loop each escrow still HOLDING
         M->>L: post(key="escrow_release:{id}")
-        note right of L: Gọi lại 100 lần cũng chỉ<br/>có hiệu lực đúng 1 lần
-        L->>L: escrow_hold −500k<br/>seller.available +475k<br/>platform.revenue +25k
+        note right of L: Calling it 100 times<br/>takes effect exactly once
+        L->>L: escrow_hold -500k<br/>seller.available +475k<br/>platform.revenue +25k
         M->>M: escrow.status = RELEASED
     end
 
-    M->>N: Thông báo cho người bán
-    N-->>API: đã gửi push + email
+    M->>N: Notify the seller
+    N-->>API: push and email sent
     API-->>B: 200 OK
 ```
 
@@ -581,13 +595,13 @@ Không có phần này thì app đăng xuất người dùng mỗi 15 phút.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant S1 as Màn hình A
-    participant S2 as Màn hình B
-    participant S3 as Màn hình C
+    participant S1 as Screen A
+    participant S2 as Screen B
+    participant S3 as Screen C
     participant H as httpClient
     participant API as API
 
-    par Mở app, 3 request bắn cùng lúc
+    par App opens, three requests fire at once
         S1->>H: GET /products
     and
         S2->>H: GET /orders
@@ -595,22 +609,22 @@ sequenceDiagram
         S3->>H: GET /notifications
     end
 
-    H->>API: 3 request kèm access token đã hết hạn
-    API-->>H: 401 × 3
+    H->>API: Three requests with an expired access token
+    API-->>H: 401 three times
 
     rect rgb(255, 250, 220)
-        note over H: SINGLE-FLIGHT: chỉ MỘT lần refresh
-        H->>H: Đã có refresh đang chạy chưa?
-        H->>API: POST /auth/refresh (đúng 1 lần)
-        API-->>H: access token mới
-        H->>H: Đánh thức 3 request đang xếp hàng
+        note over H: SINGLE-FLIGHT: refresh only ONCE
+        H->>H: Is a refresh already in progress?
+        H->>API: POST /auth/refresh (exactly once)
+        API-->>H: new access token
+        H->>H: Wake the three queued requests
     end
 
-    H->>API: Thử lại cả 3 với token mới
-    API-->>H: 200 × 3
-    H-->>S1: dữ liệu
-    H-->>S2: dữ liệu
-    H-->>S3: dữ liệu
+    H->>API: Retry all three with the new token
+    API-->>H: 200 three times
+    H-->>S1: data
+    H-->>S2: data
+    H-->>S3: data
 ```
 
 Không có single-flight thì 3 request sẽ gọi 3 lần refresh. Backend có `token_version` nên lần refresh sau **vô hiệu hoá** token của lần trước — kết quả là người dùng bị đăng xuất đúng vào lúc mở app. Triệu chứng rất khó lần ra vì nó chỉ xảy ra khi nhiều request đồng thời.
@@ -621,30 +635,30 @@ Không có single-flight thì 3 request sẽ gọi 3 lần refresh. Backend có 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending: người mua đặt hàng
+    [*] --> pending: buyer places the order
 
-    pending --> confirmed: người bán xác nhận
-    pending --> cancelled: huỷ trước khi xác nhận
+    pending --> confirmed: seller accepts
+    pending --> cancelled: cancelled before acceptance
 
-    confirmed --> processing: chuẩn bị hàng
-    processing --> shipping: tạo vận đơn GHN
-    shipping --> delivered: xác nhận đã nhận
+    confirmed --> processing: preparing the goods
+    processing --> shipping: GHN shipment created
+    shipping --> delivered: receipt confirmed
 
-    delivered --> [*]: 💰 GIẢI NGÂN escrow
+    delivered --> [*]: RELEASE escrow
 
-    confirmed --> refunded: huỷ sau khi xác nhận
+    confirmed --> refunded: cancelled after acceptance
     processing --> refunded
-    shipping --> refunded: giao thất bại
+    shipping --> refunded: delivery failed
 
-    refunded --> [*]: 💰 HOÀN TIỀN escrow
-    cancelled --> [*]: 💰 HOÀN TIỀN escrow
+    refunded --> [*]: REFUND escrow
+    cancelled --> [*]: REFUND escrow
 
     note right of delivered
-        Ai được phép chuyển sang trạng thái này?
-        Hiện tại: BẤT KỲ AI ← lỗ hổng
-        Phải là: người mua của đơn
-                 hoặc webhook GHN
-                 hoặc admin
+        Who may move an order here?
+        Only the buyer of this order,
+        the GHN webhook, or an admin,
+        and only from status shipping.
+        Enforced by order-status.policy.ts
     end note
 ```
 
@@ -656,26 +670,26 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> holding: đặt hàng, tiền vào giữ hộ
+    [*] --> holding: order paid, money held
 
-    holding --> released: đơn delivered
-    holding --> refunded: đơn cancelled / refunded
-    holding --> cancelled: đơn hết hạn thanh toán
+    holding --> released: order delivered
+    holding --> refunded: order cancelled or refunded
+    holding --> cancelled: payment window expired
 
     released --> [*]
     refunded --> [*]
     cancelled --> [*]
 
     note left of holding
-        Số dư escrow_hold phải LUÔN khớp
-        tài khoản ngân hàng thật.
-        Job đối soát kiểm mỗi giờ.
+        The escrow_hold balance must ALWAYS
+        match the real bank account.
+        A reconciliation job checks it hourly.
     end note
 
     note right of released
-        Trạng thái CUỐI. Không quay lại.
-        Muốn đảo thì ghi giao dịch ngược,
-        không sửa bản ghi cũ.
+        TERMINAL state. No way back.
+        To reverse it, post an opposite
+        transaction; never edit the old row.
     end note
 ```
 
@@ -687,30 +701,30 @@ Dành cho báo cáo đồ án.
 
 ```mermaid
 flowchart LR
-    buyer(("Người<br/>mua"))
-    seller(("Người<br/>bán"))
+    buyer(("Buyer"))
+    seller(("Seller"))
     admin(("Admin"))
     payos(("PayOS"))
     ghn(("GHN"))
 
-    subgraph sys["Hệ thống Zoldify"]
-        uc1["Đăng ký / Đăng nhập"]
-        uc2["Tìm kiếm sản phẩm"]
-        uc3["Quản lý giỏ hàng"]
-        uc4["Đặt hàng"]
-        uc5["Nạp tiền vào ví"]
-        uc6["Theo dõi đơn hàng"]
-        uc7["Xác nhận đã nhận hàng"]
-        uc8["Nhắn tin"]
-        uc9["Đăng bán sản phẩm"]
-        uc10["Quản lý đơn bán"]
-        uc11["Tạo vận đơn"]
-        uc12["Xem ví và giao dịch"]
-        uc13["Yêu cầu rút tiền"]
-        uc14["Duyệt rút tiền"]
-        uc15["Đối soát sổ cái"]
-        uc16["Quản lý người dùng"]
-        uc17["Xử lý webhook thanh toán"]
+    subgraph sys["Zoldify system"]
+        uc1["Register / Log in"]
+        uc2["Search products"]
+        uc3["Manage cart"]
+        uc4["Place order"]
+        uc5["Top up wallet"]
+        uc6["Track order"]
+        uc7["Confirm delivery received"]
+        uc8["Send messages"]
+        uc9["List an item for sale"]
+        uc10["Manage sales orders"]
+        uc11["Create shipment"]
+        uc12["View wallet and transactions"]
+        uc13["Request withdrawal"]
+        uc14["Approve withdrawal"]
+        uc15["Reconcile the ledger"]
+        uc16["Manage users"]
+        uc17["Process payment webhook"]
     end
 
     buyer --- uc1
@@ -746,53 +760,53 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    start(["Mở app"]) --> check{"Có token<br/>hợp lệ?"}
-    check -->|không| auth
-    check -->|có| tabs
+    start(["App launch"]) --> check{"Valid token?"}
+    check -->|no| auth
+    check -->|yes| tabs
 
-    subgraph auth["(auth) — 4 màn"]
-        login["đăng nhập"] --- register["đăng ký"]
-        forgot["quên mật khẩu"] --- verify["xác thực email"]
+    subgraph auth["(auth) — 4 screens"]
+        login["log in"] --- register["register"]
+        forgot["forgot password"] --- verify["verify email"]
     end
 
     auth --> tabs
 
-    subgraph tabs["(tabs) — 5 màn"]
-        home["🏠 trang chủ"]
-        search["🔍 tìm kiếm"]
-        myorders["📦 đơn mua"]
-        chatlist["💬 chat"]
-        profile["👤 hồ sơ"]
+    subgraph tabs["(tabs) — 5 screens"]
+        home["home"]
+        search["search"]
+        myorders["my orders"]
+        chatlist["chat"]
+        profile["profile"]
     end
 
-    home --> product["chi tiết sản phẩm"]
+    home --> product["product detail"]
     search --> product
-    product --> shop["trang người bán"]
-    product --> cart["🛒 giỏ hàng"]
-    cart --> checkout["thanh toán"]
-    checkout --> payos["WebView PayOS"]
+    product --> shop["seller shop page"]
+    product --> cart["cart"]
+    cart --> checkout["checkout"]
+    checkout --> payos["PayOS WebView"]
     payos -.->|"deep link"| ret["payment/return"]
     ret --> orderDetail
 
-    myorders --> orderDetail["chi tiết đơn"]
-    orderDetail --> tracking["theo dõi GHN"]
-    chatlist --> room["phòng chat"]
+    myorders --> orderDetail["order detail"]
+    orderDetail --> tracking["GHN tracking"]
+    chatlist --> room["chat room"]
 
     profile --> sellerHub
 
-    subgraph sellerHub["seller/ — 9 màn"]
-        dash["tổng quan"]
-        prods["sản phẩm của tôi"]
-        newProd["đăng bán 📷"]
-        editProd["sửa tin"]
-        sorders["đơn bán"]
-        sorderDetail["xử lý đơn"]
-        wallet["💰 ví"]
-        withdraw["rút tiền"]
-        txns["lịch sử giao dịch"]
+    subgraph sellerHub["seller/ — 9 screens"]
+        dash["dashboard"]
+        prods["my products"]
+        newProd["list an item"]
+        editProd["edit listing"]
+        sorders["sales orders"]
+        sorderDetail["fulfil order"]
+        wallet["wallet"]
+        withdraw["withdraw"]
+        txns["transaction history"]
     end
 
-    profile --> settings["cài đặt · địa chỉ"]
+    profile --> settings["settings and addresses"]
 
     style sellerHub fill:#fff4e0
     style payos fill:#f6d365
@@ -806,28 +820,28 @@ Khối màu cam là phần người bán — **đúng một nửa khối lượn
 
 ```mermaid
 flowchart TB
-    dev["Lập trình viên<br/>push nhánh feature"] --> pr["Mở Pull Request"]
+    dev["Developer<br/>pushes a feature branch"] --> pr["Open Pull Request"]
 
-    pr --> ci{"CI kiểm tra"}
+    pr --> ci{"CI checks"}
 
     ci --> c1["lint + typecheck"]
-    ci --> c2["eslint-plugin-boundaries<br/><i>chặn vi phạm ranh giới context</i>"]
-    ci --> c3["test<br/><i>bắt buộc phủ module money</i>"]
+    ci --> c2["eslint-plugin-boundaries<br/><i>blocks context boundary violations</i>"]
+    ci --> c3["test<br/><i>money module must be covered</i>"]
     ci --> c4["build"]
-    ci --> c5["sinh lại openapi.json<br/><i>khác bản đã commit → fail</i>"]
+    ci --> c5["regenerate openapi.json<br/><i>differs from the commit, fail</i>"]
 
-    c1 & c2 & c3 & c4 & c5 --> pass{"Tất cả xanh?"}
-    pass -->|không| dev
-    pass -->|có| review["Review bởi 1 người khác"]
-    review --> merge["Merge vào develop"]
+    c1 & c2 & c3 & c4 & c5 --> pass{"All green?"}
+    pass -->|no| dev
+    pass -->|yes| review["Reviewed by another member"]
+    review --> merge["Merge into develop"]
 
-    merge --> main["Merge develop → main"]
-    main --> build["Build Docker image → GHCR"]
-    build --> deploy["SSH vào VPS<br/>compose pull && up -d"]
-    deploy --> migrate["Chạy migration<br/><i>bước riêng, có đường lùi</i>"]
+    merge --> main["Merge develop into main"]
+    main --> build["Build Docker image, push to GHCR"]
+    build --> deploy["SSH to the VPS<br/>compose pull and up -d"]
+    deploy --> migrate["Run migrations<br/><i>separate step with a rollback path</i>"]
     migrate --> health{"/api/v1/health"}
-    health -->|lỗi| rollback["Quay về image trước"]
-    health -->|ok| done["✅ Xong"]
+    health -->|fails| rollback["Roll back to the previous image"]
+    health -->|ok| done["Done"]
 
     style c2 fill:#ffe8cc
     style c5 fill:#ffe8cc
