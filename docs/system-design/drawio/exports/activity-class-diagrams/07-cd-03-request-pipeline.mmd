@@ -1,0 +1,67 @@
+classDiagram
+    direction TB
+
+    class JwtAuthGuard {
+        <<guard>>
+        +canActivate(ctx) bool
+        -verifyToken(token) IUser
+        -checkTokenVersion(user) bool
+    }
+
+    class RolesGuard {
+        <<guard>>
+        +canActivate(ctx) bool
+        -matchRoles(required, userRole) bool
+    }
+
+    class ValidationPipe {
+        <<pipe>>
+        +transform(value, meta) any
+    }
+
+    class Controller {
+        <<controller>>
+        +handler(dto, user) Promise
+    }
+
+    class Service {
+        <<service>>
+        +businessMethod(dto, user) Promise
+    }
+
+    class Repository {
+        <<typeorm>>
+        +find(options) Entity[]
+        +save(entity) Entity
+        +createQueryBuilder(alias) QueryBuilder
+    }
+
+    class TransformInterceptor {
+        <<interceptor>>
+        +intercept(ctx, next) Observable
+        -wrap(data) Envelope
+    }
+
+    class AllExceptionsFilter {
+        <<filter>>
+        +catch(exception, host) void
+    }
+
+    class Envelope {
+        +int statusCode
+        +string message
+        +T data
+    }
+
+    JwtAuthGuard --> RolesGuard : then
+    RolesGuard --> ValidationPipe : then
+    ValidationPipe --> Controller : validated dto
+    Controller --> Service : delegates
+    Service --> Repository : queries
+    Service --> Controller : returns plain object
+    Controller --> TransformInterceptor : return value
+    TransformInterceptor --> Envelope : wraps into
+    AllExceptionsFilter ..> Envelope : errors use same shape
+
+    note for Controller "Controllers hold no business logic — they validate, delegate, return"
+    note for TransformInterceptor "Every response has the same shape — only sitemap.xml opts out via RawResponse"

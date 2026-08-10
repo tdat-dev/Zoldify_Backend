@@ -1,0 +1,55 @@
+flowchart TD
+    Start([Start]) --> S1["Seller enters amount + bank details"]
+
+    subgraph Seller["Seller"]
+        S1
+    end
+
+    subgraph Req["Backend — WithdrawalsService.create"]
+        R1["POST /api/v1/withdrawals"]
+        R2{"amount <= available<br/>balance?"}
+        R3{"amount >= minimum<br/>from settings?"}
+        R4["INSERT withdrawals — status = pending"]
+    end
+
+    subgraph Admin["Admin"]
+        M1["Review request list"]
+        M2{"Approve?"}
+        M3["Transfer money in banking app"]
+        M4["Press Mark as transferred"]
+    end
+
+    subgraph Step1["Step 1 — approve — LedgerService.post"]
+        A1["key = withdrawal_approve:id"]
+        A2["Entries:<br/>seller/available -X<br/>platform/withdrawal_pending +X"]
+        A3["UPDATE withdrawals SET status = approved"]
+    end
+
+    subgraph Step2["Step 2 — complete — LedgerService.post"]
+        B1["key = withdrawal_complete:id"]
+        B2["Entries:<br/>platform/withdrawal_pending -X<br/>external/bank_external +X"]
+        B3["UPDATE withdrawals SET status = completed"]
+    end
+
+    subgraph Rej["Reject path"]
+        J1["UPDATE withdrawals SET status = rejected"]
+        J2["No ledger entry — money never moved"]
+    end
+
+    subgraph ErrW["Error responses"]
+        Y1["400 — Insufficient balance"]
+        Y2["400 — Below minimum amount"]
+    end
+
+    S1 --> R1 --> R2
+    R2 -- no --> Y1 --> End([End])
+    R2 -- yes --> R3
+    R3 -- no --> Y2 --> End
+    R3 -- yes --> R4 --> M1 --> M2
+    M2 -- no --> J1 --> J2 --> End
+    M2 -- yes --> A1 --> A2 --> A3
+    A3 --> M3 --> M4
+    M4 --> B1 --> B2 --> B3 --> End
+
+    classDef todo fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    class A1,A2,A3,B1,B2,B3,R3 todo

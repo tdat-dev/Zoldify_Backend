@@ -1,0 +1,60 @@
+flowchart TD
+    Start([Start]) --> C1["Enter full name and email"]
+
+    subgraph Client["Client — Mobile app / Web"]
+        C1
+        C4["Enter OTP and password"]
+        C7["Redirect to Login"]
+    end
+
+    subgraph API["Backend — AuthService"]
+        A1["POST /api/v1/auth/register/send-otp"]
+        D1{"Email already<br/>registered?"}
+        A2["Generate 6-digit OTP"]
+        A3["Store OTP in cache<br/>key register_otp_email, TTL 300s"]
+        A4["Send OTP email via SMTP"]
+        D2{"Mail delivered?"}
+        A5["POST /api/v1/auth/register/verify-otp"]
+        D3{"OTP found<br/>in cache?"}
+        D4{"OTP matches?"}
+        A6["Hash password with bcrypt"]
+        A7["INSERT users<br/>role = buyer, email_verified = true"]
+        A8["Delete OTP from cache"]
+        A9["Create ledger account<br/>user / available"]
+    end
+
+    subgraph Err["Error responses"]
+        E1["400 — Email already registered"]
+        E2["400 — Cannot send email"]
+        E3["400 — OTP expired"]
+        E4["400 — Wrong OTP"]
+    end
+
+    C1 --> A1
+    A1 --> D1
+    D1 -- yes --> E1
+    D1 -- no --> A2
+    A2 --> A3
+    A3 --> A4
+    A4 --> D2
+    D2 -- no --> E2
+    D2 -- yes --> C4
+    C4 --> A5
+    A5 --> D3
+    D3 -- no --> E3
+    D3 -- yes --> D4
+    D4 -- no --> E4
+    D4 -- yes --> A6
+    A6 --> A7
+    A7 --> A8
+    A8 --> A9
+    A9 --> C7
+    C7 --> End([End])
+
+    E1 --> End
+    E2 --> End
+    E3 --> End
+    E4 --> End
+
+    classDef todo fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    class A9 todo

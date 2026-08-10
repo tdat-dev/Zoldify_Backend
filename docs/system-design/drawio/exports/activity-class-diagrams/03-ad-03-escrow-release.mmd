@@ -1,0 +1,71 @@
+flowchart TD
+    Start([Start]) --> T1{"What ends<br/>the holding period?"}
+
+    subgraph Trigger["Trigger — three ways in"]
+        T1
+        T2["Buyer presses<br/>Confirm received"]
+        T3["GHN webhook<br/>status = delivered"]
+        T4["Cron job — 3 days after<br/>delivery, no dispute"]
+    end
+
+    subgraph Guard["Backend — authorization"]
+        G1["PATCH /api/v1/orders/:id/status"]
+        G2{"Caller is buyer<br/>of this order,<br/>or admin?"}
+        G3{"Transition<br/>shipping to delivered<br/>allowed?"}
+    end
+
+    subgraph Ledger["Backend — LedgerService.post"]
+        L1["BEGIN TRANSACTION"]
+        L2["INSERT ledger_transactions<br/>key = escrow_release:escrowId"]
+        D1{"Duplicate<br/>key?"}
+        L3["SELECT ledger_accounts FOR UPDATE<br/>ordered by id ASC"]
+        L4["Read platform_fee_percent<br/>from settings"]
+        L5["Entries:<br/>escrow_hold -X<br/>seller/available +X-fee<br/>platform/revenue +fee"]
+        D2{"SUM entries = 0<br/>and no user balance < 0?"}
+        L6["INSERT ledger_entries<br/>UPDATE balances"]
+        L7["UPDATE escrows SET status = released"]
+        L8["UPDATE orders SET status = delivered"]
+        L9["COMMIT"]
+    end
+
+    subgraph After["After commit"]
+        F1["Notify seller — money available"]
+        F2["Notify buyer — order complete"]
+    end
+
+    subgraph ErrL["Error handling"]
+        X1["403 — Not your order"]
+        X2["400 — Illegal status transition"]
+        X3["Return existing transaction<br/>no double credit"]
+        X4["ROLLBACK — ledger unchanged"]
+    end
+
+    T1 --> T2
+    T1 --> T3
+    T1 --> T4
+    T2 --> G1
+    T3 --> G1
+    T4 --> G1
+
+    G1 --> G2
+    G2 -- no --> X1 --> End([End])
+    G2 -- yes --> G3
+    G3 -- no --> X2 --> End
+    G3 -- yes --> L1
+
+    L1 --> L2 --> D1
+    D1 -- yes --> X3 --> End
+    D1 -- no --> L3 --> L4 --> L5 --> D2
+    D2 -- no --> X4 --> End
+    D2 -- yes --> L6 --> L7 --> L8 --> L9
+    L9 --> Fork(( ))
+    Fork --> F1
+    Fork --> F2
+    F1 --> Join(( ))
+    F2 --> Join
+    Join --> End
+
+    classDef todo fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef done fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    class T2,T3,T4,L4,L5,L7,L8 todo
+    class L1,L2,L3,L6,L9,G2,G3 done

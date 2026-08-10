@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    participant P as PayOS
+    participant API as API (Money)
+    participant L as LedgerService
+    participant DB as MySQL
+
+    P->>API: POST /api/v1/payos/webhook
+    API->>API: Verify signature
+    alt Invalid signature
+        API-->>P: Reject, write a warning to the log
+    end
+
+    rect rgb(230, 255, 230)
+        note over API,DB: ONE transaction — this is the fix
+        API->>L: post(key="payos:1234:link_abc")
+        L->>DB: BEGIN
+        L->>DB: SELECT ledger_transactions WHERE idempotency_key
+
+        alt Key already exists (PayOS resent)
+            DB-->>L: row found
+            L-->>API: Return the existing transaction, credit nothing
+        else New key
+            L->>DB: INSERT ledger_transactions (idempotency_key UNIQUE)
+            L->>DB: SELECT ... FOR UPDATE (ordered by account_id)
+            L->>DB: INSERT entries: gateway -500k · escrow_hold +500k
+            L->>DB: UPDATE ledger_accounts.balance
+            L->>DB: UPDATE orders SET is_paid, status
+            L->>DB: INSERT escrows (one row per seller)
+            L->>DB: COMMIT
+        end
+    end
+
+    API-->>P: 200 OK

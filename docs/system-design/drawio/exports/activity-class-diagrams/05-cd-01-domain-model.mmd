@@ -1,0 +1,161 @@
+classDiagram
+    direction LR
+
+    class User {
+        +int id
+        +string full_name
+        +string email
+        -string password
+        +string phone_number
+        +UserRole role
+        +bool email_verified
+        +bool is_locked
+        +int token_version
+        +isSeller() bool
+        +canModerate() bool
+    }
+
+    class Product {
+        +int id
+        +string name
+        +string slug
+        +decimal price
+        +int stock
+        +string condition
+        +int sold_count
+        +ProductStatus status
+        +isAvailable() bool
+        +decreaseStock(qty) void
+    }
+
+    class Category {
+        +int id
+        +string name
+        +string slug
+    }
+
+    class Cart {
+        +int id
+        +int quantity
+    }
+
+    class Order {
+        +int id
+        +string order_code
+        +decimal total_amount
+        +decimal shipping_fee
+        +decimal final_amount
+        +OrderStatus status
+        +PaymentMethod payment_method
+        +bool is_paid
+        +string tracking_code
+        +canTransitionTo(next) bool
+        +isCancellable() bool
+    }
+
+    class OrderItem {
+        +int id
+        +string product_name
+        +decimal price
+        +int quantity
+        +decimal subtotal
+    }
+
+    class Payment {
+        +int id
+        +decimal amount
+        +PaymentStatus status
+        +string payos_order_code
+        +string payos_payment_link_id
+    }
+
+    class Escrow {
+        +int id
+        +decimal amount
+        +EscrowStatus status
+        +datetime released_at
+        +isReleasable() bool
+    }
+
+    class Withdrawal {
+        +int id
+        +decimal amount
+        +string bank_name
+        +string bank_account
+        +WithdrawalStatus status
+    }
+
+    class LedgerAccount {
+        +bigint id
+        +LedgerOwnerType owner_type
+        +bigint owner_id
+        +LedgerPurpose purpose
+        +bigint balance
+    }
+
+    class LedgerTransaction {
+        +bigint id
+        +LedgerTxType type
+        +string idempotency_key
+        +string reference_type
+        +bigint reference_id
+    }
+
+    class LedgerEntry {
+        +bigint id
+        +bigint amount
+        +bigint balance_after
+    }
+
+    class Conversation {
+        +int id
+    }
+
+    class Message {
+        +int id
+        +string content
+        +bool is_read
+    }
+
+    class Review {
+        +int id
+        +int rating
+        +string comment
+    }
+
+    class Address {
+        +int id
+        +string receiver_name
+        +string phone
+        +bool is_default
+    }
+
+    class Notification {
+        +int id
+        +string title
+        +bool is_read
+    }
+
+    User "1" --> "0..*" Product : sells
+    User "1" --> "0..*" Order : places
+    User "1" --> "0..*" Cart : holds
+    User "1" --> "0..*" Address : owns
+    User "1" --> "0..*" Withdrawal : requests
+    User "1" --> "0..*" Notification : receives
+    User "1" --> "0..*" Review : writes
+
+    Category "1" --> "0..*" Product : classifies
+    Product "1" --> "0..*" OrderItem : appears in
+    Product "1" --> "0..*" Review : receives
+
+    Order "1" *-- "1..*" OrderItem : contains
+    Order "1" --> "0..*" Payment : paid by
+    Order "1" --> "1..*" Escrow : splits into
+
+    Escrow "0..*" --> "1" User : holds for seller
+
+    LedgerTransaction "1" *-- "2..*" LedgerEntry : balances to zero
+    LedgerAccount "1" --> "0..*" LedgerEntry : records
+
+    Conversation "1" *-- "0..*" Message : contains
+    User "2" --> "0..*" Conversation : participates
