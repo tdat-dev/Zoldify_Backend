@@ -593,6 +593,511 @@ function deploymentDiagram() {
 }
 
 // ===========================================================================
+// 7. SYSTEM CONTEXT — C4 mức 1. Chương I của báo cáo.
+// ===========================================================================
+function contextDiagram() {
+  const s = createSheet('System Context Diagram');
+
+  const zoldify = vertex(s, {
+    value: 'ZOLDIFY\nSecond-hand marketplace for students\nwith wallet and escrow',
+    style: S.component + 'fontStyle=1;verticalAlign=middle;align=center;spacingLeft=0;',
+    x: 480, y: 300, w: 320, h: 140,
+  });
+
+  const actor = (v, x, y) =>
+    vertex(s, { value: v, style: S.actor, x, y, w: 30, h: 60 });
+  const ext = (v, x, y) =>
+    vertex(s, { value: v, style: S.artifact + 'align=center;spacingLeft=0;verticalAlign=middle;', x, y, w: 190, h: 60 });
+
+  const buyer = actor('Buyer\n(student)', 90, 180);
+  const seller = actor('Seller\n(student)', 90, 380);
+  const admin = actor('Admin\n(operations)', 90, 580);
+
+  const payos = ext('PayOS\npayment gateway', 1060, 100);
+  const sepay = ext('SePay\nbank reconciliation', 1060, 190);
+  const ghn = ext('GHN\nshipping', 1060, 280);
+  const fcm = ext('Firebase FCM\npush notifications', 1060, 370);
+  const r2 = ext('Cloudflare R2\nimage storage', 1060, 460);
+  const smtp = ext('Gmail SMTP\nemail', 1060, 550);
+  const bank = ext('Bank\nmanual payouts', 1060, 640);
+
+  const f = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
+
+  f(buyer, zoldify, 'browse · buy · pay · chat');
+  f(seller, zoldify, 'list items · fulfil · withdraw');
+  f(admin, zoldify, 'approve withdrawals · reconcile');
+
+  f(zoldify, payos, 'create payment link');
+  f(payos, zoldify, 'confirmation webhook');
+  f(zoldify, sepay, 'match transfers');
+  f(zoldify, ghn, 'create and track shipments');
+  f(zoldify, fcm, 'send notifications');
+  f(zoldify, r2, 'store and read images');
+  f(zoldify, smtp, 'verification email');
+  f(admin, bank, 'manual bank transfer');
+
+  vertex(s, {
+    value:
+      'Payouts are MANUAL: an admin transfers the money and marks it done.\n' +
+      'A deliberate choice at this scale — bank payout APIs need a registered\n' +
+      'company. The ledger models it honestly with a withdrawal_pending account.',
+    style: S.note,
+    x: 420, y: 700, w: 480, h: 80,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 8. CONTAINER — C4 mức 2. Chương I và VI.
+// ===========================================================================
+function containerDiagram() {
+  const s = createSheet('Container Diagram');
+
+  const box = (v, x, y, w, h) =>
+    vertex(s, { value: v, style: S.component + 'verticalAlign=middle;align=center;spacingLeft=0;', x, y, w, h });
+  const store = (v, x, y) =>
+    vertex(s, { value: v, style: S.node3d + 'verticalAlign=middle;align=center;spacingLeft=0;', x, y, w: 220, h: 90 });
+
+  const web = box('Web\nNext.js 14 App Router, SSR', 60, 80, 240, 80);
+  const app = box('Mobile\nReact Native + Expo\nAndroid and iOS', 60, 210, 240, 90);
+
+  vertex(s, {
+    value: 'Single VPS — Docker Compose',
+    style: S.boundary, x: 400, y: 40, w: 640, h: 560,
+  });
+
+  const caddy = box('Caddy\nautomatic TLS, load balancing', 440, 90, 280, 70);
+  const api = box('API x3\nNestJS, stateless', 440, 210, 280, 80);
+  const worker = box('Worker x1\nBullMQ + cron', 760, 210, 240, 80);
+  const mysql = store('MySQL 8\nsource of truth', 440, 340);
+  const redis = store('Redis 7\ncache · throttle\nsocket adapter · queue', 760, 340);
+
+  const r2 = box('Cloudflare R2\nproduct images', 440, 480, 280, 70);
+
+  const f = (a, b, v, style = S.flow) => edge(s, { source: a, target: b, value: v, style });
+
+  f(web, caddy, 'HTTPS /api/v1');
+  f(app, caddy, 'HTTPS /api/v1');
+  f(app, caddy, 'WebSocket /chat', S.depend);
+  f(caddy, api, '');
+  f(api, mysql, '');
+  f(api, redis, '');
+  f(worker, mysql, '');
+  f(worker, redis, '');
+  f(api, r2, 'upload', S.depend);
+
+  vertex(s, {
+    value:
+      'Three things this diagram states:\n' +
+      '1. The API keeps NO state, so it can be replicated. Everything that used to\n' +
+      '   live in process memory — cache, rate-limit counters, socket lists — is in Redis.\n' +
+      '2. Exactly ONE worker. Cron inside the API would run the reconciliation job\n' +
+      '   three times; for a job that touches money that is a serious bug.\n' +
+      '3. Images are not on the VPS disk. Required for replication, and so a redeploy\n' +
+      '   does not wipe them.',
+    style: S.note,
+    x: 60, y: 640, w: 700, h: 120,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 9. COMPONENT — C4 mức 3, sáu bounded context và luật phụ thuộc.
+// ===========================================================================
+function componentDiagram() {
+  const s = createSheet('Component Diagram - Bounded Contexts');
+
+  const ctx = (v, x, y, w = 300, h = 90) =>
+    vertex(s, { value: v, style: S.component + 'verticalAlign=middle;align=center;spacingLeft=0;', x, y, w, h });
+
+  const ops = ctx('Ops\nadmin · settings · tasks', 420, 60);
+  const ordering = ctx('Ordering\ncarts · orders · ghn', 80, 220);
+  const money = ctx(
+    'Money\nledger · wallets · escrows\npayments · payos · sepay · withdrawals',
+    440, 220, 360, 100);
+  const catalog = ctx(
+    'Catalog\nproducts · categories · shop\nfiles · interactions · follows',
+    80, 400, 320, 100);
+  const messaging = ctx('Messaging\nchat · notifications · firebase', 840, 400, 300, 90);
+  const identity = ctx('Identity\nauth · users · addresses', 400, 580, 320, 90);
+
+  // Money tô đậm vì nó là context được bảo vệ chặt nhất
+  vertex(s, {
+    value: '',
+    style: 'rounded=0;html=1;fillColor=none;strokeColor=#2C67C8;strokeWidth=3;dashed=1;',
+    x: 425, y: 205, w: 390, h: 130,
+  });
+
+  const dep = (a, b) => edge(s, { source: a, target: b, style: S.flow });
+
+  dep(ops, ordering);
+  dep(ops, money);
+  dep(ops, catalog);
+  dep(ordering, catalog);
+  dep(ordering, money);
+  dep(ordering, identity);
+  dep(catalog, identity);
+  dep(messaging, identity);
+  dep(money, identity);
+
+  vertex(s, {
+    value:
+      'Arrows point DOWNWARD only. Identity is the foundation and depends on nobody.\n' +
+      'Money depends only on Identity.\n\n' +
+      'Money must NOT point at Ordering. Ordering computes the amount and calls Money,\n' +
+      'passing a reference like {type: order, id: 123}. To Money that reference is an\n' +
+      'opaque string — it does not know what an order is. That is what makes Money the\n' +
+      'easiest context to split into its own service later.\n\n' +
+      'The rule is enforced by eslint-plugin-boundaries, not by convention. Current\n' +
+      'debt: 29 legacy violations, allowed to shrink but never to grow.',
+    style: S.note,
+    x: 80, y: 700, w: 660, h: 150,
+  });
+
+  vertex(s, {
+    value: 'Money — the protected core.\nEvery balance change goes through LedgerService.post()',
+    style: S.note,
+    x: 860, y: 220, w: 300, h: 60,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 10. FUND FLOW — T-account. Slide 13 hoặc 14.
+// ===========================================================================
+function fundFlowDiagram() {
+  const s = createSheet('Fund Flow Diagram');
+
+  const acc = (v, x, y, fill) =>
+    vertex(s, {
+      value: v,
+      style:
+        'rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=12;verticalAlign=middle;' +
+        `align=center;fillColor=${fill};strokeColor=#333333;`,
+      x, y, w: 230, h: 80,
+    });
+
+  const gateway = acc('gateway_clearing\nmoney arriving from PayOS', 60, 260, '#eef6ff');
+  const buyer = acc('buyer.available\nbuyer wallet', 380, 100, '#ffffff');
+  const hold = acc('escrow_hold\nheld by Zoldify', 380, 320, '#ffd700');
+  const seller = acc('seller.available\nseller wallet', 720, 200, '#ffffff');
+  const revenue = acc('platform.revenue\nZoldify revenue', 720, 420, '#90ee90');
+  const pending = acc('seller.withdrawal_pending\nawaiting manual payout', 1050, 200, '#fff3cd');
+  const bank = acc('bank_external\nleft the system', 1050, 380, '#e8e8e8');
+
+  const f = (a, b, v, anchors = '') =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + anchors });
+
+  // Hai cặp đi hai chiều giữa cùng một cặp hộp. Không tách điểm neo thì
+  // draw.io vẽ chúng chồng khít lên nhau và hai nhãn dính thành một chuỗi
+  // vô nghĩa.
+  const DOWN_LEFT = 'exitX=0.3;exitY=1;entryX=0.3;entryY=0;';
+  const UP_RIGHT = 'exitX=0.7;exitY=0;entryX=0.7;entryY=1;';
+  const RIGHT_HIGH = 'exitX=1;exitY=0.3;entryX=0;entryY=0.3;';
+  const LEFT_LOW = 'exitX=0;exitY=0.7;entryX=1;entryY=0.7;';
+
+  f(gateway, buyer, '1 · wallet top-up');
+  f(gateway, hold, '1b · order paid via PayOS',
+    'exitX=1;exitY=0.75;entryX=0;entryY=0.5;');
+  f(buyer, hold, '2 · place order', DOWN_LEFT);
+  f(hold, buyer, '4 · refund', UP_RIGHT);
+  f(hold, seller, '3a · delivered, 95%');
+  f(hold, revenue, '3b · platform fee, 5%');
+  f(seller, pending, '5 · seller requests', RIGHT_HIGH);
+  f(pending, seller, '6a · rejected', LEFT_LOW);
+  f(pending, bank, '6b · transfer completed');
+
+  vertex(s, {
+    value:
+      'The yellow box is the single most important number in the system. Its balance\n' +
+      'must always equal the real money sitting in Zoldify\'s bank account.\n\n' +
+      'It answers the first question any auditor, investor or payment partner asks:\n' +
+      '"How much of your users\' money are you holding, and how do you prove it?"\n' +
+      'One SQL query. The old architecture could not answer it at all.\n\n' +
+      'Steps 5 and 6 are separate because the payout is a human action. Between them\n' +
+      'the money has left the seller\'s wallet but not the system — without a dedicated\n' +
+      'account for that state, the books cannot be reconciled against the bank.',
+    style: S.note,
+    x: 60, y: 560, w: 720, h: 160,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 11 + 12. STATE MACHINE — vòng đời đơn hàng và ký quỹ. Chương III.
+// ===========================================================================
+function orderStateDiagram() {
+  const s = createSheet('State Machine - Order Lifecycle');
+
+  const st = (v, x, y, fill = '#ffffff') =>
+    vertex(s, {
+      value: v,
+      style:
+        'rounded=1;arcSize=30;whiteSpace=wrap;html=1;fontSize=13;fontStyle=1;' +
+        `verticalAlign=middle;align=center;fillColor=${fill};strokeColor=#333333;`,
+      x, y, w: 170, h: 55,
+    });
+
+  const start = vertex(s, { style: S.initial, x: 90, y: 60, w: 30, h: 30 });
+  const pending = st('pending', 20, 160);
+  const confirmed = st('confirmed', 20, 290);
+  const processing = st('processing', 20, 420);
+  const shipping = st('shipping', 20, 550);
+  const delivered = st('delivered', 320, 550, '#d5f5dd');
+  const cancelled = st('cancelled', 620, 160, '#ffe0e0');
+  const refunded = st('refunded', 620, 400, '#ffe0e0');
+  const done = vertex(s, { style: S.final, x: 900, y: 300, w: 30, h: 30 });
+
+  const t = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
+
+  t(start, pending, 'buyer places order');
+  t(pending, confirmed, 'seller accepts');
+  t(confirmed, processing, 'preparing goods');
+  t(confirmed, shipping, 'ship directly');
+  t(processing, shipping, 'GHN shipment created');
+  t(shipping, delivered, 'buyer confirms receipt');
+  t(pending, cancelled, 'cancel before acceptance');
+  t(confirmed, cancelled, 'cancel after acceptance');
+  t(delivered, refunded, 'admin refunds');
+  t(cancelled, refunded, 'admin refunds');
+  t(delivered, done, 'RELEASE escrow');
+  t(refunded, done, 'REFUND escrow');
+  t(cancelled, done, '');
+
+  vertex(s, {
+    value:
+      'Every arrow into the final state moves money. That is why authorization on\n' +
+      'this state machine is a financial control, not a UX detail.\n\n' +
+      'Who may make each move — enforced by order-status.policy.ts:\n' +
+      '  confirmed / processing / shipping ....... seller or admin\n' +
+      '  delivered ............................... BUYER or admin, and only from shipping\n' +
+      '  refunded ................................ admin only\n' +
+      '  cancelled ............................... neither; use /cancel or /cancel-sale,\n' +
+      '                                            those also restore stock\n\n' +
+      'The principle: whoever gains must not be the one who presses the button.\n' +
+      'A seller marking their own order delivered would be releasing their own escrow.',
+    style: S.note,
+    x: 20, y: 680, w: 700, h: 170,
+  });
+
+  return s;
+}
+
+function escrowStateDiagram() {
+  const s = createSheet('State Machine - Escrow Lifecycle');
+
+  const st = (v, x, y, fill = '#ffffff') =>
+    vertex(s, {
+      value: v,
+      style:
+        'rounded=1;arcSize=30;whiteSpace=wrap;html=1;fontSize=13;fontStyle=1;' +
+        `verticalAlign=middle;align=center;fillColor=${fill};strokeColor=#333333;`,
+      x, y, w: 170, h: 55,
+    });
+
+  const start = vertex(s, { style: S.initial, x: 95, y: 60, w: 30, h: 30 });
+  const holding = st('holding', 25, 170, '#ffd700');
+  const released = st('released', 400, 70, '#d5f5dd');
+  const refunded = st('refunded', 400, 190, '#ffe0e0');
+  const cancelled = st('cancelled', 400, 310, '#e8e8e8');
+  const done = vertex(s, { style: S.final, x: 700, y: 185, w: 30, h: 30 });
+
+  const t = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
+
+  t(start, holding, 'order paid, money held');
+  t(holding, released, 'order delivered');
+  t(holding, refunded, 'order cancelled or refunded');
+  t(holding, cancelled, 'payment window expired');
+  t(released, done, '');
+  t(refunded, done, '');
+  t(cancelled, done, '');
+
+  vertex(s, {
+    value:
+      'The escrow_hold balance must ALWAYS match the real bank account.\n' +
+      'An hourly reconciliation job checks it.',
+    style: S.note, x: 25, y: 300, w: 330, h: 55,
+  });
+
+  vertex(s, {
+    value:
+      'TERMINAL states. There is no way back.\n' +
+      'To reverse one, post an opposite ledger transaction;\n' +
+      'never edit the existing rows. ledger_entries is append-only.',
+    style: S.note, x: 640, y: 60, w: 360, h: 70,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 13. SCREEN NAVIGATION — chương III, mục UI Design.
+// ===========================================================================
+function navigationDiagram() {
+  const s = createSheet('Screen Navigation Diagram');
+
+  const scr = (v, x, y, w = 170, fill = '#ffffff') =>
+    vertex(s, {
+      value: v,
+      style:
+        'rounded=1;arcSize=14;whiteSpace=wrap;html=1;fontSize=12;verticalAlign=middle;' +
+        `align=center;fillColor=${fill};strokeColor=#666666;`,
+      x, y, w, h: 46,
+    });
+
+  const start = vertex(s, { style: S.initial, x: 75, y: 40, w: 30, h: 30 });
+  const check = vertex(s, {
+    value: 'Valid token?', style: S.decision, x: 20, y: 110, w: 150, h: 70,
+  });
+
+  vertex(s, { value: '(auth) — 4 screens', style: S.boundary, x: 20, y: 230, w: 380, h: 140 });
+  const login = scr('log in', 40, 270);
+  const register = scr('register', 220, 270);
+  const forgot = scr('forgot password', 40, 320-10+16);
+  const verify = scr('verify email', 220, 326);
+
+  vertex(s, { value: '(tabs) — 5 screens', style: S.boundary, x: 20, y: 420, w: 380, h: 200 });
+  const home = scr('home', 40, 460);
+  const search = scr('search', 220, 460);
+  const myorders = scr('my orders', 40, 520);
+  const chatlist = scr('chat', 220, 520);
+  const profile = scr('profile', 130, 570);
+
+  const product = scr('product detail', 470, 460);
+  const shop = scr('seller shop', 470, 400);
+  const cart = scr('cart', 470, 520);
+  const checkout = scr('checkout', 470, 580);
+  const payos = scr('PayOS WebView', 470, 640, 170, '#fff3cd');
+  const ret = scr('payment/return', 470, 700);
+  const orderDetail = scr('order detail', 700, 520);
+  const tracking = scr('GHN tracking', 700, 580);
+  const room = scr('chat room', 700, 460);
+
+  vertex(s, { value: 'seller/ — 9 screens', style: S.boundary, x: 940, y: 400, w: 400, h: 260 });
+  const dash = scr('dashboard', 960, 440);
+  const prods = scr('my products', 1150, 440);
+  const newProd = scr('list an item', 960, 500);
+  const editProd = scr('edit listing', 1150, 500);
+  const sorders = scr('sales orders', 960, 560);
+  const wallet = scr('wallet', 1150, 560);
+  const withdraw = scr('withdraw', 960, 615);
+  const txns = scr('transactions', 1150, 615);
+
+  const settings = scr('settings and addresses', 700, 640, 200);
+
+  const f = (a, b, v = '', style = S.flow) =>
+    edge(s, { source: a, target: b, value: v, style });
+
+  f(start, check);
+  f(check, login, 'no');
+  f(check, home, 'yes');
+  f(login, home, '');
+  f(home, product);
+  f(search, product);
+  f(product, shop);
+  f(product, cart);
+  f(cart, checkout);
+  f(checkout, payos);
+  f(payos, ret, 'deep link', S.depend);
+  f(ret, orderDetail);
+  f(myorders, orderDetail);
+  f(orderDetail, tracking);
+  f(chatlist, room);
+  f(profile, dash);
+  f(profile, settings);
+
+  vertex(s, {
+    value:
+      'The deep link zoldify://payment/return only navigates the UI. The single source\n' +
+      'of truth for "this was paid" is the PayOS webhook hitting the backend — a user\n' +
+      'can close the browser before being redirected, and a URL can be typed by hand.\n\n' +
+      'The seller block is roughly half the total app work. Cut to 5 core screens\n' +
+      'because the team is four people; sellers keep the full flow on the web.',
+    style: S.note,
+    x: 20, y: 700, w: 620, h: 110,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 14. CI/CD PIPELINE — phụ lục báo cáo.
+// ===========================================================================
+function cicdDiagram() {
+  const s = createSheet('Deployment Pipeline');
+
+  const step = (v, x, y, w = 220, fill = '#ffffff') =>
+    vertex(s, {
+      value: v,
+      style:
+        'rounded=1;arcSize=20;whiteSpace=wrap;html=1;fontSize=12;verticalAlign=middle;' +
+        `align=center;fillColor=${fill};strokeColor=#333333;`,
+      x, y, w, h: 50,
+    });
+
+  const dev = step('Developer pushes\na feature branch', 60, 60);
+  const pr = step('Open Pull Request', 60, 150);
+
+  vertex(s, { value: 'CI checks — all must pass', style: S.boundary, x: 340, y: 40, w: 560, h: 330 });
+  const c1 = step('lint + typecheck', 370, 90, 240);
+  const c2 = step('boundaries:check\nblocks context violations', 370, 155, 240, '#ffe8cc');
+  const c3 = step('test\n37 tests, money on real MySQL', 370, 220, 240);
+  const c4 = step('build', 640, 90, 230);
+  const c5 = step('openapi:check\ndiffers from commit means fail', 640, 155, 230, '#ffe8cc');
+  const c6 = step('diagrams:check\n25 diagrams must parse', 640, 220, 230, '#ffe8cc');
+
+  const gate = vertex(s, {
+    value: 'All green?', style: S.decision, x: 500, y: 290, w: 160, h: 70,
+  });
+
+  const review = step('Reviewed by\nanother member', 990, 150, 220);
+  const merge = step('Merge into develop', 990, 240, 220);
+  const main = step('Merge develop into main', 990, 330, 220);
+  const build = step('Build image,\npush to GHCR', 990, 420, 220);
+  const deploy = step('SSH to VPS\ncompose pull and up -d', 990, 510, 220);
+  const migrate = step('Run migrations\nseparate step, has a rollback', 990, 600, 220);
+  const health = vertex(s, {
+    value: '/api/v1/health\nok?', style: S.decision, x: 1010, y: 690, w: 180, h: 80,
+  });
+  const rollback = step('Roll back to\nprevious image', 700, 700, 220, '#ffe0e0');
+  const done = step('Done', 1010, 810, 180, '#d5f5dd');
+
+  const f = (a, b, v = '') => edge(s, { source: a, target: b, value: v, style: S.flow });
+
+  f(dev, pr);
+  f(pr, c1);
+  f(gate, dev, 'no');
+  f(gate, review, 'yes');
+  f(review, merge);
+  f(merge, main);
+  f(main, build);
+  f(build, deploy);
+  f(deploy, migrate);
+  f(migrate, health);
+  f(health, rollback, 'fails');
+  f(health, done, 'ok');
+
+  vertex(s, {
+    value:
+      'The three orange gates are what makes the architecture hold over time.\n\n' +
+      'boundaries:check turns the context dependency rule from a spoken agreement\n' +
+      'into a merge blocker. Without it the rule is broken within two weeks.\n\n' +
+      'openapi:check guarantees web and mobile never build against a stale contract.\n\n' +
+      'diagrams:check means a broken diagram cannot be merged — the report depends\n' +
+      'on them rendering.\n\n' +
+      'NOT BUILT YET: the backend has no .github/workflows at all. This is B, week 1.',
+    style: S.note,
+    x: 60, y: 420, w: 620, h: 180,
+  });
+
+  return s;
+}
+
+// ===========================================================================
 
 // Kích thước trang đặt riêng từng sơ đồ. Để mặc định thì draw.io vẽ đường
 // ngắt trang cắt ngang hình, và lúc export ra ảnh sẽ bị xén.
@@ -603,6 +1108,17 @@ const FILES = [
   ['09-sequence-diagram.drawio', [sequenceDiagram()], { width: 1400, height: 1110 }],
   ['10-entity-relationship-diagram.drawio', [erDiagram()], { width: 1200, height: 920 }],
   ['11-deployment-diagram.drawio', [deploymentDiagram()], { width: 1450, height: 780 }],
+
+  // Không có slide riêng trong mẫu, nhưng cần cho báo cáo và cho việc hiểu
+  // hệ thống. Đặt tên mô tả thay vì số slide.
+  ['r1-system-context.drawio', [contextDiagram()], { width: 1350, height: 820 }],
+  ['r2-container.drawio', [containerDiagram()], { width: 1120, height: 800 }],
+  ['r3-component-bounded-contexts.drawio', [componentDiagram()], { width: 1250, height: 890 }],
+  ['r4-fund-flow.drawio', [fundFlowDiagram()], { width: 1350, height: 760 }],
+  ['r5-state-order-lifecycle.drawio', [orderStateDiagram()], { width: 1000, height: 880 }],
+  ['r6-state-escrow-lifecycle.drawio', [escrowStateDiagram()], { width: 1050, height: 400 }],
+  ['r7-screen-navigation.drawio', [navigationDiagram()], { width: 1400, height: 840 }],
+  ['r8-cicd-pipeline.drawio', [cicdDiagram()], { width: 1280, height: 890 }],
 ];
 
 fs.mkdirSync(OUT, { recursive: true });
