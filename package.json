@@ -27,6 +27,7 @@
     "migration:run": "node -r ts-node/register -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run -d src/data-source.ts",
     "migration:revert": "node -r ts-node/register -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:revert -d src/data-source.ts",
     "test:db": "node scripts/test-db.mjs",
+    "mail:test": "node scripts/test-smtp.mjs",
     "diagrams:export": "node scripts/export-diagrams.mjs",
     "diagrams:check": "node scripts/export-diagrams.mjs --check",
     "drawio:make": "node scripts/make-drawio.mjs",
