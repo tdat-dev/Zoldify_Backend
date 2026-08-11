@@ -412,16 +412,18 @@ flowchart LR
     hold["escrow_hold<br/><i>held by Zoldify</i>"]
     sellerAcc["seller.available<br/><i>seller wallet</i>"]
     revenue["platform.revenue<br/><i>Zoldify revenue</i>"]
-    pending["withdrawal_pending<br/><i>awaiting payout</i>"]
+    pending["seller.withdrawal_pending<br/><i>awaiting manual payout</i>"]
     bank["bank_external<br/><i>left the system</i>"]
 
     gateway -->|"1 · wallet top-up"| buyerAcc
-    buyerAcc -->|"2 · place order"| hold
+    gateway -->|"1b · pay for an order<br/>straight into escrow"| hold
+    buyerAcc -->|"2 · place order from wallet"| hold
     hold -->|"3a · delivered (95%)"| sellerAcc
     hold -->|"3b · platform fee (5%)"| revenue
     hold -->|"4 · order cancelled, refund"| buyerAcc
-    sellerAcc -->|"5 · admin approves withdrawal"| pending
-    pending -->|"6 · bank transfer completed"| bank
+    sellerAcc -->|"5 · seller REQUESTS a withdrawal"| pending
+    pending -->|"6a · admin rejects"| sellerAcc
+    pending -->|"6b · bank transfer completed"| bank
 
     style hold fill:#ffd700
     style revenue fill:#90ee90
@@ -432,9 +434,16 @@ flowchart LR
 
 > *"Các bạn đang giữ hộ người dùng bao nhiêu tiền, và chứng minh bằng cách nào?"*
 
-Kiến trúc hiện tại **không trả lời được câu này**. Kiến trúc mới trả lời bằng một câu truy vấn duy nhất.
+Kiến trúc cũ **không trả lời được câu này**. Kiến trúc mới trả lời bằng một câu truy vấn duy nhất.
 
 Lưu ý bước 5 và 6 tách rời: khoảng giữa hai bước là lúc admin đang thao tác chuyển khoản thủ công ở ngân hàng. Tiền đã rời ví người bán nhưng chưa ra khỏi hệ thống — phải có một tài khoản riêng cho trạng thái đó, nếu không sẽ không đối soát được.
+
+**Hai chỗ sơ đồ này đã sửa cho khớp code** (`887795b`):
+
+- Bước 5 là **người bán gửi yêu cầu**, không phải admin duyệt. Giữ tiền ngay lúc gửi mới chặn được việc gửi năm yêu cầu cùng lúc, mỗi cái bằng toàn bộ số dư.
+- `withdrawal_pending` là tài khoản **của từng người bán**, không phải một ô chung của sàn. Nhờ vậy hỏi được "người này đang chờ rút bao nhiêu" mà không quét cả bảng; tổng sàn đang giữ chờ chi là tổng các tài khoản đó.
+
+Thêm nhánh **1b**: đơn trả qua PayOS đi thẳng từ cổng thanh toán vào `escrow_hold`, không vòng qua ví người mua — người mua chưa bao giờ cầm số tiền đó.
 
 ---
 

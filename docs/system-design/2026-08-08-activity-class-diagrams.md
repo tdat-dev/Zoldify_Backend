@@ -350,74 +350,87 @@ ngân sau 3 ngày kể từ khi GHN báo đã giao, nếu không có khiếu n�
 
 ---
 
-## AD-04 — Seller withdrawal (two-step)
+## AD-04 — Seller withdrawal (three stages)
 
-Nguồn: `money/withdrawals/withdrawals.service.ts`.
+Nguồn: `money/withdrawals/withdrawals.service.ts` — commit `887795b`.
 
-Hai bước, vì chuyển khoản ngân hàng là thao tác **tay** của admin. Tiền phải rời ví
-người bán ngay lúc duyệt (chống rút hai lần), nhưng chỉ rời hệ thống khi admin xác
-nhận đã chuyển thật.
+**Tiền bị giữ ngay lúc gửi yêu cầu, không đợi admin duyệt.** Đây là chỗ sơ đồ đã đổi
+so với bản vẽ đầu: nếu đợi duyệt mới trừ, người bán gửi năm yêu cầu cùng lúc, mỗi cái
+bằng toàn bộ số dư, và cả năm đều qua được bước kiểm.
+
+Ba chặng vì chuyển khoản ngân hàng là thao tác **tay** của admin. Khoảng giữa chặng
+hai và ba là lúc admin đang ngồi thao tác ở app ngân hàng.
 
 ```mermaid
 flowchart TD
-    Start([Start]) --> S1["Seller enters amount + bank details"]
+    Start([Start]) --> S1["Seller enters amount and bank details"]
 
     subgraph Seller["Seller"]
         S1
     end
 
-    subgraph Req["Backend — WithdrawalsService.create"]
+    subgraph Req["Stage 1 — request — WithdrawalsService.create, ONE transaction"]
         R1["POST /api/v1/withdrawals"]
-        R2{"amount <= available<br/>balance?"}
-        R3{"amount >= minimum<br/>from settings?"}
-        R4["INSERT withdrawals — status = pending"]
+        R4["INSERT withdrawals — status = pending<br/>saved first, its id becomes the idempotency key"]
+        R5["key = withdrawal_request:id"]
+        R6["Entries:<br/>seller/available -X<br/>seller/withdrawal_pending +X"]
+        R2{"Would seller/available<br/>go negative?"}
     end
 
     subgraph Admin["Admin"]
         M1["Review request list"]
         M2{"Approve?"}
-        M3["Transfer money in banking app"]
+        M3["Transfer the money in the banking app"]
         M4["Press Mark as transferred"]
     end
 
-    subgraph Step1["Step 1 — approve — LedgerService.post"]
-        A1["key = withdrawal_approve:id"]
-        A2["Entries:<br/>seller/available -X<br/>platform/withdrawal_pending +X"]
-        A3["UPDATE withdrawals SET status = approved"]
+    subgraph Step2["Stage 2 — approve — status only"]
+        A3["UPDATE withdrawals SET status = approved<br/>NO ledger entry: the money is already held"]
     end
 
-    subgraph Step2["Step 2 — complete — LedgerService.post"]
+    subgraph Step3["Stage 3 — complete — LedgerService.post"]
         B1["key = withdrawal_complete:id"]
-        B2["Entries:<br/>platform/withdrawal_pending -X<br/>external/bank_external +X"]
+        B2["Entries:<br/>seller/withdrawal_pending -X<br/>external/bank_external +X"]
         B3["UPDATE withdrawals SET status = completed"]
     end
 
-    subgraph Rej["Reject path"]
-        J1["UPDATE withdrawals SET status = rejected"]
-        J2["No ledger entry — money never moved"]
+    subgraph Rej["Reject — money goes back"]
+        J1["key = withdrawal_reject:id"]
+        J2["Entries:<br/>seller/withdrawal_pending -X<br/>seller/available +X"]
+        J3["UPDATE withdrawals SET status = rejected"]
     end
 
     subgraph ErrW["Error responses"]
-        Y1["400 — Insufficient balance"]
-        Y2["400 — Below minimum amount"]
+        Y1["400 — Insufficient balance<br/>whole transaction rolls back,<br/>the withdrawal row disappears too"]
     end
 
-    S1 --> R1 --> R2
-    R2 -- no --> Y1 --> End([End])
-    R2 -- yes --> R3
-    R3 -- no --> Y2 --> End
-    R3 -- yes --> R4 --> M1 --> M2
-    M2 -- no --> J1 --> J2 --> End
-    M2 -- yes --> A1 --> A2 --> A3
-    A3 --> M3 --> M4
+    S1 --> R1 --> R4 --> R5 --> R6 --> R2
+    R2 -- yes --> Y1 --> End([End])
+    R2 -- no --> M1 --> M2
+    M2 -- no --> J1 --> J2 --> J3 --> End
+    M2 -- yes --> A3 --> M3 --> M4
     M4 --> B1 --> B2 --> B3 --> End
 
-    classDef todo fill:#fee2e2,stroke:#dc2626,stroke-width:2px
-    class A1,A2,A3,B1,B2,B3,R3 todo
+    classDef done fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    class R4,R5,R6,R2,A3,B1,B2,B3,J1,J2,J3 done
 ```
 
-**Còn thiếu (🔴)** — toàn bộ phần ledger. Hiện `approve()` chỉ đổi cột `status`, không
-đụng tới tiền. Việc của A tuần 4, ~1,5 ngày.
+**Đã xong (🟢) — toàn bộ ba chặng.**
+
+Hai điều đáng chú ý ở chặng 1:
+
+**Bản ghi được lưu TRƯỚC bút toán**, vì khoá chống trùng cần chính `id` của nó. Cả hai
+nằm trong một transaction, nên bút toán hỏng thì bản ghi cũng biến mất — không để lại
+lệnh rút mồ côi.
+
+**Không có bước tự kiểm số dư.** `LedgerService.post()` từ chối mọi bút toán làm tài
+khoản người dùng âm, và nó kiểm **sau** khi đã khoá dòng. Tự kiểm trước bằng một câu
+`SELECT` là quay lại đúng lỗi cũ: hai yêu cầu song song cùng thấy đủ tiền.
+
+> Tài khoản `withdrawal_pending` gắn theo **từng người dùng**, không phải một ô chung
+> của sàn như sơ đồ dòng tiền (#7) đang vẽ. Nhờ vậy hỏi được "người này đang chờ rút
+> bao nhiêu" mà không phải quét cả bảng. Tổng tiền sàn đang giữ chờ chi = tổng các
+> tài khoản đó.
 
 **Vì sao phải có tài khoản `withdrawal_pending` riêng.** Nếu chỉ trừ ví người bán rồi
 coi như xong, thì lúc đối soát sẽ thấy tổng ví < tổng tiền thật trong ngân hàng, mà
@@ -626,9 +639,10 @@ classDiagram
     class LedgerService {
         <<gateway>>
         -DataSource dataSource
-        +post(input) LedgerTransaction
+        +post(input, manager) LedgerTransaction
         +getBalance(ownerType, ownerId, purpose) bigint
-        +getOrCreateAccount(ownerType, ownerId, purpose) LedgerAccount
+        +getOrCreateAccount(ownerType, ownerId, purpose, manager) LedgerAccount
+        -postWithin(em, input) LedgerTransaction
         -validateInput(input) void
         -lockAccounts(em, ids) Map
         -isDuplicateKey(err) bool
@@ -652,18 +666,28 @@ classDiagram
     }
 
     class WalletsService {
-        +getOrCreateWallet(userId) Wallet
+        <<thin facade>>
         +getBalance(userId) decimal
-        +topup(userId, amount, ref) WalletTransaction
-        +deduct(userId, amount, ref) WalletTransaction
-        +refund(userId, amount, ref) WalletTransaction
+        +getPendingWithdrawal(userId) decimal
+        +topup(userId, amount, ref, note, key) Balance
+        +deduct(userId, amount, ref, note, key) Balance
+        +refund(userId, amount, ref, note, key) Balance
+        +transfer(from, to, amount, note, key) Result
+        +getTransactions(userId, page, limit) Page
     }
 
     class WithdrawalsService {
         +create(userId, dto) Withdrawal
         +approve(id, adminId) Withdrawal
         +reject(id, adminId, note) Withdrawal
+        +complete(id, adminId) Withdrawal
         +findAll(page, limit, status) Page
+    }
+
+    class PlatformFeeService {
+        -DataSource dataSource
+        +getPercent(manager) number
+        +computeFee(amount, percent) bigint
     }
 
     class PayosService {
@@ -681,21 +705,17 @@ classDiagram
         +alertOnDrift(report) void
     }
 
-    class SettingsService {
-        +get(key) string
-        +getPlatformFeePercent() decimal
-    }
-
     LedgerService ..> PostLedgerTxInput : accepts
     EscrowsService ..> LedgerService : posts through
     WalletsService ..> LedgerService : posts through
     WithdrawalsService ..> LedgerService : posts through
     PayosService ..> LedgerService : posts through
-    EscrowsService ..> SettingsService : reads fee
+    EscrowsService ..> PlatformFeeService : reads fee
     ReconciliationJob ..> LedgerService : audits
 
     note for LedgerService "The ONLY class allowed to change a balance — enforced by eslint-plugin-boundaries"
-    note for WalletsService "To be deleted in week 3 — balance becomes a read-only projection of ledger_accounts"
+    note for PlatformFeeService "Reads the settings table with a raw query — money must not import ops"
+    note for ReconciliationJob "Not built yet — the only piece of the money core still missing"
 ```
 
 **Luật đọc từ sơ đồ này:** mọi mũi tên tiền đều **đi vào** `LedgerService`, không có
@@ -703,9 +723,19 @@ mũi tên nào đi ra. Không lớp nào được `UPDATE ledger_accounts.balanc
 cả các lớp trong cùng context `money`. Luật đó không nằm trong quy ước miệng — nó
 được `eslint-plugin-boundaries` ép, và CI đỏ nếu ai vi phạm.
 
-**`WalletsService` sẽ bị xoá.** Hiện nó là **nguồn sự thật thứ ba** cho số dư, bên
-cạnh `users.balance` và `wallets.balance`. Ba nguồn sự thật cho cùng một con số là
-lý do dự án phải làm ledger ngay từ đầu.
+**`WalletsService` giờ là lớp mỏng, không còn giữ số dư.** Trước đây nó là **nguồn sự
+thật thứ ba** bên cạnh `users.balance` và `wallets.balance` — ba con số cho cùng một
+thứ, cập nhật rời rạc, không transaction. Cột `users.balance` đã bị xoá bằng migration
+`1786600000000`; `wallets.balance` không còn được ghi.
+
+**`PlatformFeeService` đọc bảng `settings` bằng truy vấn thẳng, không import
+`SettingsService`.** Lý do là luật ranh giới: `money` không được trỏ sang `ops`, chiều
+đúng là `ops` gọi `money`. Đọc một dòng cấu hình không phải phụ thuộc nghiệp vụ, nên
+truy vấn thẳng giữ được cả hai điều.
+
+**Còn thiếu đúng một mảnh:** `ReconciliationJob`. Nó phải chạy trong tiến trình worker
+chứ không nằm trong API — ba bản sao API thì cron chạy ba lần. Phần tách worker là
+việc của B.
 
 ---
 
