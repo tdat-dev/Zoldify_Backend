@@ -5,6 +5,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
 import { mailerConfig } from './common/mailer.config';
+import { JwtModule } from '@nestjs/jwt';
+import { MaintenanceGuard } from './common/guards/maintenance.guard';
 import { AppService } from './app.service';
 import { UsersModule } from '@identity/users/users.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -101,6 +103,13 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     WithdrawalsModule,
 
     LedgerModule,
+
+    // JwtService cho MaintenanceGuard. Guard toàn cục được dựng trong injector
+    // của module GỐC, mà JwtModule tới giờ chỉ khai bên trong AuthModule — nên
+    // Nest không dựng nổi guard và chết ngay lúc khởi động với
+    // "Nest can't resolve dependencies of the MaintenanceGuard (…, ?, …)".
+    // register({}) rỗng là đủ: guard truyền secret tường minh khi verify.
+    JwtModule.register({}),
   ],
   controllers: [AppController],
   providers: [
@@ -108,6 +117,14 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Đăng ký SAU ThrottlerGuard: guard toàn cục chạy theo đúng thứ tự khai ở
+    // đây, và chặn bảo trì thì nên nằm sau chặn spam. Nó cũng cần req.user do
+    // JwtAuthGuard gắn vào — guard cấp route chạy trước guard toàn cục trong
+    // Nest, nên tới lượt nó thì vai trò đã biết.
+    {
+      provide: APP_GUARD,
+      useClass: MaintenanceGuard,
     },
   ],
 })

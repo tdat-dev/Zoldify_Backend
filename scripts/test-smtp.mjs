@@ -49,12 +49,12 @@ if (/\s/.test(pass)) {
 // hoặc tên miền riêng ĐÃ mua Google Workspace. Tên miền dùng dịch vụ chuyển
 // tiếp thư (Cloudflare Email Routing, ImprovMX...) thì địa chỉ đó không phải
 // hộp thư, chỉ là một quy tắc forward — không có mật khẩu để mà đăng nhập.
-const laGmail = /(^|\.)gmail\.com$/i.test(host) || /(^|\.)googlemail\.com$/i.test(host);
-if (laGmail && !/@(gmail|googlemail)\.com$/i.test(user)) {
-  const mien = user.split('@')[1] || '(không rõ)';
+const isGmailHost = /(^|\.)gmail\.com$/i.test(host) || /(^|\.)googlemail\.com$/i.test(host);
+if (isGmailHost && !/@(gmail|googlemail)\.com$/i.test(user)) {
+  const domain = user.split('@')[1] || '(không rõ)';
   console.warn('CẢNH BÁO: đang đăng nhập smtp.gmail.com bằng địa chỉ không thuộc Gmail.');
-  console.warn(`  Chỉ chạy được nếu "${mien}" đã mua Google Workspace VÀ ${user} là một hộp thư thật ở đó.`);
-  console.warn(`  Kiểm tra nhanh:  nslookup -type=mx ${mien}`);
+  console.warn(`  Chỉ chạy được nếu "${domain}" đã mua Google Workspace VÀ ${user} là một hộp thư thật ở đó.`);
+  console.warn(`  Kiểm tra nhanh:  nslookup -type=mx ${domain}`);
   console.warn('  Thấy aspmx.l.google.com  -> Workspace, đi tiếp được.');
   console.warn('  Thấy mx.cloudflare.net, improvmx, forwardemail... -> chỉ NHẬN thư, không gửi được.');
   console.warn('  Muốn giữ địa chỉ này làm người gửi: để nó ở EMAIL_FROM, còn EMAIL_USER điền Gmail thật.\n');
@@ -68,15 +68,15 @@ if (laGmail && !/@(gmail|googlemail)\.com$/i.test(user)) {
  * gmail.com". Không ai biết cho tới khi người dùng thật kêu không nhận được mã.
  * Nên tự tra bản ghi SPF luôn thay vì để người ta phát hiện sau.
  */
-async function kiemTraSpf(diaChi) {
-  const mien = diaChi.split('@')[1];
-  if (!mien || /^(gmail|googlemail)\.com$/i.test(mien)) return;
+async function checkSpf(address) {
+  const domain = address.split('@')[1];
+  if (!domain || /^(gmail|googlemail)\.com$/i.test(domain)) return;
 
   let spf = '';
   try {
     const { promises: dns } = await import('node:dns');
-    const ban = await dns.resolveTxt(mien);
-    spf = ban.map((p) => p.join('')).find((d) => d.toLowerCase().startsWith('v=spf1')) || '';
+    const records = await dns.resolveTxt(domain);
+    spf = records.map((p) => p.join('')).find((d) => d.toLowerCase().startsWith('v=spf1')) || '';
   } catch {
     // Không tra được DNS (mạng, hoặc tên miền chưa trỏ) thì im lặng bỏ qua —
     // đây là kiểm tra thêm, không phải điều kiện để chạy tiếp.
@@ -84,11 +84,11 @@ async function kiemTraSpf(diaChi) {
   }
 
   if (!spf) {
-    console.warn(`CẢNH BÁO: "${mien}" chưa có bản ghi SPF nào. Thư gửi bằng ${diaChi} dễ vào spam.\n`);
+    console.warn(`CẢNH BÁO: "${domain}" chưa có bản ghi SPF nào. Thư gửi bằng ${address} dễ vào spam.\n`);
     return;
   }
-  if (laGmail && !/_spf\.google\.com/i.test(spf)) {
-    console.warn(`CẢNH BÁO: SPF của "${mien}" không cho phép Google gửi thay.`);
+  if (isGmailHost && !/_spf\.google\.com/i.test(spf)) {
+    console.warn(`CẢNH BÁO: SPF của "${domain}" không cho phép Google gửi thay.`);
     console.warn(`  Đang là : ${spf}`);
     console.warn(`  Cần là  : ${spf.replace(/\s*[~-]all\s*$/i, '')} include:_spf.google.com ~all`);
     console.warn('  Sửa ở bản ghi TXT của tên miền. Thiếu nó thì thư VẪN GỬI ĐI ĐƯỢC');
@@ -96,7 +96,7 @@ async function kiemTraSpf(diaChi) {
   }
 }
 
-await kiemTraSpf(from);
+await checkSpf(from);
 
 const transporter = nodemailer.createTransport({
   host,
@@ -106,29 +106,29 @@ const transporter = nodemailer.createTransport({
 });
 
 /** Dịch mã lỗi của SMTP sang việc cần làm. */
-function giaiThich(err) {
+function explain(err) {
   const code = err?.code || '';
   const msg = String(err?.message || err);
   if (code === 'EAUTH' || msg.includes('535')) {
-    const dong = ['Máy chủ từ chối tài khoản/mật khẩu.'];
+    const lines = ['Máy chủ từ chối tài khoản/mật khẩu.'];
     // Thứ tự này quan trọng: sai TÊN TÀI KHOẢN và sai MẬT KHẨU cho ra cùng một
     // mã 535. Nói về mật khẩu trước là đẩy người dùng đi tạo lại App Password
     // hết lần này tới lần khác trong khi lỗi nằm chỗ khác.
-    if (laGmail && !/@(gmail|googlemail)\.com$/i.test(user)) {
-      dong.push(
+    if (isGmailHost && !/@(gmail|googlemail)\.com$/i.test(user)) {
+      lines.push(
         `  - NGHI TRƯỚC HẾT: "${user}" không phải tài khoản Google.`,
         '    Google trả về đúng câu 535 này cho cả tên tài khoản lạ lẫn sai mật khẩu.',
         '    Thử lại bằng chính địa chỉ @gmail.com đã sinh ra App Password.',
       );
     }
-    dong.push(
+    lines.push(
       '  - Gmail KHÔNG nhận mật khẩu đăng nhập thường, phải dùng App Password.',
       '  - App Password chỉ tạo được khi tài khoản đã bật xác thực 2 bước:',
       '    https://myaccount.google.com/apppasswords',
       '  - App Password gắn với ĐÚNG tài khoản sinh ra nó, dán sang tên khác là hỏng.',
       '  - Dán 16 ký tự liền, không dấu cách.',
     );
-    return dong.join('\n');
+    return lines.join('\n');
   }
   if (code === 'ETIMEDOUT' || code === 'ESOCKET' || code === 'ECONNECTION') {
     return [
@@ -139,9 +139,9 @@ function giaiThich(err) {
     ].join('\n');
   }
   if (code === 'EENVELOPE' || msg.includes('550-5.7.1') || /not allowed|Invalid sender/i.test(msg)) {
-    const dong = ['Địa chỉ người gửi hoặc người nhận bị từ chối.'];
+    const lines = ['Địa chỉ người gửi hoặc người nhận bị từ chối.'];
     if (from !== user) {
-      dong.push(
+      lines.push(
         `  - Đang gửi bằng bí danh ${from} trong khi đăng nhập là ${user}.`,
         '  - Gmail chỉ nhận bí danh ĐÃ XÁC MINH trên chính tài khoản đó:',
         '    Gmail > Cài đặt > Tài khoản > "Gửi thư bằng địa chỉ".',
@@ -149,7 +149,7 @@ function giaiThich(err) {
         '  - Chưa xác minh xong thì bỏ EMAIL_FROM đi, gửi tạm bằng EMAIL_USER.',
       );
     }
-    return dong.join('\n');
+    return lines.join('\n');
   }
   return 'Chưa có gợi ý sẵn cho lỗi này, đọc nguyên văn ở trên.';
 }
@@ -160,7 +160,7 @@ try {
 } catch (err) {
   console.error('Đăng nhập SMTP THẤT BẠI\n');
   console.error(`Lỗi thật: [${err?.code || '?'}] ${err?.message || err}\n`);
-  console.error(giaiThich(err));
+  console.error(explain(err));
   process.exit(1);
 }
 
@@ -181,6 +181,6 @@ try {
 } catch (err) {
   console.error('Gửi thư THẤT BẠI\n');
   console.error(`Lỗi thật: [${err?.code || '?'}] ${err?.message || err}\n`);
-  console.error(giaiThich(err));
+  console.error(explain(err));
   process.exit(1);
 }
