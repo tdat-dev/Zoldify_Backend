@@ -2,8 +2,9 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { CacheModule } from '@nestjs/cache-manager'
+import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
+import { mailerConfig } from './common/mailer.config';
 import { AppService } from './app.service';
 import { UsersModule } from '@identity/users/users.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -77,22 +78,12 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     CartModule,
     FilesModule,
     AddressesModule,
+    // Bản này từng đóng cứng smtp.gmail.com:587, bỏ qua EMAIL_HOST/EMAIL_PORT
+    // mà file mẫu vẫn ghi là đọc được — đổi sang nhà cung cấp khác thì hai biến
+    // đó im lặng không có tác dụng.
     MailerModule.forRootAsync({
-      imports: [ConfigModule,FollowsModule],
-      useFactory: async (configService: ConfigService) => ({
-        transport: {
-          host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          auth: {
-            user: configService.get<string>('EMAIL_USER'),
-            pass: configService.get<string>('EMAIL_APP_PASSWORD'),
-          },
-        },
-        defaults: {
-          from: `"Zoldify" <${configService.get<string>('EMAIL_USER')}>`,
-        },
-      }),
+      imports: [ConfigModule, FollowsModule],
+      useFactory: mailerConfig,
       inject: [ConfigService],
     }),
     FollowsModule,
@@ -120,4 +111,4 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

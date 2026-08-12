@@ -16,11 +16,15 @@ const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
 const port = Number(process.env.EMAIL_PORT || 587);
 const user = process.env.EMAIL_USER;
 const pass = process.env.EMAIL_APP_PASSWORD;
+// Đăng nhập bằng tài khoản này, nhưng người nhận thấy địa chỉ kia. Xem
+// src/common/mailer.config.ts để biết vì sao hai thứ tách rời nhau.
+const from = process.env.EMAIL_FROM || user;
 const to = process.argv[2] || user;
 
-console.log(`Máy chủ : ${host}:${port}`);
-console.log(`Tài khoản: ${user || '(TRỐNG)'}`);
+console.log(`Máy chủ  : ${host}:${port}`);
+console.log(`Đăng nhập: ${user || '(TRỐNG)'}`);
 console.log(`Mật khẩu : ${pass ? `${pass.length} ký tự` : '(TRỐNG)'}`);
+console.log(`Người gửi: ${from || '(TRỐNG)'}${from !== user ? '  <- bí danh' : ''}`);
 console.log(`Gửi tới  : ${to || '(không xác định)'}\n`);
 
 if (!user || !pass) {
@@ -53,8 +57,46 @@ if (laGmail && !/@(gmail|googlemail)\.com$/i.test(user)) {
   console.warn(`  Kiểm tra nhanh:  nslookup -type=mx ${mien}`);
   console.warn('  Thấy aspmx.l.google.com  -> Workspace, đi tiếp được.');
   console.warn('  Thấy mx.cloudflare.net, improvmx, forwardemail... -> chỉ NHẬN thư, không gửi được.');
-  console.warn('  Đường vòng nhanh nhất: điền EMAIL_USER bằng chính Gmail đã sinh ra App Password.\n');
+  console.warn('  Muốn giữ địa chỉ này làm người gửi: để nó ở EMAIL_FROM, còn EMAIL_USER điền Gmail thật.\n');
 }
+
+/**
+ * Gửi bằng bí danh thì tên miền của bí danh PHẢI cho phép Google gửi thay.
+ *
+ * Đây là loại hỏng tệ nhất vì nó KHÔNG báo lỗi: SMTP nhận thư, script in "OK",
+ * mà thư thì rơi thẳng vào spam của người nhận, hoặc bị chèn dòng "via
+ * gmail.com". Không ai biết cho tới khi người dùng thật kêu không nhận được mã.
+ * Nên tự tra bản ghi SPF luôn thay vì để người ta phát hiện sau.
+ */
+async function kiemTraSpf(diaChi) {
+  const mien = diaChi.split('@')[1];
+  if (!mien || /^(gmail|googlemail)\.com$/i.test(mien)) return;
+
+  let spf = '';
+  try {
+    const { promises: dns } = await import('node:dns');
+    const ban = await dns.resolveTxt(mien);
+    spf = ban.map((p) => p.join('')).find((d) => d.toLowerCase().startsWith('v=spf1')) || '';
+  } catch {
+    // Không tra được DNS (mạng, hoặc tên miền chưa trỏ) thì im lặng bỏ qua —
+    // đây là kiểm tra thêm, không phải điều kiện để chạy tiếp.
+    return;
+  }
+
+  if (!spf) {
+    console.warn(`CẢNH BÁO: "${mien}" chưa có bản ghi SPF nào. Thư gửi bằng ${diaChi} dễ vào spam.\n`);
+    return;
+  }
+  if (laGmail && !/_spf\.google\.com/i.test(spf)) {
+    console.warn(`CẢNH BÁO: SPF của "${mien}" không cho phép Google gửi thay.`);
+    console.warn(`  Đang là : ${spf}`);
+    console.warn(`  Cần là  : ${spf.replace(/\s*[~-]all\s*$/i, '')} include:_spf.google.com ~all`);
+    console.warn('  Sửa ở bản ghi TXT của tên miền. Thiếu nó thì thư VẪN GỬI ĐI ĐƯỢC');
+    console.warn('  (script này báo OK) nhưng người nhận thấy nó trong spam.\n');
+  }
+}
+
+await kiemTraSpf(from);
 
 const transporter = nodemailer.createTransport({
   host,
@@ -96,8 +138,18 @@ function giaiThich(err) {
       '  - Cổng 465 thì phải chạy SSL: đặt EMAIL_PORT=465.',
     ].join('\n');
   }
-  if (code === 'EENVELOPE') {
-    return 'Địa chỉ người gửi hoặc người nhận không hợp lệ.';
+  if (code === 'EENVELOPE' || msg.includes('550-5.7.1') || /not allowed|Invalid sender/i.test(msg)) {
+    const dong = ['Địa chỉ người gửi hoặc người nhận bị từ chối.'];
+    if (from !== user) {
+      dong.push(
+        `  - Đang gửi bằng bí danh ${from} trong khi đăng nhập là ${user}.`,
+        '  - Gmail chỉ nhận bí danh ĐÃ XÁC MINH trên chính tài khoản đó:',
+        '    Gmail > Cài đặt > Tài khoản > "Gửi thư bằng địa chỉ".',
+        '    Bí danh phải ở trạng thái đã xác minh, không phải đang chờ.',
+        '  - Chưa xác minh xong thì bỏ EMAIL_FROM đi, gửi tạm bằng EMAIL_USER.',
+      );
+    }
+    return dong.join('\n');
   }
   return 'Chưa có gợi ý sẵn cho lỗi này, đọc nguyên văn ở trên.';
 }
@@ -114,13 +166,18 @@ try {
 
 try {
   const info = await transporter.sendMail({
-    from: `"Zoldify" <${user}>`,
+    // Dựng y hệt cách src/common/mailer.config.ts dựng, để cái được thử ở đây
+    // đúng là cái chạy thật. Thử một đằng chạy một nẻo thì phép thử vô nghĩa.
+    from: `"Zoldify" <${from}>`,
     to,
     subject: 'Zoldify — thử cấu hình gửi mail',
     html: '<p>Đọc được thư này nghĩa là SMTP đã chạy. Đăng ký và quên mật khẩu gửi được OTP.</p>',
   });
   console.log(`Gửi thư: OK (id ${info.messageId})`);
   console.log(`\nMở hộp thư ${to} để xem. Không thấy thì ngó cả mục Spam.`);
+  if (from !== user) {
+    console.log(`Kiểm luôn dòng người gửi có đúng "${from}" không, và có bị chèn "via gmail.com" không.`);
+  }
 } catch (err) {
   console.error('Gửi thư THẤT BẠI\n');
   console.error(`Lỗi thật: [${err?.code || '?'}] ${err?.message || err}\n`);

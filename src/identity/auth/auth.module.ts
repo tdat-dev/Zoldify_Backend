@@ -11,6 +11,7 @@ import { JwtStrategy } from './passport/jwt.strategy';
 import { LocalStrategy } from './passport/local.strategy';
 import { UsersModule } from '@identity/users/users.module';
 import { User } from '@identity/users/entities/user.entity';
+import { mailerConfig } from '../../common/mailer.config';
 
 @Module({
   imports: [
@@ -18,26 +19,12 @@ import { User } from '@identity/users/entities/user.entity';
     TypeOrmModule.forFeature([User]),
     CacheModule.register({ ttl: 300, max: 100 }),
     // AuthService lấy MailerService từ ĐÂY, không phải từ bản khai trong
-    // app.module — module nào tự khai thì dùng bản của chính nó. Bản kia có
-    // `defaults.from`, bản này thì không, nên mọi mail OTP đi ra đều KHÔNG CÓ
-    // người gửi và nodemailer từ chối ngay ở khâu dựng phong bì. Người dùng
-    // chỉ thấy "Không thể gửi email" dù SMTP đã điền đúng.
+    // app.module — module nào tự khai thì dùng bản của chính nó. Hai bản từng
+    // chép tay và đã lệch: bản này thiếu `defaults.from`, nên mail OTP đi ra
+    // không có người gửi dù SMTP điền đúng. Nay cả hai gọi chung một hàm.
     MailerModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        transport: {
-          host: configService.get<string>('EMAIL_HOST') || 'smtp.gmail.com',
-          port: configService.get<number>('EMAIL_PORT') || 587,
-          secure: false,
-          auth: {
-            user: configService.get<string>('EMAIL_USER'),
-            pass: configService.get<string>('EMAIL_APP_PASSWORD'),
-          },
-        },
-        defaults: {
-          from: `"Zoldify" <${configService.get<string>('EMAIL_USER')}>`,
-        },
-      }),
+      useFactory: mailerConfig,
       inject: [ConfigService],
     }),
     PassportModule,
