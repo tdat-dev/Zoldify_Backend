@@ -36,6 +36,26 @@ if (/\s/.test(pass)) {
   console.warn('CẢNH BÁO: mật khẩu có dấu cách. App Password của Gmail phải xoá hết dấu cách (16 ký tự liền).\n');
 }
 
+// Nhầm phổ biến nhất, và mã lỗi của Gmail KHÔNG nói ra: đưa cho smtp.gmail.com
+// một địa chỉ thuộc tên miền riêng. Gmail trả về đúng câu 535 BadCredentials như
+// khi sai mật khẩu, nên người ta đi tạo lại App Password vài lần trong khi vấn
+// đề nằm ở tên tài khoản.
+//
+// smtp.gmail.com chỉ đăng nhập được bằng tài khoản Google THẬT: @gmail.com,
+// hoặc tên miền riêng ĐÃ mua Google Workspace. Tên miền dùng dịch vụ chuyển
+// tiếp thư (Cloudflare Email Routing, ImprovMX...) thì địa chỉ đó không phải
+// hộp thư, chỉ là một quy tắc forward — không có mật khẩu để mà đăng nhập.
+const laGmail = /(^|\.)gmail\.com$/i.test(host) || /(^|\.)googlemail\.com$/i.test(host);
+if (laGmail && !/@(gmail|googlemail)\.com$/i.test(user)) {
+  const mien = user.split('@')[1] || '(không rõ)';
+  console.warn('CẢNH BÁO: đang đăng nhập smtp.gmail.com bằng địa chỉ không thuộc Gmail.');
+  console.warn(`  Chỉ chạy được nếu "${mien}" đã mua Google Workspace VÀ ${user} là một hộp thư thật ở đó.`);
+  console.warn(`  Kiểm tra nhanh:  nslookup -type=mx ${mien}`);
+  console.warn('  Thấy aspmx.l.google.com  -> Workspace, đi tiếp được.');
+  console.warn('  Thấy mx.cloudflare.net, improvmx, forwardemail... -> chỉ NHẬN thư, không gửi được.');
+  console.warn('  Đường vòng nhanh nhất: điền EMAIL_USER bằng chính Gmail đã sinh ra App Password.\n');
+}
+
 const transporter = nodemailer.createTransport({
   host,
   port,
@@ -48,13 +68,25 @@ function giaiThich(err) {
   const code = err?.code || '';
   const msg = String(err?.message || err);
   if (code === 'EAUTH' || msg.includes('535')) {
-    return [
-      'Máy chủ từ chối tài khoản/mật khẩu.',
+    const dong = ['Máy chủ từ chối tài khoản/mật khẩu.'];
+    // Thứ tự này quan trọng: sai TÊN TÀI KHOẢN và sai MẬT KHẨU cho ra cùng một
+    // mã 535. Nói về mật khẩu trước là đẩy người dùng đi tạo lại App Password
+    // hết lần này tới lần khác trong khi lỗi nằm chỗ khác.
+    if (laGmail && !/@(gmail|googlemail)\.com$/i.test(user)) {
+      dong.push(
+        `  - NGHI TRƯỚC HẾT: "${user}" không phải tài khoản Google.`,
+        '    Google trả về đúng câu 535 này cho cả tên tài khoản lạ lẫn sai mật khẩu.',
+        '    Thử lại bằng chính địa chỉ @gmail.com đã sinh ra App Password.',
+      );
+    }
+    dong.push(
       '  - Gmail KHÔNG nhận mật khẩu đăng nhập thường, phải dùng App Password.',
       '  - App Password chỉ tạo được khi tài khoản đã bật xác thực 2 bước:',
       '    https://myaccount.google.com/apppasswords',
+      '  - App Password gắn với ĐÚNG tài khoản sinh ra nó, dán sang tên khác là hỏng.',
       '  - Dán 16 ký tự liền, không dấu cách.',
-    ].join('\n');
+    );
+    return dong.join('\n');
   }
   if (code === 'ETIMEDOUT' || code === 'ESOCKET' || code === 'ECONNECTION') {
     return [
