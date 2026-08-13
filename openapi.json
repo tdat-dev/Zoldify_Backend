@@ -6174,6 +6174,53 @@
         ]
       }
     },
+    "/api/v1/admin/withdrawals/{id}/complete": {
+      "patch": {
+        "operationId": "AdminController_completeWithdrawal_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Withdrawal"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Chặng thứ ba: tiền rời khỏi hệ thống sang `bank_external` sau khi admin đã\nchuyển khoản thật ngoài đời.\n\n`AdminService.completeWithdrawal` và `WithdrawalsService.complete` đều đã\ntồn tại và có test, nhưng KHÔNG có route nào gọi tới. Nghĩa là lệnh rút chỉ\nđi được tới `approved` rồi đứng đó vĩnh viễn, và tiền vẫn nằm trong\n`withdrawal_pending` — sổ cái nói người bán chưa được trả, dù thực tế đã\nchuyển. Thiếu đúng bảy dòng này.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api/v1/withdrawals": {
       "post": {
         "operationId": "WithdrawalsController_create_v1",
@@ -6362,6 +6409,7 @@
             }
           }
         },
+        "summary": "ĐỌC được thì cần đăng nhập; GHI thì phải là admin.\n\nBản trước hai endpoint dưới đây chỉ có JwtAuthGuard, nghĩa là BẤT KỲ tài\nkhoản nào đăng nhập cũng sửa được cài đặt toàn hệ thống — đổi tên site, đổi\nmô tả, và (từ nay) bật được chế độ bảo trì để đóng cửa cả sàn. Không có gì\ntrong giao diện dẫn tới đó, nhưng endpoint thì gọi thẳng bằng curl là xong.\n\nAdminGuard đã có sẵn trong repo từ trước, chỉ là chỗ này quên gắn.",
         "tags": [
           "Settings"
         ]
@@ -6847,6 +6895,10 @@
           "price": {
             "type": "number"
           },
+          "currency": {
+            "type": "string",
+            "description": "4.1. Đơn vị tiền của `price` — mã ISO 4217 ('VND', 'USD', 'JPY'…).\n\nVÌ SAO CẦN: trước cột này, mọi con số trong hệ thống đều NGẦM hiểu là đồng\nViệt Nam, và không chỗ nào trong mã nói ra điều đó. Giao diện tiếng Anh vì\nvậy vẫn in \"1.890.000 ₫\" — không phải lỗi định dạng, mà là vì thật sự không\ncó dữ liệu nào cho nó biết số đó là tiền gì.\n\n⚠️ CỘT NÀY CHỈ LÀM ĐÚNG PHẦN HIỂN THỊ. Nó KHÔNG khiến sàn giao dịch được\nxuyên tiền tệ. Muốn thế còn cần: nguồn tỉ giá, thời điểm chốt giá, và một\nsổ cái nhiều tiền tệ. Sổ cái hiện tại (ledger_accounts) kiểm bất biến\n`sum(entries) = 0`, mà bất biến đó chỉ có nghĩa TRONG CÙNG một tiền tệ —\ntrộn hai loại tiền vào một sổ là cách làm hỏng sổ sách mà không ai thấy.\nNên tới khi có thiết kế đó, mỗi sàn vẫn nên chạy một tiền tệ."
+          },
           "stock": {
             "type": "number"
           },
@@ -6912,6 +6964,7 @@
           "slug",
           "description",
           "price",
+          "currency",
           "stock",
           "image",
           "brand",
@@ -6976,6 +7029,11 @@
           },
           "price": {
             "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Mã ISO 4217, 3 chữ hoa. Bỏ trống thì entity mặc định 'VND'.\n\nChỉ kiểm HÌNH DẠNG chứ không kiểm mã có thật: danh sách ISO 4217 thay đổi\ntheo thời gian và giữ một bản chép tay ở đây thì sớm muộn cũng lạc hậu.\nMã lạ lọt qua sẽ hiện ra ở phần định dạng phía frontend (Intl ném lỗi và\nrơi về in số kèm mã), chứ không làm hỏng dữ liệu.",
+            "pattern": "^[A-Z]{3}$"
           },
           "image": {
             "type": "string"
@@ -7205,6 +7263,10 @@
           "final_amount": {
             "type": "number"
           },
+          "currency": {
+            "type": "string",
+            "description": "Đơn vị tiền của đơn — CHỤP LẠI lúc đặt, không đọc lại từ sản phẩm.\n\nNgười bán đổi tiền tệ của tin đăng sau khi đơn đã đặt là chuyện có thật, và\nkhi đó đơn cũ phải giữ nguyên thứ nó đã thoả thuận. Đọc `product.currency`\nlúc hiển thị thì một đơn 1.890.000 VND có thể biến thành 1.890.000 USD chỉ\nvì người bán sửa tin — hoá đơn tự đổi số sau lưng người mua.\n\nCùng lý do mà `order_items` đã chụp lại tên và giá sản phẩm."
+          },
           "status": {
             "enum": [
               "pending",
@@ -7289,6 +7351,7 @@
           "shipping_fee",
           "discount_amount",
           "final_amount",
+          "currency",
           "status",
           "payment_method",
           "is_paid",
@@ -8092,6 +8155,10 @@
           "label": {
             "type": "string"
           },
+          "country": {
+            "type": "string",
+            "description": "Mã quốc gia ISO 3166-1 alpha-2 ('VN', 'US', 'JP'…).\n\nĐứng TRƯỚC province vì nó quyết định mấy ô còn lại có nghĩa gì: 'province /\ndistrict / ward' là ba cấp hành chính của Việt Nam. Nước khác chia khác —\nMỹ có state/city/ZIP, Nhật có prefecture/city/chōme. Cột này chưa làm cho\nbiểu mẫu tự đổi theo nước, nhưng nó ghi lại được ĐỊA CHỈ NÀY THUỘC NƯỚC NÀO,\nlà thứ tối thiểu phải có trước khi làm việc đó.\n\nMặc định 'VN' cho mọi dòng đang có: tất cả địa chỉ trong database lúc này\nđều nhập bằng bộ chọn tỉnh/huyện/xã Việt Nam, nên đó là sự thật chứ không\nphải phỏng đoán."
+          },
           "province": {
             "type": "string"
           },
@@ -8122,6 +8189,7 @@
           "recipient_name",
           "phone_number",
           "label",
+          "country",
           "province",
           "district",
           "ward",

@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "ts-node src/seed.ts",
+    "seed:withdrawals": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-withdrawals.ts",
     "openapi:gen": "nest build && node dist/openapi-export.js",
     "openapi:check": "npm run openapi:gen && git diff --exit-code openapi.json",
     "mock": "prism mock openapi.json --port 4200",

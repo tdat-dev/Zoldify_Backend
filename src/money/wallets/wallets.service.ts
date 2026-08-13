@@ -44,13 +44,35 @@ export class WalletsService {
     );
   }
 
+  /**
+   * Trả về CẢ HAI con số, không riêng số khả dụng.
+   *
+   * Gửi một lệnh rút là tiền chuyển ngay từ `available` sang
+   * `withdrawal_pending`. Nếu giao diện chỉ đọc `balance` thì người bán vừa bấm
+   * gửi xong thấy số dư tụt về 0 mà không có gì nói tiền đi đâu — đúng loại im
+   * lặng khiến người ta nghĩ mình vừa bị mất tiền.
+   *
+   * `getPendingWithdrawal` bên dưới viết ra chính vì việc này, kèm bình luận
+   * "để giao diện hiển thị đúng khả dụng và đang chờ", rồi chưa từng có ai gọi.
+   * Gộp vào đây để không thể quên nữa.
+   */
   async getBalance(userId: number) {
-    const available = await this.ledger.getBalance(
-      LedgerOwnerType.USER,
-      userId,
-      LedgerPurpose.AVAILABLE,
-    );
-    return { balance: Number(available) };
+    const [available, pending] = await Promise.all([
+      this.ledger.getBalance(
+        LedgerOwnerType.USER,
+        userId,
+        LedgerPurpose.AVAILABLE,
+      ),
+      this.ledger.getBalance(
+        LedgerOwnerType.USER,
+        userId,
+        LedgerPurpose.WITHDRAWAL_PENDING,
+      ),
+    ]);
+    return {
+      balance: Number(available),
+      pending_withdrawal: Number(pending),
+    };
   }
 
   /**
