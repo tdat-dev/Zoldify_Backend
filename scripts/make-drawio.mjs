@@ -30,6 +30,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'docs', 'system-design', 'drawio');
 const FORCE = process.argv.includes('--force');
 
+/**
+ * Lọc theo tên file. Mọi tham số không bắt đầu bằng `--` được coi là một mẩu
+ * tên; chỉ file khớp mới được sinh lại.
+ *
+ *   node scripts/make-drawio.mjs --force r2-container 11-deployment
+ *
+ * Vì sao cần: `--force` trần ghi đè TẤT CẢ, kể cả những file đã được kéo thả
+ * chỉnh tay trong draw.io. Sửa một sơ đồ mà mất chỉnh tay của năm sơ đồ khác là
+ * cái giá quá đắt cho một lệnh gõ nhầm.
+ */
+const ONLY = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+
 // ===========================================================================
 // 1. USE CASE DIAGRAM  — slide 5
 // ===========================================================================
@@ -528,16 +540,28 @@ function deploymentDiagram() {
     value: '«device»\nUser Device',
     style: S.node3d, x: 40, y: 80, w: 260, h: 220,
   });
-  vertex(s, { value: 'Browser\n(Next.js web client)', style: S.artifact, x: 60, y: 150, w: 210, h: 55 });
+  vertex(s, { value: 'Browser\n(Next.js shop client)\nzoldify.com', style: S.artifact, x: 60, y: 145, w: 210, h: 60 });
   vertex(s, { value: 'Android / iOS app\n(React Native, Expo)', style: S.artifact, x: 60, y: 215, w: 210, h: 55 });
+
+  // Máy của quản trị viên là một origin khác, không phải một tab khác của cùng
+  // trang. Đỏ = đã chốt 13/08/2026, chưa dựng.
+  const adminDev = vertex(s, {
+    value: '«device»\nAdmin workstation  (planned)',
+    style: S.node3d + 'fillColor=#ffe0e0;strokeColor=#c62828;',
+    x: 40, y: 340, w: 260, h: 140,
+  });
+  vertex(s, {
+    value: 'Browser\n(Next.js admin client)\nadmin.zoldify.com\nseparate session',
+    style: S.artifact, x: 60, y: 400, w: 210, h: 65,
+  });
 
   const vps = vertex(s, {
     value: '«device»\nVPS — Ubuntu, Docker Compose',
     style: S.node3d, x: 420, y: 40, w: 620, h: 530,
   });
 
-  vertex(s, { value: '«container»  caddy:2\nTLS termination, reverse proxy, :80 :443',
-    style: S.artifact, x: 450, y: 120, w: 560, h: 55 });
+  vertex(s, { value: '«container»  caddy:2\nTLS termination, reverse proxy, :80 :443\nserves zoldify.com and admin.zoldify.com',
+    style: S.artifact, x: 450, y: 120, w: 560, h: 65 });
 
   const apiNode = vertex(s, {
     value: '«execution environment»\nNode.js 20 — API replicas',
@@ -576,6 +600,7 @@ function deploymentDiagram() {
 
   const link = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
   link(dev, vps, 'HTTPS  /api/v1\nWebSocket  /chat');
+  link(adminDev, vps, 'HTTPS  /api/v1/admin');
   link(vps, cf, 'S3 API');
   link(vps, gw, 'HTTPS');
   link(gh, vps, 'SSH  compose pull && up -d');
@@ -659,8 +684,17 @@ function containerDiagram() {
   const store = (v, x, y) =>
     vertex(s, { value: v, style: S.node3d + 'verticalAlign=middle;align=center;spacingLeft=0;', x, y, w: 220, h: 90 });
 
-  const web = box('Web\nNext.js 14 App Router, SSR', 60, 80, 240, 80);
-  const app = box('Mobile\nReact Native + Expo\nAndroid and iOS', 60, 210, 240, 90);
+  const web = box('Shop web\nNext.js 14 App Router, SSR\nzoldify.com', 60, 70, 240, 90);
+  const app = box('Mobile\nReact Native + Expo\nAndroid and iOS', 60, 195, 240, 90);
+
+  // Đỏ = chưa dựng, cùng quy ước với các sơ đồ hoạt động và lớp.
+  const admin = vertex(s, {
+    value: 'Admin web  (planned)\nNext.js, separate deployable\nadmin.zoldify.com',
+    style:
+      S.component +
+      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+    x: 60, y: 320, w: 240, h: 90,
+  });
 
   vertex(s, {
     value: 'Single VPS — Docker Compose',
@@ -673,31 +707,48 @@ function containerDiagram() {
   const mysql = store('MySQL 8\nsource of truth', 440, 340);
   const redis = store('Redis 7\ncache · throttle\nsocket adapter · queue', 760, 340);
 
-  const r2 = box('Cloudflare R2\nproduct images', 440, 480, 280, 70);
+  // R2 phải nằm NGOÀI khung VPS. Bản trước đặt nó ở (440,480), tức lọt hẳn vào
+  // trong khung "Single VPS", trong khi chú thích ngay dưới sơ đồ lại viết
+  // "Images are not on the VPS disk". Sơ đồ tự cãi chính nó, và đây là loại
+  // mâu thuẫn giám khảo chỉ ra được trong ba giây.
+  const r2 = box('Cloudflare R2\nobject storage, outside the VPS', 1100, 90, 250, 80);
 
   const f = (a, b, v, style = S.flow) => edge(s, { source: a, target: b, value: v, style });
 
-  f(web, caddy, 'HTTPS /api/v1');
-  f(app, caddy, 'HTTPS /api/v1');
-  f(app, caddy, 'WebSocket /chat', S.depend);
+  /** Neo cạnh vào một điểm cụ thể trên hai hộp. */
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+
+  // Bốn client cùng đi vào Caddy. Không neo thì cả bốn đâm vào một cạnh và bốn
+  // cái nhãn xếp chồng vùng nhau — nhìn không ra đường nào của ai.
+  f(web, caddy, 'HTTPS /api/v1', S.flow + at(1, 0.5, 0, 0.3));
+  f(app, caddy, 'HTTPS /api/v1', S.flow + at(1, 0.3, 0, 0.8));
+  f(app, caddy, 'WebSocket /chat', S.depend + at(1, 0.7, 0.15, 1));
+  f(admin, caddy, 'HTTPS admin API', S.flow + at(1, 0.4, 0.45, 1));
   f(caddy, api, '');
   f(api, mysql, '');
   f(api, redis, '');
   f(worker, mysql, '');
   f(worker, redis, '');
-  f(api, r2, 'upload', S.depend);
+  // Rời api từ cạnh TRÊN và vào R2 từ cạnh TRÁI, đi qua hành lang trống giữa
+  // hàng Caddy và hàng API. Bản trước để draw.io tự định tuyến: đường cắt thẳng
+  // qua hộp MySQL và nhãn "upload" dính vào nhãn "MySQL 8" thành "MySQupload".
+  f(api, r2, 'upload', S.depend + at(0.5, 0, 0, 0.5));
 
   vertex(s, {
     value:
-      'Three things this diagram states:\n' +
+      'Four things this diagram states:\n' +
       '1. The API keeps NO state, so it can be replicated. Everything that used to\n' +
       '   live in process memory — cache, rate-limit counters, socket lists — is in Redis.\n' +
       '2. Exactly ONE worker. Cron inside the API would run the reconciliation job\n' +
       '   three times; for a job that touches money that is a serious bug.\n' +
       '3. Images are not on the VPS disk. Required for replication, and so a redeploy\n' +
-      '   does not wipe them.',
+      '   does not wipe them.\n' +
+      '4. Admin is its own deployable on its own hostname, so admin code is never\n' +
+      '   shipped in the customer bundle. Sessions are per-origin, so an admin who\n' +
+      '   also sells signs in twice. Red = decided on 13/08/2026, not built yet.',
     style: S.note,
-    x: 60, y: 640, w: 700, h: 120,
+    x: 60, y: 640, w: 700, h: 150,
   });
 
   return s;
@@ -1042,7 +1093,7 @@ function cicdDiagram() {
   const dev = step('Developer pushes\na feature branch', 60, 60);
   const pr = step('Open Pull Request', 60, 150);
 
-  vertex(s, { value: 'CI checks — all must pass', style: S.boundary, x: 340, y: 40, w: 560, h: 330 });
+  vertex(s, { value: 'CI checks — all must pass', style: S.boundary, x: 340, y: 40, w: 560, h: 250 });
   const c1 = step('lint + typecheck', 370, 90, 240);
   const c2 = step('boundaries:check\nblocks context violations', 370, 155, 240, '#ffe8cc');
   const c3 = step('test\n37 tests, money on real MySQL', 370, 220, 240);
@@ -1050,8 +1101,14 @@ function cicdDiagram() {
   const c5 = step('openapi:check\ndiffers from commit means fail', 640, 155, 230, '#ffe8cc');
   const c6 = step('diagrams:check\n25 diagrams must parse', 640, 220, 230, '#ffe8cc');
 
+  // Nút quyết định đặt DƯỚI khung, không nằm trong.
+  //
+  // Hai lý do. Đúng về ngữ nghĩa: nó là kết quả của cụm kiểm, không phải một
+  // phép kiểm. Và đúng về bố cục: khi nó nằm trong khung, mọi đường thẳng từ nó
+  // sang cột bên phải đều xuyên qua ô `diagrams:check`, làm nhãn "yes" dính vào
+  // chữ trong ô đó thành "25 diagrams must parsyes".
   const gate = vertex(s, {
-    value: 'All green?', style: S.decision, x: 500, y: 290, w: 160, h: 70,
+    value: 'All green?', style: S.decision, x: 500, y: 330, w: 160, h: 70,
   });
 
   const review = step('Reviewed by\nanother member', 990, 150, 220);
@@ -1094,6 +1151,22 @@ function cicdDiagram() {
     x: 60, y: 420, w: 620, h: 180,
   });
 
+  // Cùng một hình dạng pipeline chạy cho từng repo. Vẽ bốn lần thì sơ đồ dài
+  // gấp bốn mà không nói thêm điều gì, nên liệt kê ở đây kèm chỗ khác nhau.
+  vertex(s, {
+    value:
+      'This pipeline runs per repository. Four repositories:\n\n' +
+      'Zoldify_Backend    lint · boundaries:check · test · build · openapi:check · diagrams:check\n' +
+      'Zoldify_Frontend   lint · build · gen:api must match the committed schema\n' +
+      'Zoldify_Admin      lint · build · check-shared must match Zoldify_Frontend   (planned)\n' +
+      'Zoldify_Mobile     lint · typecheck · EAS build\n\n' +
+      'check-shared is the gate specific to the admin split: the modules copied from\n' +
+      'the shop repo must stay byte-identical. Without it the two copies drift, which\n' +
+      'is exactly how the order-status table ended up with four versions.',
+    style: S.note,
+    x: 60, y: 620, w: 620, h: 190,
+  });
+
   return s;
 }
 
@@ -1107,18 +1180,18 @@ const FILES = [
   ['08-class-diagram.drawio', [classDiagram()], { width: 1600, height: 1000 }],
   ['09-sequence-diagram.drawio', [sequenceDiagram()], { width: 1400, height: 1110 }],
   ['10-entity-relationship-diagram.drawio', [erDiagram()], { width: 1200, height: 920 }],
-  ['11-deployment-diagram.drawio', [deploymentDiagram()], { width: 1450, height: 780 }],
+  ['11-deployment-diagram.drawio', [deploymentDiagram()], { width: 1450, height: 900 }],
 
   // Không có slide riêng trong mẫu, nhưng cần cho báo cáo và cho việc hiểu
   // hệ thống. Đặt tên mô tả thay vì số slide.
   ['r1-system-context.drawio', [contextDiagram()], { width: 1350, height: 820 }],
-  ['r2-container.drawio', [containerDiagram()], { width: 1120, height: 800 }],
+  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 840 }],
   ['r3-component-bounded-contexts.drawio', [componentDiagram()], { width: 1250, height: 890 }],
   ['r4-fund-flow.drawio', [fundFlowDiagram()], { width: 1350, height: 760 }],
   ['r5-state-order-lifecycle.drawio', [orderStateDiagram()], { width: 1000, height: 880 }],
   ['r6-state-escrow-lifecycle.drawio', [escrowStateDiagram()], { width: 1050, height: 400 }],
   ['r7-screen-navigation.drawio', [navigationDiagram()], { width: 1400, height: 840 }],
-  ['r8-cicd-pipeline.drawio', [cicdDiagram()], { width: 1280, height: 890 }],
+  ['r8-cicd-pipeline.drawio', [cicdDiagram()], { width: 1280, height: 900 }],
 ];
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -1127,6 +1200,10 @@ let written = 0;
 let skipped = 0;
 for (const [name, sheets, size] of FILES) {
   const target = path.join(OUT, name);
+  if (ONLY.length > 0 && !ONLY.some((frag) => name.includes(frag))) {
+    skipped += 1;
+    continue;
+  }
   if (fs.existsSync(target) && !FORCE) {
     console.log(`  bỏ qua  ${name}  (đã có, dùng --force để ghi đè)`);
     skipped += 1;

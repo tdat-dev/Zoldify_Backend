@@ -27,7 +27,12 @@
 | Buyer account | `/profile` · `/profile/orders` · `/profile/orders/[id]` · `/profile/wallet` · `/profile/products` · `/profile/change-password` · `/addresses` · `/addresses/create` · `/addresses/[id]/edit` · `/notifications` |
 | Selling | `/product/create` · `/product/[id]/edit` · `/shop` · `/shop/orders` |
 | Messaging | `/chat` |
-| Admin | `/admin` · `/admin/orders` · `/admin/products` · `/admin/categories` · `/admin/users` · `/admin/settings` |
+| Admin | `/admin` · `/admin/orders` · `/admin/products` · `/admin/categories` · `/admin/users` · `/admin/withdrawals` · `/admin/settings` |
+
+> **Bảy trang admin sắp rời khỏi bảng này.** Quyết định ngày 13/08/2026: tách
+> thành ứng dụng riêng `Zoldify_Admin` trên `admin.zoldify.com`. Chi tiết và
+> bảng chia việc ở [`2026-08-13-tach-admin-frontend.md`](../system-design/2026-08-13-tach-admin-frontend.md).
+> Khi việc đó xong, mục này còn 29 trang và khu admin có bảng kiểm kê riêng.
 
 **Mobile — 3 screens** under `Zoldify_Mobile/src/app`:
 
@@ -137,18 +142,32 @@ admin:  review → approve → complete → funds leave to bank_external
                 → reject  → money returns to available
 ```
 
-**None of this has an interface.**
+**Built on 13/08/2026.** Until that day none of this had an interface: the backend
+implemented all three stages with nine integration tests on a real MySQL instance,
+including one asserting that two concurrent requests for the whole balance cannot
+both succeed — while `/profile/wallet` contained no reference to withdrawal and no
+`/admin/withdrawals` route existed. A seller could earn money and had no way to
+take it out.
 
-The backend implements all three stages and nine integration tests cover them on a
-real MySQL instance, including one asserting that two concurrent requests for the
-whole balance cannot both succeed. But `/profile/wallet` — 243 lines — contains no
-reference to withdrawal, and there is no `/admin/withdrawals` route.
+What the screens do now:
 
-A seller using Zoldify today can earn money and cannot take it out.
+- **`/profile/wallet`** — the balance card shows available *and* held, because
+  sending a request moves money out of `available` immediately and a balance that
+  silently drops is the worst thing a money screen can do. Below it, a request
+  form and the list of requests already sent, each with its status and, when
+  rejected, the reason the admin gave.
+- **`/admin/withdrawals`** — filter by status, then approve, reject, or mark
+  transferred. Three different confirmations because the three actions differ in
+  what happens to the money: approving moves nothing, rejecting moves money back,
+  marking transferred is irreversible. Rejecting requires a written reason, and
+  the seller reads that reason on their own wallet page.
 
-This is [PRD §7 gap 7](./2026-08-12-prd.md), and it is the single highest-value
-piece of interface work in the project: two ordinary forms standing between the
-product and a complete demonstration of its central promise.
+One route had to be opened on the backend to finish this: `PATCH
+/admin/withdrawals/:id/complete`. `AdminService.completeWithdrawal` and
+`WithdrawalsService.complete` both already existed with tests, but no controller
+declared the route, so a request could reach `approved` and stop there forever.
+
+This closes [PRD §7 gap 7](./2026-08-12-prd.md).
 
 ## 8. Coverage matrix
 
@@ -164,16 +183,18 @@ product and a complete demonstration of its central promise.
 | 4 · Checkout and pay | ✅ | ❌ | ✅ |
 | 5 · Order history | ✅ | ❌ | ✅ |
 | 5 · Confirm receipt | ✅ | ❌ | ✅ |
-| 6 · Request withdrawal | ❌ | ❌ | ✅ |
-| 6 · Approve withdrawal | ❌ | ❌ | ✅ |
+| 6 · Request withdrawal | ✅ | ❌ | ✅ |
+| 6 · Approve withdrawal | ✅ | n/a | ✅ |
 | Chat | ✅ | ❌ | ✅ |
 | Notifications | ✅ | ❌ | ✅ |
 | Admin console | ✅ | n/a | ✅ |
 
+> Cập nhật 13/08/2026: hai dòng rút tiền đã chuyển sang ✅ — xem §7.
+
 **Read the columns, not the rows.**
 
-The backend column is complete. The web column is complete except for withdrawal.
-The mobile column has two ticks out of fourteen.
+The backend column is complete. The web column is now complete. The mobile column
+has two ticks out of fourteen.
 
 The capstone requires the app to run on Android **and** iOS against the deployed
 API. As it stands the app can log a user in and show them a list of products. It
