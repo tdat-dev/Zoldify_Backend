@@ -12,13 +12,12 @@ import {
 import { Category } from '@catalog/categories/entities/category.entity';
 import { User } from '@identity/users/entities/user.entity';
 
-
 // Định nghĩa trạng thái sản phẩm
 export enum ProductStatus {
-  DRAFT = 'draft',       // Nháp (chưa đăng)
-  PENDING = 'pending',   // Chờ duyệt
-  ACTIVE = 'active',     // Đang mở bán
-  SOLD = 'sold',         // Đã bán
+  DRAFT = 'draft', // Nháp (chưa đăng)
+  PENDING = 'pending', // Chờ duyệt
+  ACTIVE = 'active', // Đang mở bán
+  SOLD = 'sold', // Đã bán
   REJECTED = 'rejected', // Bị từ chối duyệt
 }
 
@@ -47,8 +46,26 @@ export class Product {
   description: string;
 
   // 4. Giá bán - DECIMAL(15,2) để tránh sai số tiền tệ và hiển thị chính xác số dư lẻ
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.0 })
   price: number;
+
+  /**
+   * 4.1. Đơn vị tiền của `price` — mã ISO 4217 ('VND', 'USD', 'JPY'…).
+   *
+   * VÌ SAO CẦN: trước cột này, mọi con số trong hệ thống đều NGẦM hiểu là đồng
+   * Việt Nam, và không chỗ nào trong mã nói ra điều đó. Giao diện tiếng Anh vì
+   * vậy vẫn in "1.890.000 ₫" — không phải lỗi định dạng, mà là vì thật sự không
+   * có dữ liệu nào cho nó biết số đó là tiền gì.
+   *
+   * ⚠️ CỘT NÀY CHỈ LÀM ĐÚNG PHẦN HIỂN THỊ. Nó KHÔNG khiến sàn giao dịch được
+   * xuyên tiền tệ. Muốn thế còn cần: nguồn tỉ giá, thời điểm chốt giá, và một
+   * sổ cái nhiều tiền tệ. Sổ cái hiện tại (ledger_accounts) kiểm bất biến
+   * `sum(entries) = 0`, mà bất biến đó chỉ có nghĩa TRONG CÙNG một tiền tệ —
+   * trộn hai loại tiền vào một sổ là cách làm hỏng sổ sách mà không ai thấy.
+   * Nên tới khi có thiết kế đó, mỗi sàn vẫn nên chạy một tiền tệ.
+   */
+  @Column({ type: 'char', length: 3, default: 'VND' })
+  currency: string;
 
   // 5. Số lượng sản phẩm trong kho
   @Column({ type: 'int', default: 1 })
@@ -91,7 +108,9 @@ export class Product {
   status: ProductStatus;
 
   // 8. Quan hệ Nhiều-Một (Many-to-One): Một danh mục (Category) có nhiều sản phẩm (Products)
-  @ManyToOne(() => Category, (category) => category.products, { onDelete: 'SET NULL' })
+  @ManyToOne(() => Category, (category) => category.products, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'category_id' }) // Tên cột khóa ngoại trong MySQL là 'category_id'
   category: Category;
 
@@ -111,6 +130,4 @@ export class Product {
   // 12. Xóa mềm (Soft Delete) - Ẩn khi select
   @DeleteDateColumn({ select: false })
   deleted_at?: Date;
-
-
 }

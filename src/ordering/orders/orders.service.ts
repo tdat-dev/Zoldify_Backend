@@ -91,6 +91,8 @@ export class OrdersService {
     }
 
     let totalAmount = 0;
+    // Tiền tệ của đơn, lấy từ món ĐẦU TIÊN rồi bắt các món sau phải khớp.
+    let orderCurrency = '';
     const orderItemsData: Array<{
       product: { id: number };
       product_name: string;
@@ -120,6 +122,26 @@ export class OrdersService {
         );
       }
 
+      // CỘNG TIỀN THÌ PHẢI CÙNG MỘT LOẠI TIỀN.
+      //
+      // Vòng lặp này cộng giá của mọi món trong giỏ vào một con số duy nhất.
+      // Chừng nào cả sàn còn một tiền tệ thì không sao, nhưng cột
+      // `products.currency` vừa thêm khiến điều đó không còn được bảo đảm —
+      // và một phép cộng 500 USD + 500 VND ra 1000 thì không báo lỗi ở đâu cả,
+      // nó chỉ lặng lẽ tính sai hoá đơn.
+      //
+      // Ở đây TỪ CHỐI thay vì quy đổi: quy đổi cần nguồn tỉ giá và thời điểm
+      // chốt giá, mà cả hai đều chưa có. Từ chối kèm câu giải thích là hành vi
+      // đúng duy nhất khi chưa đủ dữ liệu để làm cho đúng.
+      const itemCurrency = product.currency || 'VND';
+      if (orderCurrency && itemCurrency !== orderCurrency) {
+        throw new BadRequestException(
+          `Giỏ hàng đang có ${orderCurrency} lẫn ${itemCurrency}. ` +
+            'Mỗi đơn chỉ thanh toán được một loại tiền — tách thành hai đơn giúp mình.',
+        );
+      }
+      orderCurrency = itemCurrency;
+
       const subtotal = Number(product.price) * cartItem.quantity;
       totalAmount += subtotal;
 
@@ -147,6 +169,9 @@ export class OrdersService {
       shipping_fee: shippingFee,
       discount_amount: discountAmount,
       final_amount: finalAmount,
+      // Chụp lại, không đọc lại từ sản phẩm lúc hiển thị: người bán sửa tiền tệ
+      // của tin đăng sau này thì đơn cũ vẫn phải giữ đúng thứ đã thoả thuận.
+      currency: orderCurrency || 'VND',
       status: OrderStatus.PENDING,
       payment_method: payment_method || PaymentMethod.COD,
       is_paid: false,

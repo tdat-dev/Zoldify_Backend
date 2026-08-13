@@ -1,4 +1,9 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from '@nestjs/cache-manager';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -8,8 +13,8 @@ import { Product } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Repository, ILike, Between } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
+import { formatMoney } from '@common/money';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
-
 
 @Injectable()
 export class ProductsService {
@@ -19,17 +24,37 @@ export class ProductsService {
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
     private readonly notificationsService: NotificationsService,
-    @Inject(CACHE_MANAGER) 
+    @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
   ) {}
 
   async create(createProductDto: CreateProductDto, user: IUser) {
-    const {name, price, image, images, description, slug, category_id, brand, spec, stock, condition, is_freeship} = createProductDto;
+    // DANH SÁCH TRẮNG: trường nào không có tên ở đây thì KHÔNG được lưu, dù DTO
+    // đã nhận và đã kiểm hợp lệ. `currency` vừa thêm dính đúng bẫy này — gửi
+    // "USD" lên, API trả 201 như bình thường, mà bản ghi lưu xuống là "VND".
+    // Không có lỗi nào ở đâu để mà thấy.
+    const {
+      name,
+      price,
+      currency,
+      image,
+      images,
+      description,
+      slug,
+      category_id,
+      brand,
+      spec,
+      stock,
+      condition,
+      is_freeship,
+    } = createProductDto;
     const firstImage = image || (images?.length ? images[0] : undefined);
     const newProduct = this.productRepository.create({
       condition,
       name,
       price,
+      // Bỏ trống thì để entity áp mặc định, đừng ghi đè bằng undefined.
+      ...(currency ? { currency } : {}),
       image: firstImage,
       images: images || (image ? [image] : undefined),
       description,
@@ -50,14 +75,18 @@ export class ProductsService {
     });
     await Promise.all(
       followers.map((f) =>
-        this.notificationsService.create({
-          user_id: f.follower_id,
-          type: 'new_product' as any,
-          title: `${user.full_name || 'Shop'} vừa đăng sản phẩm mới`,
-          content: `${name} — ${Number(price).toLocaleString('vi-VN')}đ`,
-          data: { product_id: saved.id, seller_id: user.id },
-        }).catch(() => null)
-      )
+        this.notificationsService
+          .create({
+            user_id: f.follower_id,
+            type: 'new_product' as any,
+            title: `${user.full_name || 'Shop'} vừa đăng sản phẩm mới`,
+            // Không ghép cứng chữ "đ": một món niêm yết bằng USD mà báo cho người
+            // theo dõi là "2.400đ" thì sai lệch hơn hai mươi lần.
+            content: `${name} — ${formatMoney(price, currency)}`,
+            data: { product_id: saved.id, seller_id: user.id },
+          })
+          .catch(() => null),
+      ),
     );
 
     return this.findOne(saved.id);
@@ -87,7 +116,8 @@ export class ProductsService {
 
     if (qs.q) {
       const rawQ = String(qs.q).trim();
-      const qb = this.productRepository.createQueryBuilder('product')
+      const qb = this.productRepository
+        .createQueryBuilder('product')
         .leftJoinAndSelect('product.category', 'category');
 
       if (rawQ.length >= 4) {
@@ -111,7 +141,9 @@ export class ProductsService {
       }
 
       if (qs.category_id) {
-        qb.andWhere('product.category_id = :catId', { catId: Number(qs.category_id) });
+        qb.andWhere('product.category_id = :catId', {
+          catId: Number(qs.category_id),
+        });
       }
       if (qs.price_min) {
         qb.andWhere('product.price >= :pmin', { pmin: Number(qs.price_min) });
@@ -209,7 +241,7 @@ export class ProductsService {
   async remove(id: number, user: IUser) {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations:  ['seller'],
+      relations: ['seller'],
     });
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm! `);
@@ -221,20 +253,25 @@ export class ProductsService {
     return { id, deleted: true };
   }
 
-  async updateStock(productId: number, stock: number, userId: number, isAdmin: boolean) {
-  const product = await this.productRepository.findOne({
-    where: { id: productId },
-    relations: ['seller'],
-  });
-  if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
-  
-  // Auth check: chỉ owner hoặc admin
-  if (!isAdmin && product.seller.id !== userId) {
-    throw new ForbiddenException('Bạn không có quyền sửa sản phẩm này');
+  async updateStock(
+    productId: number,
+    stock: number,
+    userId: number,
+    isAdmin: boolean,
+  ) {
+    const product = await this.productRepository.findOne({
+      where: { id: productId },
+      relations: ['seller'],
+    });
+    if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
+
+    // Auth check: chỉ owner hoặc admin
+    if (!isAdmin && product.seller.id !== userId) {
+      throw new ForbiddenException('Bạn không có quyền sửa sản phẩm này');
+    }
+
+    product.stock = stock;
+    await this.productRepository.save(product);
+    return product;
   }
-  
-  product.stock = stock;
-  await this.productRepository.save(product);
-  return product;
-}
 }

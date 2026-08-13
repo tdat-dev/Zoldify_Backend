@@ -15,13 +15,13 @@ import { OrderItem } from './order-item.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
 
 export enum OrderStatus {
-  PENDING = 'pending',       // Chờ xác nhận
-  CONFIRMED = 'confirmed',   // Đã xác nhận
+  PENDING = 'pending', // Chờ xác nhận
+  CONFIRMED = 'confirmed', // Đã xác nhận
   PROCESSING = 'processing', // Đang xử lý
-  SHIPPING = 'shipping',     // Đang giao hàng
-  DELIVERED = 'delivered',   // Đã giao hàng
-  CANCELLED = 'cancelled',   // Đã hủy
-  REFUNDED = 'refunded',     // Đã hoàn tiền
+  SHIPPING = 'shipping', // Đang giao hàng
+  DELIVERED = 'delivered', // Đã giao hàng
+  CANCELLED = 'cancelled', // Đã hủy
+  REFUNDED = 'refunded', // Đã hoàn tiền
 }
 
 @Entity('orders')
@@ -42,20 +42,33 @@ export class Order {
   user: User;
 
   // Tổng tiền đơn hàng
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.0 })
   total_amount: number;
 
   // Phí vận chuyển
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.0 })
   shipping_fee: number;
 
   // Mã giảm giá (nếu có)
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0.0 })
   discount_amount: number;
 
   // Số tiền thực thanh toán (total_amount + shipping_fee - discount_amount)
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.0 })
   final_amount: number;
+
+  /**
+   * Đơn vị tiền của đơn — CHỤP LẠI lúc đặt, không đọc lại từ sản phẩm.
+   *
+   * Người bán đổi tiền tệ của tin đăng sau khi đơn đã đặt là chuyện có thật, và
+   * khi đó đơn cũ phải giữ nguyên thứ nó đã thoả thuận. Đọc `product.currency`
+   * lúc hiển thị thì một đơn 1.890.000 VND có thể biến thành 1.890.000 USD chỉ
+   * vì người bán sửa tin — hoá đơn tự đổi số sau lưng người mua.
+   *
+   * Cùng lý do mà `order_items` đã chụp lại tên và giá sản phẩm.
+   */
+  @Column({ type: 'char', length: 3, default: 'VND' })
+  currency: string;
 
   // Trạng thái đơn hàng
   @Column({
