@@ -1,4 +1,14 @@
- import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { InteractionsService } from './interactions.service';
 import { User } from '@common/decorators/user.decorator';
 import { ResponseMessage } from '@common/decorators/response.decorator';
@@ -8,6 +18,7 @@ import type { IUser } from '@identity/users/users.interface';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { Review } from './entities/review.entity';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
+import { Public } from '@common/decorators/public.decorator';
 
 @Controller('interactions')
 export class InteractionsController {
@@ -20,19 +31,21 @@ export class InteractionsController {
     return this.interactionsService.create(CreateReviewDto, user);
   }
 
-
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách tương tác thành công')
   @ApiPaginated(Review)
   @Get()
   findAll(
-     @Query('currentPage') currentPage: string,
-        @Query('limit') limit: string,
-        @User() user: IUser,
+    @Query('currentPage') currentPage: string,
+    @Query('limit') limit: string,
+    @User() user: IUser,
   ) {
     return this.interactionsService.findAll(currentPage, limit, user);
   }
 
+  // Công khai có chủ ý: trang sản phẩm phải đọc được đánh giá khi chưa đăng
+  // nhập. Route không nhận `@User()` nên không có gì để lộ theo người dùng.
+  @Public()
   @ResponseMessage('Lấy đánh giá sản phẩm thành công')
   @ApiPaginated(Review)
   @Get('product/:productId')
@@ -41,7 +54,11 @@ export class InteractionsController {
     @Query('currentPage') currentPage: string,
     @Query('limit') limit: string,
   ) {
-    return this.interactionsService.findByProduct(+productId, currentPage, limit);
+    return this.interactionsService.findByProduct(
+      +productId,
+      currentPage,
+      limit,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -54,7 +71,11 @@ export class InteractionsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật tương tác thành công')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() UpdateReviewDto: UpdateReviewDto, @User() user: IUser) {
+  update(
+    @Param('id') id: string,
+    @Body() UpdateReviewDto: UpdateReviewDto,
+    @User() user: IUser,
+  ) {
     return this.interactionsService.update(+id, UpdateReviewDto, user);
   }
 
@@ -64,6 +85,4 @@ export class InteractionsController {
   remove(@Param('id') id: string, @User() user: IUser) {
     return this.interactionsService.remove(+id, user);
   }
-
-
 }

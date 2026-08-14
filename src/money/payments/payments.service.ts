@@ -47,10 +47,37 @@ export class PaymentsService {
     }
 
     if (amount) {
-      return this.processWalletTopup(amount, payment_method, user);
+      return this.refuseSelfServeTopup();
     }
 
     throw new BadRequestException('Vui lòng cung cấp order_id hoặc amount');
+  }
+
+  /**
+   * Nạp ví KHÔNG được đi qua đây.
+   *
+   * Tới 14/08 nhánh này gọi thẳng `walletsService.topup(user.id, amount)`:
+   * bất kỳ tài khoản nào đã đăng nhập chỉ cần POST /payments {"amount":
+   * 999999999} là ví có thêm gần một tỉ đồng, không ngân hàng nào chuyển,
+   * không admin nào duyệt. Tiền đó tiêu được ngay, và rút ra được qua
+   * POST /withdrawals — chỉ còn khâu admin duyệt đứng giữa nó và tiền thật,
+   * mà admin nhìn vào chỉ thấy một số dư trông bình thường.
+   *
+   * Đường nạp tiền đúng chỉ có MỘT: tạo link PayOS
+   * (POST /payos/create-link {"type":"topup"}), người dùng trả tiền thật, rồi
+   * webhook của PayOS mới cộng ví. Ví chỉ được cộng khi tiền đã nằm trong tài
+   * khoản ngân hàng — đó là toàn bộ lý do sổ cái có tài khoản
+   * `gateway_clearing`.
+   *
+   * Frontend chưa từng gọi nhánh này (payment.service.ts chỉ dùng getBalance
+   * và getAll), nên chặn lại không làm hỏng màn nào.
+   */
+  private refuseSelfServeTopup(): never {
+    throw new BadRequestException(
+      'Không nạp ví trực tiếp được. Tạo link thanh toán PayOS ' +
+        '(POST /payos/create-link với type = topup) rồi trả tiền; ví được ' +
+        'cộng khi PayOS báo về.',
+    );
   }
 
   private async processOrderPayment(
@@ -113,27 +140,6 @@ export class PaymentsService {
       payment_method: method,
       status: PaymentStatus.PENDING,
       type: PaymentType.ORDER_PAYMENT,
-    });
-
-    return this.paymentRepository.save(payment);
-  }
-
-  private async processWalletTopup(
-    amount: number,
-    paymentMethod: PaymentMethod,
-    user: IUser,
-  ) {
-    const method = paymentMethod || PaymentMethod.WALLET;
-
-    const result = await this.walletsService.topup(user.id, amount);
-
-    const payment = this.paymentRepository.create({
-      user: { id: user.id },
-      amount,
-      payment_method: method,
-      status: PaymentStatus.SUCCESS,
-      type: PaymentType.WALLET_TOPUP,
-      paid_at: new Date(),
     });
 
     return this.paymentRepository.save(payment);
