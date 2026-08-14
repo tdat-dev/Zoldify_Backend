@@ -610,6 +610,32 @@ export class OrdersService {
     return this.findOne(id, user);
   }
 
+  /**
+   * Huỷ đơn do HỆ THỐNG quyết định, không có người dùng nào đứng sau.
+   *
+   * Chỉ job quá hạn gọi tới. Tách riêng khỏi `cancel()` vì `cancel()` bắt đầu
+   * bằng `findOne(id, user)` — hàm đó kiểm quyền, mà cron thì không có `user`
+   * để kiểm. Phần còn lại đi CHUNG đúng một đường với người dùng bấm huỷ:
+   * cùng transaction, cùng thứ tự, cùng bước đóng link.
+   *
+   * Trước 14/08 job quá hạn tự chép lại luồng huỷ theo cách riêng và chép sai:
+   * đặt trạng thái huỷ và trả hàng về kho TRƯỚC, hoàn tiền SAU, cả ba là ba
+   * lần ghi rời nhau, và lỗi hoàn tiền chỉ bị `logger.error` rồi đi tiếp. Đơn
+   * huỷ xong, hàng về kho, tiền người mua kẹt trong `escrow_hold` vĩnh viễn —
+   * đúng con bug đã sửa ở `cancel()` nhưng còn sống nguyên trong cron.
+   */
+  async cancelExpired(orderId: number): Promise<void> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['items', 'items.product'],
+    });
+    if (!order) return;
+
+    this.assertCancellable(order, 'hủy đơn quá hạn');
+    await this.applyCancellation(order);
+    await this.voidOpenPaymentLink(order.id);
+  }
+
   async remove(id: number, user: IUser) {
     const order = await this.findOne(id, user);
     await this.orderRepository.softDelete(id);

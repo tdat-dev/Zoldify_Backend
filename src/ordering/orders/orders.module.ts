@@ -30,5 +30,8 @@ import { PayosModule } from '@money/payos/payos.module';
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
+  // Job quá hạn dùng chung đường huỷ ở đây thay vì chép lại. An toàn vì
+  // TasksModule chỉ được AppModule nạp, không module nào ở trên nạp nó.
+  exports: [OrdersService],
 })
 export class OrdersModule {}
