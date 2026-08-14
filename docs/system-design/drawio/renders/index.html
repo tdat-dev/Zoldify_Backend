@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zoldify — nghiệm thu sơ đồ</title>
+<style>
+  :root {
+    --paper:  #eef1f5;
+    --card:   #ffffff;
+    --ink:    #141a22;
+    --ink-2:  #4d5867;
+    --ink-3:  #7b8695;
+    --rule:   #d2d9e3;
+    --rule-2: #e6eaf0;
+    --accent: #9a6a04;
+    --was:    #a8262b;
+    --was-bg: #fbeeee;
+    --now:    #1d6640;
+    --now-bg: #e9f4ee;
+    --canvas: #ffffff;
+
+    --mono: "Cascadia Mono", "JetBrains Mono", "SF Mono", Consolas, "DejaVu Sans Mono", ui-monospace, monospace;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1218; --card: #161c25; --ink: #e6ebf2; --ink-2: #a3aebd;
+      --ink-3: #6f7c8d; --rule: #2b3542; --rule-2: #212a35; --accent: #e0a83c;
+      --was: #ef8a8f; --was-bg: #2a181a; --now: #74cfa0; --now-bg: #14261d;
+      --canvas: #e9edf2;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--rule-2);
+    padding: 0.1em 0.36em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  em {
+    font-style: normal;
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+  }
+  strong { font-weight: 650; }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(26px, 4vw, 40px);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .masthead { display: flex; flex-direction: column; gap: 18px; }
+  .lede { max-width: 62ch; color: var(--ink-2); margin: 0; }
+
+  .tally {
+    display: flex; flex-wrap: wrap; gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .tally div { flex: 1 1 150px; background: var(--card); padding: 14px 18px; }
+  .tally b {
+    display: block;
+    font-family: var(--mono);
+    font-size: 30px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .tally span { font-size: 13px; color: var(--ink-3); }
+  .tally .hot b { color: var(--was); }
+
+  .caveat {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 16px;
+    color: var(--ink-2);
+    max-width: 74ch;
+    margin: 0;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 26px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .card-head { display: flex; flex-direction: column; gap: 6px; }
+  .card-id {
+    display: flex; align-items: baseline; gap: 10px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+  }
+  .card-id .num { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .card-id code { background: none; padding: 0; font-size: 12px; color: var(--ink-3); }
+  .card h2 { font-size: 21px; font-weight: 620; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .slide { margin: 0; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  ol.defects { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  ol.defects > li {
+    display: grid; grid-template-columns: 78px 1fr; gap: 14px;
+    align-items: start; padding-top: 14px; border-top: 1px solid var(--rule-2);
+  }
+  ol.defects > li:first-child { border-top: none; padding-top: 0; }
+
+  .chip {
+    font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 3px; white-space: nowrap;
+    justify-self: start; margin-top: 3px;
+  }
+  .k-model { background: var(--was-bg); color: var(--was); border: 1px solid var(--was); font-weight: 650; }
+  .k-draw, .k-text { background: var(--rule-2); color: var(--ink-2); border: 1px solid var(--rule); }
+
+  .defect-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .defect-body p { margin: 0; }
+  .now { color: var(--now); font-size: 15px; padding-left: 15px; position: relative; }
+  .now::before { content: "\2192"; position: absolute; left: 0; }
+
+  .remaining {
+    margin: 0; background: var(--now-bg);
+    border: 1px solid var(--rule); border-radius: 6px;
+    padding: 14px 16px; font-size: 15px; color: var(--ink-2);
+  }
+  .clean {
+    margin: 0; font-size: 15px; color: var(--ink-3);
+  }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .canvas {
+    overflow-x: auto; background: var(--canvas);
+    border: 1px solid var(--rule); border-radius: 6px; padding: 14px;
+  }
+  .canvas img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption { font-size: 12.5px; color: var(--ink-3); font-family: var(--mono); }
+
+  footer {
+    border-top: 1px solid var(--rule); padding-top: 20px;
+    color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; font-size: 15px;
+  }
+  footer p { margin: 0; }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 32px 16px 64px; }
+    .card { padding: 18px; }
+    ol.defects > li { grid-template-columns: 1fr; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <p class="eyebrow">Zoldify · nghiệm thu sơ đồ · 14-08-2026</p>
+    <h1>Mười bốn sơ đồ, mở ra nhìn từng cái</h1>
+    <p class="lede">
+      Toàn bộ sơ đồ được mở bằng draw.io thật và chụp lại, không chỉ chạy qua bộ
+      kiểm cú pháp. Bảy cái được soi kỹ trong đợt này; sáu trong bảy có lỗi.
+      Dưới đây là từng lỗi: cái gì hỏng và nay nó thành gì.
+    </p>
+
+    <div class="tally">
+      <div><b>14</b><span>sơ đồ đã render</span></div>
+      <div><b>7</b><span>soi kỹ đợt này</span></div>
+      <div class="hot"><b>21</b><span>lỗi đã sửa</span></div>
+      <div class="hot"><b>4</b><span>là lỗi mô hình, không phải lỗi vẽ</span></div>
+    </div>
+
+    <p class="caveat">
+      <code>npm run drawio:check</code> báo <strong>14/14 hợp lệ</strong> trên
+      đúng những file này, cả trước lẫn sau khi sửa. Nó kiểm XML, id, tên shape —
+      nó không biết một cái nhãn có đang che mất tên trạng thái hay không.
+      <em>Cú pháp hợp lệ không nói gì về việc hình có đúng.</em>
+      Đó là lý do có <code>npm run drawio:shoot</code>.
+    </p>
+  </div>
+
+  <!-- ================= 06 ================= -->
+  <section class="card" id="06-activity-diagram">
+    <header class="card-head">
+      <div class="card-id"><span class="num">01</span><code>06-activity-diagram</code></div>
+      <h2>Activity — Đặt hàng và thanh toán</h2>
+      <p class="slide">slide 6 · 4 lỗi · 2 lỗi mô hình</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-model">mô hình</span>
+        <div class="defect-body">
+          <p>Hai nhánh sau fork cùng chạy vào <em>một</em> activity final. Ngữ nghĩa UML: chạm activity final là cả hoạt động dừng — nhánh về đích trước giết nhánh còn lại.</p>
+          <p class="now">Thêm thanh <strong>join</strong> gộp hai nhánh trước khi kết thúc.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-model">mô hình</span>
+        <div class="defect-body">
+          <p><code>Roll back</code> và webhook trùng khoá cũng nối vào chính activity final đó, ở tận đáy làn Buyer.</p>
+          <p class="now">Mỗi nhánh kết thúc ngay tại chỗ nó xảy ra. Webhook trùng dùng <strong>flow final</strong> — vòng tròn dấu X, luồng dừng nhưng hoạt động chạy tiếp.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhánh <code>Cash on delivery</code> chạy xuyên qua thân ba ô: waypoint đặt ở x=490 trong khi các ô bắt đầu ở x=480.</p>
+          <p class="now">Làn giữa chừa hẳn rãnh trống x 460–560, không hình nào được đặt vào đó.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Mũi tên <code>Choose payment method → Lock product rows</code> đi <em>ngược lên trên</em>.</p>
+          <p class="now">Cột làn giữa bắt đầu bên dưới ô cuối của làn Buyer, mọi mũi tên đều xuôi xuống.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="06-activity-diagram.png" alt="Activity diagram sau khi sửa" loading="lazy"></div>
+      <figcaption>06-activity-diagram.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= 09 ================= -->
+  <section class="card" id="09-sequence-diagram">
+    <header class="card-head">
+      <div class="card-id"><span class="num">02</span><code>09-sequence-diagram</code></div>
+      <h2>Sequence — Webhook PayOS chống lặp</h2>
+      <p class="slide">slide 9 · 3 lỗi · 1 lỗi mô hình</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-model">mô hình</span>
+        <div class="defect-body">
+          <p>Khung <code>alt</code> chỉ có <em>một</em> ngăn; nhánh <code>else [key already used]</code> bị đẩy xuống thành ghi chú rời ở đáy trang. Một <code>alt</code> một ngăn nói rằng khi khoá đã dùng thì không có gì xảy ra — trong khi đường đi ấy vẫn phải đóng transaction mở ở bước 4.</p>
+          <p class="now">Đủ hai ngăn, vách ngăn nét đứt, guard nằm <em>trong</em> khung.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn bước 8 tràn lên thanh kích hoạt của lifeline.</p>
+          <p class="now">Giãn khoảng cách LedgerService ↔ MySQL lên 320px, rộng hơn nhãn dài nhất.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Tab <code>alt</code> đè lên thanh kích hoạt của LedgerService.</p>
+          <p class="now">Mép trái khung lùi ra để tab kết thúc trước thanh kích hoạt.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="09-sequence-diagram.png" alt="Sequence diagram sau khi sửa" loading="lazy"></div>
+      <figcaption>09-sequence-diagram.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= r3 ================= -->
+  <section class="card" id="r3-component-bounded-contexts">
+    <header class="card-head">
+      <div class="card-id"><span class="num">03</span><code>r3-component-bounded-contexts</code></div>
+      <h2>Component — Bounded context và luật phụ thuộc</h2>
+      <p class="slide">chương III · 3 lỗi · 1 lỗi mô hình</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-model">mô hình</span>
+        <div class="defect-body">
+          <p>Sơ đồ tự mâu thuẫn: ghi chú viết <em>“Arrows point DOWNWARD only”</em> nhưng <code>Ordering</code> và <code>Money</code> lại vẽ ngang hàng, mũi tên giữa chúng nằm ngang. Tuyên bố kiến trúc phân tầng mà không xếp theo tầng thì không ai kiểm chứng được bằng mắt.</p>
+          <p class="now">Xếp đúng bốn tầng: Ops → Ordering → (Catalog · Money · Messaging) → Identity.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p><code>Ordering → Money</code> cắm vào cạnh trái Money, đúng chỗ ba ô cổng của ký hiệu component — nhìn ra hai đầu mũi tên chồng nhau.</p>
+          <p class="now">Vào từ cạnh trên, tránh hẳn vùng cổng.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p><code>Ops → Catalog</code> và <code>Ops → Money</code> đi xuyên qua <code>Ordering</code>.</p>
+          <p class="now">Bẻ góc vuông, chạy trong rãnh trống hai bên.</p>
+        </div>
+      </li>
+    </ol>
+    <p class="remaining">
+      <strong>Cố ý để nguyên.</strong> Còn <em>một</em> chỗ hai đường cắt nhau
+      (<code>Ordering→Catalog</code> × <code>Ordering→Identity</code>). Không khử được:
+      Ordering ở trên-phải, Catalog ở trái, Identity ở dưới — mọi đường sang trái đều
+      phải cắt qua đường đi xuống. Đường cắt <em>đường</em> là bình thường; đường cắt
+      qua <em>hình</em> mới là lỗi.
+    </p>
+    <figure>
+      <div class="canvas"><img src="r3-component-bounded-contexts.png" alt="Component diagram sau khi sửa" loading="lazy"></div>
+      <figcaption>r3-component-bounded-contexts.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= r4 ================= -->
+  <section class="card" id="r4-fund-flow">
+    <header class="card-head">
+      <div class="card-id"><span class="num">04</span><code>r4-fund-flow</code></div>
+      <h2>Dòng tiền — T-account</h2>
+      <p class="slide">chương III · 2 lỗi</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn <code>1b · order paid via PayOS</code> rộng ~145px nhét vào khe hở 90px — tràn lên cả hộp <code>gateway_clearing</code> lẫn <code>escrow_hold</code>.</p>
+          <p class="now">Ba cột giãn ra cách nhau 150 / 120 / 140px, rộng hơn nhãn dài nhất chạy qua.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn <code>5 · seller requests</code> chạm mép hộp <code>seller.withdrawal_pending</code>.</p>
+          <p class="now">Nằm gọn trong khe.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="r4-fund-flow.png" alt="Sơ đồ dòng tiền sau khi sửa" loading="lazy"></div>
+      <figcaption>r4-fund-flow.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= r5 ================= -->
+  <section class="card" id="r5-state-order-lifecycle">
+    <header class="card-head">
+      <div class="card-id"><span class="num">05</span><code>r5-state-order-lifecycle</code></div>
+      <h2>State — Vòng đời đơn hàng</h2>
+      <p class="slide">chương III · 3 lỗi</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn <code>RELEASE escrow</code> rơi đúng lên tên trạng thái <code>refunded</code>, che mất chữ. Cạnh <code>delivered → done</code> đi xuyên qua chính ô <code>refunded</code>.</p>
+          <p class="now">Cạnh đó chạy vòng dưới đáy rồi lên, không chạm ô nào.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn <code>[ship directly]</code> rơi vào giữa ô <code>processing</code>, che mất tên trạng thái — nhìn vào hình thì ô đó <em>tên là</em> <code>[ship directly]</code>.</p>
+          <p class="now">Cạnh nhảy cóc chạy trong rãnh trống bên trái cột trạng thái.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Hai cạnh từ <code>delivered</code> gần như trùng phương, hai nhãn chồng nhau.</p>
+          <p class="now">Mỗi cạnh một điểm neo khác nhau.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="r5-state-order-lifecycle.png" alt="State machine đơn hàng sau khi sửa" loading="lazy"></div>
+      <figcaption>r5-state-order-lifecycle.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= r6 ================= -->
+  <section class="card" id="r6-state-escrow-lifecycle">
+    <header class="card-head">
+      <div class="card-id"><span class="num">06</span><code>r6-state-escrow-lifecycle</code></div>
+      <h2>State — Vòng đời ký quỹ</h2>
+      <p class="slide">chương III · 2 lỗi</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn <code>order cancelled or refunded</code> chạm mép hộp <code>refunded</code>.</p>
+          <p class="now">Cột phải đẩy ra 40px.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Ghi chú nằm đúng trên đường <code>payment window expired</code>.</p>
+          <p class="now">Hạ xuống dưới, cách nét vẽ hơn 100px.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="r6-state-escrow-lifecycle.png" alt="State machine ký quỹ sau khi sửa" loading="lazy"></div>
+      <figcaption>r6-state-escrow-lifecycle.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= r7 ================= -->
+  <section class="card" id="r7-screen-navigation">
+    <header class="card-head">
+      <div class="card-id"><span class="num">07</span><code>r7-screen-navigation</code></div>
+      <h2>Điều hướng màn hình app</h2>
+      <p class="slide">chương III · 4 lỗi · nặng nhất bộ</p>
+    </header>
+    <ol class="defects">
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Ô <code>payment/return</code> bị <em>chính ghi chú</em> đè lên — biến mất hoàn toàn khỏi hình. Một màn hình bị xoá bằng mắt thường.</p>
+          <p class="now">Ghi chú dời sang chỗ trống; ô hiện đủ.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p><strong>Bảy</strong> đường đi xuyên qua thân các ô màn hình. Nguyên nhân gốc: xếp màn hình thành lưới 2 cột rồi để draw.io tự định tuyến — trong lưới 2 cột mọi đường đi ngang đều đâm vào ô cột bên cạnh.</p>
+          <p class="now">Mỗi nhóm là một cột dọc, giữa các cột chừa rãnh, mọi đường xa được bẻ góc vuông chạy trong rãnh.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Nhãn nhóm <code>(tabs)</code> bị ô <code>home</code> đè lên — hộp nhóm chỉ chừa 15px cho tiêu đề.</p>
+          <p class="now">Ô đầu tiên cách mép trên hộp nhóm 35px.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-text">nội dung</span>
+        <div class="defect-body">
+          <p>Ghi chú nói <em>“Cut to 5 core screens”</em> trong khi hình vẽ <em>8</em> màn hình seller. Mâu thuẫn ngay trên slide.</p>
+          <p class="now">Sửa theo đúng cái đang vẽ, và nói rõ khối seller là thứ cắt đầu tiên nếu thiếu người.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="r7-screen-navigation.png" alt="Sơ đồ điều hướng sau khi sửa" loading="lazy"></div>
+      <figcaption>r7-screen-navigation.png</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= còn lại ================= -->
+  <section class="card" id="con-lai">
+    <header class="card-head">
+      <div class="card-id"><span class="num">—</span><code>bảy sơ đồ còn lại</code></div>
+      <h2>Bảy cái đã soi ở đợt trước</h2>
+      <p class="slide">render kèm để xem đủ bộ</p>
+    </header>
+    <p class="clean">
+      Những cái này đã được sửa và soi trong các đợt trước.
+      <code>08-class-diagram</code> có chỉnh tay trực tiếp trong draw.io — đừng chạy
+      <code>drawio:make --force</code> lên nó nếu không muốn mất phần chỉnh tay đó.
+    </p>
+    <figure>
+      <div class="canvas"><img src="05-use-case-diagram.png" alt="Use case diagram" loading="lazy"></div>
+      <figcaption>05-use-case-diagram.png · slide 5</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="08-class-diagram.png" alt="Class diagram" loading="lazy"></div>
+      <figcaption>08-class-diagram.png · slide 8 · có chỉnh tay</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="10-entity-relationship-diagram.png" alt="Entity relationship diagram" loading="lazy"></div>
+      <figcaption>10-entity-relationship-diagram.png · slide 10</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="11-deployment-diagram.png" alt="Deployment diagram" loading="lazy"></div>
+      <figcaption>11-deployment-diagram.png</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="r1-system-context.png" alt="System context diagram" loading="lazy"></div>
+      <figcaption>r1-system-context.png · C4 mức 1</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="r2-container.png" alt="Container diagram" loading="lazy"></div>
+      <figcaption>r2-container.png · C4 mức 2</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="r8-cicd-pipeline.png" alt="CI/CD pipeline" loading="lazy"></div>
+      <figcaption>r8-cicd-pipeline.png</figcaption>
+    </figure>
+  </section>
+
+  <footer>
+    <p><strong>File gốc</strong> ở <code>docs/system-design/drawio/*.drawio</code> — mở bằng draw.io hoặc VS Code (extension Draw.io Integration).</p>
+    <p><strong>Dựng lại sơ đồ</strong> <code>npm run drawio:make -- --force &lt;tên&gt;</code> · <strong>kiểm cú pháp</strong> <code>npm run drawio:check</code> · <strong>chụp lại ảnh</strong> <code>npm run drawio:shoot</code></p>
+    <p>Ảnh trong thư mục này do <code>drawio:shoot</code> sinh ra. Sửa sơ đồ xong thì chạy lại rồi <em>mở ảnh ra nhìn</em> — không script nào tự bắt được lỗi đè hình.</p>
+  </footer>
+
+</div>
+</body>
+</html>

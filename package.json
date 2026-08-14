@@ -33,7 +33,8 @@
     "diagrams:export": "node scripts/export-diagrams.mjs",
     "diagrams:check": "node scripts/export-diagrams.mjs --check",
     "drawio:make": "node scripts/make-drawio.mjs",
-    "drawio:check": "node scripts/check-drawio.mjs"
+    "drawio:check": "node scripts/check-drawio.mjs",
+    "drawio:shoot": "node scripts/shoot-drawio.mjs"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.6",
