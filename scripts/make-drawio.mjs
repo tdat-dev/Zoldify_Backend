@@ -48,24 +48,38 @@ const ONLY = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 function useCaseDiagram() {
   const s = createSheet('Use Case Diagram');
 
-  // Bố cục theo cụm: use case của ai thì đặt ngang tầm người đó. Không làm
-  // vậy thì 22 đường liên kết cắt nhau thành lưới, in ra không đọc được.
-  const buyer = vertex(s, { value: 'Buyer', style: S.actor, x: 70, y: 250, w: 30, h: 60 });
-  const seller = vertex(s, { value: 'Seller', style: S.actor, x: 70, y: 830, w: 30, h: 60 });
-  const admin = vertex(s, { value: 'Admin', style: S.actor, x: 1230, y: 300, w: 30, h: 60 });
-  const payos = vertex(s, { value: 'PayOS', style: S.actor, x: 1230, y: 520, w: 30, h: 60 });
-  const ghn = vertex(s, { value: 'GHN', style: S.actor, x: 1230, y: 750, w: 30, h: 60 });
+  // BỐ CỤC ĐƯỢC ĐỊNH BỞI ĐƯỜNG NỐI, KHÔNG PHẢI NGƯỢC LẠI.
+  //
+  // Bản trước xếp hình cho gọn rồi để draw.io tự nối, và sinh ra hai kiểu hỏng:
+  //
+  //  1. `Create shipment` nằm ở cột PHẢI trong khi Seller đứng bên TRÁI, nên
+  //     đường nối cắt ngang toàn bộ cột trái, xuyên qua thân hai hình bầu dục.
+  //     Sửa bằng cách dời GHN sang trái và kéo `Create shipment` về cột trái —
+  //     cả hai actor của nó giờ cùng một phía.
+  //
+  //  2. Đường «include» nối hai use case CÁCH NHAU BỐN Ô trong cùng một cột,
+  //     nên nó chạy dọc xuyên qua cả bốn. Sửa bằng cách đặt hai đầu cạnh nhau.
+  //
+  // Nguyên tắc rút ra: mọi đường nối chỉ được đi trong ba hành lang trống —
+  // rãnh trái (x 100-320), rãnh giữa (x 550-780), rãnh phải (x 1010-1230).
+  // Không có hình nào nằm trong ba dải đó, nên không thể đè lên cái gì.
+
+  const buyer = vertex(s, { value: 'Buyer', style: S.actor, x: 70, y: 300, w: 30, h: 60 });
+  const seller = vertex(s, { value: 'Seller', style: S.actor, x: 70, y: 880, w: 30, h: 60 });
+  const ghn = vertex(s, { value: 'GHN', style: S.actor, x: 70, y: 1085, w: 30, h: 60 });
+  const admin = vertex(s, { value: 'Admin', style: S.actor, x: 1230, y: 330, w: 30, h: 60 });
+  const payos = vertex(s, { value: 'PayOS', style: S.actor, x: 1230, y: 555, w: 30, h: 60 });
 
   vertex(s, {
     value: 'Zoldify',
     style: S.boundary,
-    x: 250, y: 50, w: 900, h: 1110,
+    x: 250, y: 50, w: 900, h: 1130,
   });
 
   const uc = (value, x, y) =>
     vertex(s, { value, style: S.useCase, x, y, w: 230, h: 54 });
 
-  // Cột trái, nửa trên — chỉ người mua dùng
+  // Cột trái — người mua
   const u2 = uc('Search products', 320, 110);
   const u3 = uc('Manage cart', 320, 190);
   const u4 = uc('Place order', 320, 270);
@@ -73,44 +87,71 @@ function useCaseDiagram() {
   const u6 = uc('Track order', 320, 430);
   const u7 = uc('Confirm delivery received', 320, 510);
 
-  // Giữa — hai bên cùng dùng, đặt giữa hai actor cho đường ngắn đều
-  const u1 = uc('Register / Log in', 320, 620);
-  const u8 = uc('Send messages', 320, 700);
+  // Đặt NGAY DƯỚI u7 vì có quan hệ «include» với nó. Xếp theo actor thì nó
+  // thuộc cụm người bán, nhưng để đúng cụm mà xa nguồn thì đường nối phải
+  // xuyên qua bốn hình — quan hệ thắng cách nhóm.
+  const u12 = uc('View wallet and transactions', 320, 590);
 
-  // Cột trái, nửa dưới — chỉ người bán dùng
-  const u9 = uc('List an item for sale', 320, 810);
-  const u10 = uc('Manage sales orders', 320, 890);
-  const u12 = uc('View wallet and transactions', 320, 970);
-  const u13 = uc('Request withdrawal', 320, 1050);
+  // Hai bên cùng dùng
+  const u1 = uc('Register / Log in', 320, 690);
+  const u8 = uc('Send messages', 320, 770);
 
-  // Cột phải — của các actor bên phải
-  const u14 = uc('Approve withdrawal', 780, 270);
-  const u15 = uc('Reconcile the ledger', 780, 350);
-  const u16 = uc('Manage users', 780, 430);
-  const u17 = uc('Process payment webhook', 780, 540);
-  const u11 = uc('Create shipment', 780, 770);
+  // Cột trái — người bán
+  const u9 = uc('List an item for sale', 320, 870);
+  const u10 = uc('Manage sales orders', 320, 950);
+  const u13 = uc('Request withdrawal', 320, 1030);
+  const u11 = uc('Create shipment', 320, 1110);
 
-  const link = (a, b) => edge(s, { source: a, target: b, style: S.assoc });
+  // Cột phải — actor bên phải
+  const u14 = uc('Approve withdrawal', 780, 300);
+  const u15 = uc('Reconcile the ledger', 780, 380);
+  const u16 = uc('Manage users', 780, 460);
+  const u17 = uc('Process payment webhook', 780, 570);
 
-  [u1, u2, u3, u4, u5, u6, u7, u8].forEach((u) => link(buyer, u));
-  [u1, u8, u9, u10, u11, u12, u13].forEach((u) => link(seller, u));
-  [u14, u15, u16].forEach((u) => link(admin, u));
-  link(payos, u17);
-  link(ghn, u11);
+  /**
+   * Neo cứng hai đầu mỗi đường liên kết.
+   *
+   * Không neo thì draw.io chọn điểm chu vi gần nhất, và với hình bầu dục nằm
+   * lệch nhau nó hay chọn đỉnh trên hoặc đáy dưới — đường vòng qua đó liền
+   * quẹt vào hình bên cạnh. Neo vào cạnh trái hoặc cạnh phải thì đường luôn
+   * nằm trong rãnh trống.
+   */
+  const fromLeft = S.assoc + 'exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;';
+  const fromRight = S.assoc + 'exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;';
 
-  // Đặt hàng luôn kéo theo xử lý thanh toán; xác nhận nhận hàng luôn kéo
-  // theo việc ghi sổ vào ví người bán.
-  edge(s, { source: u4, target: u17, value: '«include»', style: S.depend });
-  edge(s, { source: u7, target: u12, value: '«include»', style: S.depend });
+  const linkL = (a, b) => edge(s, { source: a, target: b, style: fromLeft });
+  const linkR = (a, b) => edge(s, { source: a, target: b, style: fromRight });
+
+  [u1, u2, u3, u4, u5, u6, u7, u8].forEach((u) => linkL(buyer, u));
+  [u1, u8, u9, u10, u11, u12, u13].forEach((u) => linkL(seller, u));
+  linkL(ghn, u11);
+  [u14, u15, u16].forEach((u) => linkR(admin, u));
+  linkR(payos, u17);
+
+  // Đặt hàng luôn kéo theo xử lý thanh toán: đi trong rãnh giữa, cạnh phải của
+  // u4 sang cạnh trái của u17.
+  edge(s, {
+    source: u4, target: u17, value: '«include»',
+    style: S.depend + 'exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;',
+  });
+
+  // Hai hình này giờ nằm sát nhau nên đường nối chỉ dài 26px, đi thẳng từ đáy
+  // u7 xuống đỉnh u12, không chạm gì.
+  edge(s, {
+    source: u7, target: u12, value: '«include»',
+    style: S.depend + 'exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;',
+  });
 
   vertex(s, {
     value:
       'Actors are stick figures and use cases are ellipses, as required by UML.\n' +
-      'The system boundary separates what Zoldify does from who asks for it.\n' +
-      'Buyer-only cases sit at the top, seller-only cases at the bottom, and the\n' +
-      'two shared cases in between, so the association lines stay short.',
+      'The system boundary separates what Zoldify does from who asks for it.\n\n' +
+      'Layout rule: every association line stays inside one of three empty\n' +
+      'corridors — left of the first column, between the two columns, and right\n' +
+      'of the second. No line crosses an ellipse. GHN sits on the left with the\n' +
+      'seller because both drive the same use case.',
     style: S.note,
-    x: 250, y: 1190, w: 520, h: 85,
+    x: 250, y: 1210, w: 560, h: 110,
   });
 
   return s;
@@ -1175,7 +1216,7 @@ function cicdDiagram() {
 // Kích thước trang đặt riêng từng sơ đồ. Để mặc định thì draw.io vẽ đường
 // ngắt trang cắt ngang hình, và lúc export ra ảnh sẽ bị xén.
 const FILES = [
-  ['05-use-case-diagram.drawio', [useCaseDiagram()], { width: 1400, height: 1320 }],
+  ['05-use-case-diagram.drawio', [useCaseDiagram()], { width: 1400, height: 1380 }],
   ['06-activity-diagram.drawio', [activityDiagram()], { width: 1500, height: 1520 }],
   ['08-class-diagram.drawio', [classDiagram()], { width: 1600, height: 1000 }],
   ['09-sequence-diagram.drawio', [sequenceDiagram()], { width: 1400, height: 1110 }],
