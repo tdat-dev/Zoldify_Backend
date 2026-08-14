@@ -170,8 +170,17 @@ export class EscrowsService {
    *
    * KHÔNG thu phí: sàn chưa làm xong việc thì không có gì để thu.
    */
-  async refund(orderId: number) {
-    return this.dataSource.transaction(async (em) => {
+  /**
+   * Trả tiền đang giữ hộ về ví người mua.
+   *
+   * Nhận `manager` để chạy được bên trong transaction của người gọi — huỷ đơn
+   * cần việc hoàn tiền, đổi trạng thái đơn và trả hàng về kho cùng thành công
+   * hoặc cùng huỷ. Không truyền thì tự mở transaction như cũ.
+   *
+   * Cùng quy ước với `createOrderEscrows` và `LedgerService.post`.
+   */
+  async refund(orderId: number, manager?: EntityManager) {
+    const run = async (em: EntityManager) => {
       const escrows = await em.find(Escrow, {
         where: { order: { id: orderId }, status: EscrowStatus.HOLDING },
         relations: ['buyer'],
@@ -216,7 +225,9 @@ export class EscrowsService {
       }
 
       return escrows;
-    });
+    };
+
+    return manager ? run(manager) : this.dataSource.transaction(run);
   }
 
   async findByOrder(orderId: number) {

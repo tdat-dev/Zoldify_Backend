@@ -13,6 +13,7 @@ import { ProductsModule } from '@catalog/products/products.module';
 import { NotificationsModule } from '@messaging/notifications/notifications.module';
 import { GhnModule } from '@ordering/ghn/ghn.module';
 import { EscrowsModule } from '@money/escrows/escrows.module';
+import { PayosModule } from '@money/payos/payos.module';
 
 @Module({
   imports: [
@@ -23,8 +24,11 @@ import { EscrowsModule } from '@money/escrows/escrows.module';
     NotificationsModule,
     GhnModule,
     EscrowsModule,
+    // Huỷ đơn phải đóng luôn link thanh toán còn treo. An toàn vì PayosModule
+    // KHÔNG import ngược OrdersModule — nó chỉ dùng entity Order.
+    PayosModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
 })
-export class OrdersModule { }
+export class OrdersModule {}

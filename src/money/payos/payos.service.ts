@@ -327,6 +327,47 @@ export class PayosService {
     return { cancelled: true, payos_order_code: payosOrderCode };
   }
 
+  /**
+   * Huỷ link thanh toán còn treo của một đơn, nếu có.
+   *
+   * Khác `cancelPaymentLink` ở chỗ KHÔNG hỏi ai đang huỷ: người bán cũng huỷ
+   * được đơn, mà link thì luôn đứng tên người mua. Tra theo đơn thay vì theo
+   * người.
+   *
+   * CỐ GẮNG HẾT SỨC, không ném lỗi. Lúc hàm này được gọi thì đơn đã huỷ xong
+   * và transaction đã commit — để một lỗi mạng của PayOS làm hỏng lời gọi huỷ
+   * đơn là vô lý. Nếu huỷ link thất bại thì link vẫn sống, nhưng lưới an toàn
+   * thứ hai vẫn chặn: `applyPaidPayment` thấy đơn đã huỷ sẽ ghi tiền vào ví
+   * người mua thay vì hồi sinh đơn.
+   */
+  async voidOpenLinkForOrder(orderId: number): Promise<boolean> {
+    const payment = await this.paymentRepository.findOne({
+      where: {
+        order: { id: orderId },
+        type: PaymentType.ORDER_PAYMENT,
+        status: PaymentStatus.PENDING,
+      },
+    });
+    if (!payment?.payos_order_code) return false;
+
+    try {
+      await this.payos.paymentRequests.cancel(
+        Number(payment.payos_order_code),
+        'Order cancelled',
+      );
+      payment.status = PaymentStatus.FAILED;
+      await this.paymentRepository.save(payment);
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Không huỷ được link PayOS ${payment.payos_order_code} của đơn #${orderId}: ` +
+          `${err.message}. Link còn sống, nhưng trả tiền vào đó sẽ rơi vào ví ` +
+          'người mua chứ không hồi sinh đơn.',
+      );
+      return false;
+    }
+  }
+
   // ============ WEBHOOK ============
 
   /**
@@ -457,6 +498,52 @@ export class PayosService {
           ],
         },
         em,
+      );
+    } else if (
+      payment.type === PaymentType.ORDER_PAYMENT &&
+      payment.order &&
+      payment.order.status === OrderStatus.CANCELLED
+    ) {
+      // ĐƠN ĐÃ HUỶ MÀ TIỀN VẪN VỀ.
+      //
+      // Xảy ra được vì huỷ đơn không huỷ link thanh toán: người mua huỷ đơn
+      // chưa trả tiền, rồi mở lại link cũ và trả. Trước đây nhánh dưới đặt
+      // thẳng `status = CONFIRMED` mà không nhìn trạng thái hiện tại, nên đơn
+      // đã huỷ SỐNG LẠI thành đã xác nhận — trong khi hàng đã trả về kho, tức
+      // là bán một món không còn giữ chỗ.
+      //
+      // Nhưng cũng không được lờ số tiền đi: nó đã nằm trong tài khoản ngân
+      // hàng thật rồi. Không ghi sổ thì `gateway_clearing` lệch với ngân hàng,
+      // đúng thứ mà cả kiến trúc sổ cái sinh ra để không bao giờ xảy ra.
+      //
+      // Nên: ghi tiền vào ví người mua, và để đơn nguyên trạng thái huỷ.
+      // Người mua có tiền để tiêu tiếp hoặc rút; sổ sách khớp ngân hàng.
+      const wallet = await this.ledgerService.getOrCreateAccount(
+        LedgerOwnerType.USER,
+        payment.user.id,
+        LedgerPurpose.AVAILABLE,
+        em,
+      );
+      await this.ledgerService.post(
+        {
+          idempotencyKey: opts.idempotencyKey,
+          type: LedgerTxType.TOPUP,
+          reference: { type: 'order', id: payment.order.id },
+          metadata: {
+            ...opts.metadata,
+            paidAfterCancel: true,
+            paymentId: payment.id,
+          },
+          entries: [
+            { accountId: Number(gateway.id), amount: -amount },
+            { accountId: Number(wallet.id), amount },
+          ],
+        },
+        em,
+      );
+      this.logger.warn(
+        `Đơn #${payment.order.id} đã huỷ nhưng tiền vẫn về. Ghi ${amount} vào ví ` +
+          `người mua #${payment.user.id} thay vì ký quỹ; đơn giữ nguyên trạng thái huỷ.`,
       );
     } else if (payment.type === PaymentType.ORDER_PAYMENT && payment.order) {
       // Tiền từ cổng thanh toán vào thẳng ô giữ hộ, KHÔNG đi qua ví người

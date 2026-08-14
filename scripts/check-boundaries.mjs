@@ -8,7 +8,7 @@
 // trong eslint.config.mjs sang 'error' và xoá file này.
 import { ESLint } from 'eslint';
 
-const BASELINE = 29;
+const BASELINE = 28;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['src/**/*.ts']);

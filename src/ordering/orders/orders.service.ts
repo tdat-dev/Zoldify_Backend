@@ -1,27 +1,31 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
 import { OrderItem } from './entities/order-item.entity';
 import { Cart } from '@ordering/carts/entities/cart.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { User } from '@identity/users/entities/user.entity';
-import { Repository, In } from 'typeorm';
+import { DataSource, EntityManager, Repository, In } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { GhnService } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
+import { PayosService } from '@money/payos/payos.service';
 import { assertTransitionAllowed, OrderActor } from './order-status.policy';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
@@ -36,6 +40,9 @@ export class OrdersService {
     private readonly notificationsService: NotificationsService,
     private readonly ghnService: GhnService,
     private readonly escrowsService: EscrowsService,
+    private readonly payosService: PayosService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async getStats() {
@@ -527,38 +534,78 @@ export class OrdersService {
     }
   }
 
-  async cancel(id: number, user: IUser) {
-    const order = await this.findOne(id, user);
+  /**
+   * Phần chung của huỷ đơn: hoàn ký quỹ, đổi trạng thái, trả hàng về kho.
+   * BA VIỆC MỘT SỐ PHẬN.
+   *
+   * Trước đây ba việc này là ba lần ghi rời, và lời gọi hoàn tiền còn bị bọc
+   * `try/catch` chỉ `console.error`. Hoàn tiền hỏng thì đơn VẪN được ghi là đã
+   * huỷ, tiền người mua nằm lại trong `escrow_hold` vĩnh viễn và không ai
+   * được báo — chỉ còn một dòng log không ai đọc.
+   */
+  private async applyCancellation(order: Order) {
+    await this.dataSource.transaction(async (em: EntityManager) => {
+      if (order.is_paid) {
+        try {
+          await this.escrowsService.refund(order.id, em);
+        } catch (err) {
+          // CHỈ nuốt đúng một trường hợp: đơn trả tiền từ trước khi hệ thống
+          // ký quỹ tồn tại nên không có bản ghi nào để hoàn. Mọi lỗi khác
+          // phải làm hỏng cả transaction — tiền chưa về mà đơn đã ghi là huỷ
+          // thì người mua mất trắng.
+          if (!(err instanceof NotFoundException)) throw err;
+          this.logger.warn(
+            `Đơn #${order.id} có is_paid=1 nhưng không còn khoản ký quỹ nào ` +
+              'đang giữ. Vẫn cho huỷ, nhưng cần đối soát tay xem tiền ở đâu.',
+          );
+        }
+      }
 
+      order.status = OrderStatus.CANCELLED;
+      await em.save(Order, order);
+
+      for (const item of order.items) {
+        if (item.product) {
+          await em.increment(
+            Product,
+            { id: item.product.id },
+            'stock',
+            item.quantity,
+          );
+        }
+      }
+    });
+  }
+
+  /**
+   * Đóng link thanh toán còn treo, SAU khi transaction đã commit.
+   *
+   * Không gọi trong transaction: đây là lời gọi mạng ra PayOS, giữ khoá
+   * database suốt thời gian chờ mạng là cách tự tạo deadlock.
+   */
+  private async voidOpenPaymentLink(orderId: number) {
+    if (await this.payosService.voidOpenLinkForOrder(orderId)) {
+      this.logger.log(`Đã đóng link thanh toán còn treo của đơn #${orderId}`);
+    }
+  }
+
+  private assertCancellable(order: Order, action: string) {
     if (
       order.status !== OrderStatus.PENDING &&
       order.status !== OrderStatus.CONFIRMED
     ) {
       throw new BadRequestException(
-        'Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận hoặc Đã xác nhận',
+        `Chỉ có thể ${action} ở trạng thái Chờ xác nhận hoặc Đã xác nhận`,
       );
     }
+  }
 
-    order.status = OrderStatus.CANCELLED;
-    // Hoàn tiền escrow nếu đã thanh toán
-    if (order.is_paid) {
-      try {
-        await this.escrowsService.refund(order.id);
-      } catch (err) {
-        console.error('Escrow refund on cancel failed:', err.message);
-      }
-    }
-    await this.orderRepository.save(order);
+  async cancel(id: number, user: IUser) {
+    const order = await this.findOne(id, user);
+    this.assertCancellable(order, 'hủy đơn hàng');
 
-    for (const item of order.items) {
-      if (item.product) {
-        await this.productRepository.increment(
-          { id: item.product.id },
-          'stock',
-          item.quantity,
-        );
-      }
-    }
+    await this.applyCancellation(order);
+    await this.voidOpenPaymentLink(order.id);
 
     return this.findOne(id, user);
   }
@@ -593,41 +640,13 @@ export class OrdersService {
 
   async cancelSale(orderId: number, user: IUser) {
     const order = await this.findOneForSeller(orderId, user.id);
+    this.assertCancellable(order, 'hủy bán đơn hàng');
 
-    if (
-      order.status !== OrderStatus.PENDING &&
-      order.status !== OrderStatus.CONFIRMED
-    ) {
-      throw new BadRequestException(
-        'Chỉ có thể hủy bán đơn hàng ở trạng thái Chờ xác nhận hoặc Đã xác nhận',
-      );
-    }
-
-    order.status = OrderStatus.CANCELLED;
-    await this.orderRepository.save(order);
-
-    // Restore stock
-    for (const item of order.items) {
-      if (item.product) {
-        await this.productRepository.increment(
-          { id: item.product.id },
-          'stock',
-          item.quantity,
-        );
-      }
-    }
-
-    // Refund escrow if paid
-    if (order.is_paid) {
-      try {
-        await this.escrowsService.refund(order.id);
-      } catch (err) {
-        console.error(
-          'Hoàn tiền ký quỹ cho giao dịch bị hủy không thành công:',
-          err.message,
-        );
-      }
-    }
+    // Dùng chung đúng một đường huỷ với `cancel()`. Trước đây hai hàm này là
+    // hai bản chép tay của cùng một việc, thứ tự các bước còn khác nhau — nên
+    // sửa một chỗ là bỏ sót chỗ kia.
+    await this.applyCancellation(order);
+    await this.voidOpenPaymentLink(order.id);
 
     return { message: 'Hủy bán thành công', order_id: order.id };
   }

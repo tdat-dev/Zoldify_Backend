@@ -283,6 +283,52 @@ describe('EscrowsService — giải ngân và hoàn tiền qua sổ cái', () =>
     expect(await revenueBalance()).toBe(0n);
   });
 
+  it('hoàn tiền chạy ĐƯỢC trong transaction của người gọi', async () => {
+    const orderId = await makePaidOrder([
+      { sellerId: sellerAId, amount: 600_000 },
+    ]);
+
+    await ds.transaction(async (em) => {
+      await escrows.refund(orderId, em);
+      // Cùng transaction: đổi trạng thái đơn phải thấy được tiền vừa chuyển
+      await em.query('UPDATE orders SET status = ? WHERE id = ?', [
+        'cancelled',
+        orderId,
+      ]);
+    });
+
+    expect(await balanceOf(buyerId)).toBe(600_000n);
+    expect(await holdBalance()).toBe(0n);
+  });
+
+  it('người gọi rollback thì tiền KHÔNG chuyển — huỷ đơn hỏng nửa chừng không được để tiền kẹt', async () => {
+    // Đây là lỗi tìm ra ngày 14/08: orders.cancel() bọc lời gọi refund trong
+    // try/catch rồi chỉ console.error, sau đó vẫn lưu đơn là đã huỷ. Hoàn
+    // tiền hỏng thì tiền người mua kẹt trong escrow_hold vĩnh viễn.
+    //
+    // Nay refund nhận EntityManager nên nó cùng sống chết với việc đổi trạng
+    // thái đơn. Test này giữ đúng tính chất đó: transaction hỏng thì KHÔNG
+    // thứ gì trong đó có hiệu lực.
+    const orderId = await makePaidOrder([
+      { sellerId: sellerAId, amount: 700_000 },
+    ]);
+
+    await expect(
+      ds.transaction(async (em) => {
+        await escrows.refund(orderId, em);
+        throw new Error('người gọi hỏng sau khi hoàn tiền');
+      }),
+    ).rejects.toThrow('người gọi hỏng sau khi hoàn tiền');
+
+    expect(await balanceOf(buyerId)).toBe(0n);
+    expect(await holdBalance()).toBe(700_000n);
+
+    const rows = await ds.manager.find(Escrow, {
+      where: { order: { id: orderId } },
+    });
+    expect(rows.every((e) => e.status === EscrowStatus.HOLDING)).toBe(true);
+  });
+
   it('BẤT BIẾN — tổng sổ cái luôn bằng 0 sau mọi thao tác', async () => {
     const o1 = await makePaidOrder([{ sellerId: sellerAId, amount: 250_000 }]);
     const o2 = await makePaidOrder([
