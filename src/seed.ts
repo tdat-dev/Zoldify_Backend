@@ -26,11 +26,15 @@ async function seed() {
   await queryRunner.startTransaction();
 
   try {
-    // ─── 1. Seed seller ───
+    // ─── 1. Seed seller & admin ───
     const hashedPw = hashSync('123456', 10);
     await queryRunner.query(
       `INSERT IGNORE INTO users (full_name, email, password, role) VALUES (?, ?, ?, ?)`,
       ['Shop Zoldify', 'seller@zoldify.com', hashedPw, 'seller'],
+    );
+    await queryRunner.query(
+      `INSERT IGNORE INTO users (full_name, email, password, role) VALUES (?, ?, ?, ?)`,
+      ['Admin Zoldify', 'admin@zoldify.com', hashedPw, 'admin'],
     );
     const [seller] = await queryRunner.query(`SELECT id FROM users WHERE email = ?`, ['seller@zoldify.com']);
 
@@ -225,6 +229,7 @@ async function seed() {
 
     await queryRunner.commitTransaction();
     console.log('✅ Seed completed successfully!');
+    console.log(`   - 1 admin: admin@zoldify.com / 123456`);
     console.log(`   - 1 seller: seller@zoldify.com / 123456`);
     console.log(`   - ${categories.length} categories`);
     console.log(`   - ${products.length} products (with images)`);
