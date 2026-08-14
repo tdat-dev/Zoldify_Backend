@@ -67,7 +67,6 @@ flowchart TB
     zoldify["<b>ZOLDIFY</b><br/>Second-hand marketplace<br/>with wallet and escrow"]
 
     payos["PayOS<br/>Payment gateway"]
-    sepay["SePay<br/>Bank transfer reconciliation"]
     ghn["GHN<br/>Shipping"]
     fcm["Firebase FCM<br/>Push notifications"]
     r2["Cloudflare R2<br/>Image storage"]
@@ -80,7 +79,6 @@ flowchart TB
 
     zoldify -->|"create payment link"| payos
     payos -->|"confirmation webhook"| zoldify
-    zoldify -->|"match incoming transfers"| sepay
     zoldify -->|"create and track shipments"| ghn
     zoldify -->|"send notifications"| fcm
     zoldify -->|"store and read images"| r2
@@ -164,7 +162,7 @@ flowchart TB
     ops["<b>Ops</b><br/>admin · settings · tasks"]
     ordering["<b>Ordering</b><br/>carts · orders · ghn"]
     catalog["<b>Catalog</b><br/>products · categories · shop<br/>files · interactions · follows"]
-    money["<b>💰 Money</b><br/>ledger · wallets · escrows<br/>payments · payos · sepay · withdrawals"]
+    money["<b>💰 Money</b><br/>ledger · wallets · escrows<br/>payments · payos · withdrawals"]
     messaging["<b>Messaging</b><br/>chat · notifications · firebase"]
     identity["<b>Identity</b><br/>auth · users · addresses"]
 

@@ -95,8 +95,8 @@ export default tseslint.config(
     },
     rules: {
       // Để 'warn' chứ chưa phải 'error' vì code hiện còn 29 vi phạm, phần
-      // lớn là money → ordering (escrow, payments, payos, sepay đang tự
-      // đọc bảng orders). Chúng sẽ biến mất khi làm ledger ở tuần 3.
+      // lớn là money → ordering (escrow, payments, payos đang tự đọc bảng
+      // orders). Chúng sẽ biến mất khi làm ledger ở tuần 3.
       //
       // Không cho phép con số đó tăng: `npm run boundaries:check` chặn
       // trong CI. Khi về 0 thì đổi sang 'error' và xoá script đó đi.

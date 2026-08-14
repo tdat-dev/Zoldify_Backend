@@ -930,13 +930,15 @@ function contextDiagram() {
   const seller = actor('Seller\n(student)', 90, 380);
   const admin = actor('Admin\n(operations)', 90, 580);
 
+  // SePay đã gỡ: PayOS là cổng thanh toán duy nhất. Dồn lại các ô phía dưới
+  // thay vì để trống chỗ cũ — một khoảng hở giữa cột hệ thống ngoài trông như
+  // sơ đồ vẽ thiếu, chứ không như một thứ đã được bỏ có chủ đích.
   const payos = ext('PayOS\npayment gateway', 1060, 100);
-  const sepay = ext('SePay\nbank reconciliation', 1060, 190);
-  const ghn = ext('GHN\nshipping', 1060, 280);
-  const fcm = ext('Firebase FCM\npush notifications', 1060, 370);
-  const r2 = ext('Cloudflare R2\nimage storage', 1060, 460);
-  const smtp = ext('Gmail SMTP\nemail', 1060, 550);
-  const bank = ext('Bank\nmanual payouts', 1060, 640);
+  const ghn = ext('GHN\nshipping', 1060, 190);
+  const fcm = ext('Firebase FCM\npush notifications', 1060, 280);
+  const r2 = ext('Cloudflare R2\nimage storage', 1060, 370);
+  const smtp = ext('Gmail SMTP\nemail', 1060, 460);
+  const bank = ext('Bank\nmanual payouts', 1060, 550);
 
   const f = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
 
@@ -946,7 +948,6 @@ function contextDiagram() {
 
   f(zoldify, payos, 'create payment link');
   f(payos, zoldify, 'confirmation webhook');
-  f(zoldify, sepay, 'match transfers');
   f(zoldify, ghn, 'create and track shipments');
   f(zoldify, fcm, 'send notifications');
   f(zoldify, r2, 'store and read images');
@@ -1078,7 +1079,7 @@ function componentDiagram() {
     'Catalog\nproducts · categories · shop\nfiles · interactions · follows',
     120, 390, 320, 110);
   const money = ctx(
-    'Money\nledger · wallets · escrows\npayments · payos · sepay · withdrawals',
+    'Money\nledger · wallets · escrows\npayments · payos · withdrawals',
     520, 390, 380, 110);
   const messaging = ctx('Messaging\nchat · notifications · firebase', 980, 390, 300, 110);
   const identity = ctx('Identity\nauth · users · addresses', 520, 610, 320, 90);

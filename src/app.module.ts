@@ -25,7 +25,6 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { FollowsModule } from '@catalog/follows/follows.module';
 import { ShopModule } from '@catalog/shop/shop.module';
 import { FirebaseModule } from '@messaging/firebase/firebase.module';
-import { SepayModule } from '@money/sepay/sepay.module';
 import { GhnModule } from '@ordering/ghn/ghn.module';
 import { EscrowsModule } from '@money/escrows/escrows.module';
 import { PayosModule } from '@money/payos/payos.module';
@@ -91,7 +90,6 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     FollowsModule,
     ShopModule,
     FirebaseModule,
-    SepayModule,
     GhnModule,
     EscrowsModule,
     PayosModule,

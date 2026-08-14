@@ -55,7 +55,9 @@ const VARS = [
     hint: 'Trống thì trỏ thẳng vào máy chủ THẬT của PayOS (api-merchant.payos.vn) — mọi link tạo ra là giao dịch thật. Đặt sang sandbox khi còn đang thử.',
   },
   { name: 'GHN_TOKEN', required: false, hint: 'Thiếu thì đơn vẫn xác nhận được, chỉ không có mã vận đơn.' },
-  { name: 'SEPAY_WEBHOOK_SECRET', required: false, hint: 'Thiếu thì không đối soát được biến động số dư ngân hàng.' },
+  // SEPAY_WEBHOOK_SECRET đã bỏ cùng với module sepay: PayOS là cổng thanh
+  // toán duy nhất. Còn sót biến trong file cấu hình thì vô hại, nhưng soát nó
+  // ở đây sẽ khiến người đọc tưởng còn phải điền.
 ];
 
 /**

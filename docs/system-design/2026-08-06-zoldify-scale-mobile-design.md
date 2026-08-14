@@ -49,12 +49,12 @@ Toàn bộ phần này rút ra từ việc đọc code, không phải phỏng đ
 |---|---|
 | Backend | NestJS 11, TypeORM 0.3.29, MySQL, Socket.IO, Firebase Admin |
 | Frontend | Next.js 14 App Router, Tailwind 3, axios, socket.io-client |
-| Thanh toán | PayOS (chính), SePay |
+| Thanh toán | PayOS (duy nhất — SePay đã gỡ 14/08/2026) |
 | Vận chuyển | GHN |
 | Quy mô | Backend ~8.500 dòng / 169 file TS · Frontend 75 file |
 | Git | Backend: **1 commit, 1 nhánh `main`** |
 
-25 module backend: `addresses` · `admin` · `auth` · `carts` · `categories` · `chat` · `escrows` · `files` · `firebase` · `follows` · `ghn` · `interactions` · `notifications` · `orders` · `payments` · `payos` · `products` · `sepay` · `settings` · `shop` · `sitemap` · `tasks` · `users` · `wallets` · `withdrawals`
+24 module backend: `addresses` · `admin` · `auth` · `carts` · `categories` · `chat` · `escrows` · `files` · `firebase` · `follows` · `ghn` · `interactions` · `notifications` · `orders` · `payments` · `payos` · `products` · `settings` · `shop` · `sitemap` · `tasks` · `users` · `wallets` · `withdrawals`
 
 ### 1.2 🔴 Nhóm lỗi nghiêm trọng — tiền có thể sai số
 
@@ -184,7 +184,7 @@ Bản thiết kế vẫn **định nghĩa đầy đủ ranh giới service trên
 ┌─ Identity ──────┐  auth · users · addresses
 ├─ Catalog ───────┤  products · categories · shop · files · interactions · follows · sitemap
 ├─ Ordering ──────┤  carts · orders · ghn
-├─ Money ⭐ ──────┤  ledger(MỚI) · wallets · escrows · payments · payos · sepay · withdrawals
+├─ Money ⭐ ──────┤  ledger(MỚI) · wallets · escrows · payments · payos · withdrawals
 ├─ Messaging ─────┤  chat · notifications · firebase · mail
 └─ Ops ───────────┘  admin · settings · tasks
 ```
@@ -206,7 +206,7 @@ src/
 ├── identity/        # auth · users · addresses
 ├── catalog/         # products · categories · shop · files · interactions · follows · sitemap
 ├── ordering/        # carts · orders · ghn
-├── money/           # ledger · wallets · escrows · payments · payos · sepay · withdrawals
+├── money/           # ledger · wallets · escrows · payments · payos · withdrawals
 ├── messaging/       # chat · notifications · firebase · mail
 ├── ops/             # admin · settings · tasks
 └── migrations/

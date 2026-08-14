@@ -5249,53 +5249,6 @@
         ]
       }
     },
-    "/api/v1/sepay-webhook": {
-      "post": {
-        "operationId": "SepayController_handleWebhook_v1",
-        "parameters": [
-          {
-            "name": "x-signature",
-            "required": true,
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Sepay gửi webhook đến endpoint này\nPublic — không cần JWT vì Sepay không biết token của user\nXác thực bằng HMAC signature thay vì JWT",
-        "tags": [
-          "Sepay"
-        ]
-      }
-    },
     "/api/v1/payos/create-link": {
       "post": {
         "operationId": "PayosController_createLink_v1",
