@@ -553,10 +553,20 @@ function erDiagram() {
   r(users, orders, 'places');
   r(users, products, 'sells');
   r(orders, orderItems, 'contains');
-  r(products, orderItems, 'appears in');
   r(orders, escrows, 'splits into');
   r(ledgerTx, ledgerEntries, 'balances to zero');
   r(ledgerAccounts, ledgerEntries, 'records');
+
+  // Hai quan hệ này cùng đi qua rãnh giữa `products` và `order_items`, và
+  // draw.io đặt nhãn ở điểm giữa mỗi đường — nên "owns" và "appears in" rơi
+  // chồng lên nhau, cách nhau chưa tới 20px, đọc thành một cục.
+  //
+  // Neo `appears in` xuống 80% chiều cao hai hộp để nó tụt hẳn xuống dưới, còn
+  // `owns` giữ nguyên đường chéo. Hai nhãn tách ra khoảng 70px.
+  edge(s, {
+    source: products, target: orderItems, value: 'appears in',
+    style: oneMany + 'exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;',
+  });
   r(users, ledgerAccounts, 'owns');
 
   vertex(s, {
