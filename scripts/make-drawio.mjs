@@ -335,6 +335,151 @@ function activityDiagram() {
 }
 
 // ===========================================================================
+// 2b. ACTIVITY DIAGRAM — huỷ đơn và hoàn tiền. Chương II.
+//
+// Luồng nhiều nhánh nhất hệ thống, và trước hôm nay chưa ai vẽ nó bao giờ.
+// `r5-state-order-lifecycle` có hẳn hai trạng thái `cancelled` và `refunded`
+// mà không sơ đồ nào giải thích làm sao đến được đó.
+//
+// Vẽ theo quy ước TO-BE của bộ tài liệu: hình là luồng ĐÚNG, ô đỏ là chỗ code
+// hiện chưa làm hoặc làm sai. Hai ô đỏ ở đây là hai lỗi tiền tìm ra đúng lúc
+// đọc code để vẽ cái này — xem hai ghi chú dưới hình.
+// ===========================================================================
+function cancelRefundActivityDiagram() {
+  const s = createSheet('Activity Diagram - Cancel an Order and Refund');
+
+  const laneH = 1250;
+  const l1 = vertex(s, { value: 'Buyer or Seller', style: S.laneV, x: 40, y: 40, w: 380, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 420, y: 40, w: 1120, h: laneH });
+  const l3 = vertex(s, { value: 'PayOS', style: S.laneV, x: 1540, y: 40, w: 320, h: laneH });
+
+  // Làn giữa chia bốn cột. Không hình nào được đặt vào rãnh, rãnh chỉ để
+  // đường nối chạy.
+  //   x 150-490   trục chính (hành động w=340, hình thoi w=150 cùng tâm 320)
+  //   x 530-870   nhánh rẽ phải
+  //   x 910-1080  nhánh lỗi trả về client
+  //   x ~600      rãnh dọc cho đường "chưa trả tiền" đi vòng qua ô hoàn tiền
+  const act = (lane, v, x, y, w = 340, h = 50, style = S.action) =>
+    vertex(s, { value: v, style, x, y, w, h, parent: lane });
+
+  const start = vertex(s, { style: S.initial, x: 175, y: 60, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Open the order and press Cancel', 40, 120, 300);
+
+  const b1 = act(l2, 'Load the order and check who is asking', 150, 210);
+  const d1 = vertex(s, {
+    value: 'Caller may cancel\nthis order?',
+    style: S.decision, x: 245, y: 290, w: 150, h: 90, parent: l2,
+  });
+  const err1 = act(l2, '403 — not your order', 910, 305, 170, 60, S.actionTodo);
+  // y=375 chứ không phải 410: ở 410 nút này chồng 5px lên hộp `400` bên dưới
+  // (bắt đầu ở 435). Hai nhánh lỗi dùng chung cột nên khoảng cách dọc phải
+  // tính cả nút kết thúc, không chỉ tính hộp.
+  const end1 = vertex(s, { style: S.final, x: 970, y: 375, w: 30, h: 30, parent: l2 });
+
+  const d2 = vertex(s, {
+    value: 'Status is pending\nor confirmed?',
+    style: S.decision, x: 245, y: 420, w: 150, h: 90, parent: l2,
+  });
+  const err2 = act(l2, '400 — too late to cancel', 910, 435, 170, 60, S.actionTodo);
+  const end2 = vertex(s, { style: S.final, x: 970, y: 540, w: 30, h: 30, parent: l2 });
+
+  // Khung transaction. Ba lệnh ghi bên trong PHẢI cùng sống chết — hiện chúng
+  // là ba lần ghi rời, đó là nửa đầu của lỗi ở ghi chú A.
+  // Tiêu đề khung phải NGẮN. Bản dài chạy ngang qua x=320 — đúng trục chính —
+  // nên nhãn `yes` của cạnh d2→d3 rơi đè lên chữ, đọc ra
+  // "not there yYESToday these are...". Phần giải thích chuyển xuống ghi chú A.
+  vertex(s, {
+    value: 'ONE TRANSACTION',
+    style:
+      'rounded=0;html=1;fillColor=none;strokeColor=#c62828;strokeWidth=2;dashed=1;' +
+      'verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontSize=11;fontColor=#c62828;',
+    x: 130, y: 545, w: 760, h: 440, parent: l2,
+  });
+
+  const d3 = vertex(s, {
+    value: 'Order already\npaid?',
+    style: S.decision, x: 245, y: 605, w: 150, h: 90, parent: l2,
+  });
+  const b3 = act(
+    l2,
+    'Refund the escrow\nescrow_hold −X → buyer.available +X\nkey escrow_refund:{escrow id}',
+    150, 720, 340, 70, S.actionDone,
+  );
+  const b5 = act(l2, 'Set order status = cancelled', 150, 820, 340, 45);
+  const b6 = act(l2, 'Restore stock for every item', 150, 890, 340, 45);
+
+  const d4 = vertex(s, {
+    value: 'A PayOS payment\nlink is still open?',
+    style: S.decision, x: 245, y: 1015, w: 150, h: 90, parent: l2,
+  });
+  const b4 = act(l2, 'Ask PayOS to void the link', 530, 1030, 340, 60, S.actionTodo);
+  const endN = vertex(s, { style: S.final, x: 305, y: 1155, w: 30, h: 30, parent: l2 });
+
+  const p1 = act(l3, 'Void the link.\nLater payments are refused.', 20, 1030, 280, 60);
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  f(start, a1);
+  f(a1, b1, '', at(1, 0.5, 0, 0.5));
+
+  f(b1, d1);
+  f(d1, err1, 'no', at(1, 0.5, 0, 0.5));
+  f(err1, end1);
+  f(d1, d2, 'yes');
+
+  f(d2, err2, 'no', at(1, 0.5, 0, 0.5));
+  f(err2, end2);
+  f(d2, d3, 'yes');
+
+  f(d3, b3, 'yes');
+  // Đơn chưa trả tiền thì không có gì để hoàn. Đi vòng trong rãnh x=1020 tuyệt
+  // đối — bên phải ô hoàn tiền (hết ở 910) và vẫn trong khung transaction.
+  f(d3, b5, 'no', at(1, 0.5, 1, 0.5), [[1020, 690], [1020, 882]]);
+  f(b3, b5);
+  f(b5, b6);
+  f(b6, d4, 'COMMIT');
+
+  f(d4, b4, 'yes', at(1, 0.5, 0, 0.5));
+  f(d4, endN, 'no');
+  f(b4, p1, '', at(1, 0.5, 0, 0.5));
+  f(b4, endN, '', at(0.5, 1, 1, 0.5), [[1120, 1210]]);
+
+  vertex(s, {
+    value:
+      'A — Bug found while drawing this.  orders.service.ts:544 and :621\n\n' +
+      'cancel() and cancelSale() both wrap the refund call in try/catch and only\n' +
+      'console.error the failure — then save the order as cancelled anyway. If the\n' +
+      'refund throws, the buyer money stays in escrow_hold forever and nothing\n' +
+      'raises an alarm.\n\n' +
+      'escrows.refund() itself is correct: one transaction, idempotency key\n' +
+      'escrow_refund:{id}. The defect is the caller swallowing what it throws.\n\n' +
+      'The red frame is what SHOULD be one transaction. Today it is three separate\n' +
+      'writes, so a crash between them leaves the order cancelled with the stock\n' +
+      'still gone, or the stock back with the money never returned.',
+    style: S.note,
+    x: 40, y: 1340, w: 800, h: 210,
+  });
+
+  vertex(s, {
+    value:
+      'B — Bug found while drawing this.  nobody voids the PayOS link\n\n' +
+      'orders.cancel() never calls payos.cancelPaymentLink(), so cancelling an\n' +
+      'UNPAID order leaves the payment link live. payos.service.ts:486 then sets\n' +
+      'status = CONFIRMED on webhook without checking the current status.\n\n' +
+      'So: cancel an unpaid order, pay the old link, and the cancelled order comes\n' +
+      'back to life as confirmed — while its stock was already returned to the shelf.\n' +
+      'The red box is the missing half; a status check in the webhook is the other.',
+    style: S.note,
+    x: 880, y: 1340, w: 800, h: 210,
+  });
+
+  return s;
+}
+
+// ===========================================================================
 // 3. CLASS DIAGRAM — slide 8
 // ===========================================================================
 function classDiagram() {
@@ -1432,6 +1577,7 @@ function cicdDiagram() {
 const FILES = [
   ['05-use-case-diagram.drawio', [useCaseDiagram()], { width: 1400, height: 1540 }],
   ['06-activity-diagram.drawio', [activityDiagram()], { width: 1500, height: 1520 }],
+  ['06b-activity-cancel-refund.drawio', [cancelRefundActivityDiagram()], { width: 1900, height: 1600 }],
   ['08-class-diagram.drawio', [classDiagram()], { width: 1600, height: 1000 }],
   ['09-sequence-diagram.drawio', [sequenceDiagram()], { width: 1400, height: 1110 }],
   ['10-entity-relationship-diagram.drawio', [erDiagram()], { width: 1200, height: 920 }],
