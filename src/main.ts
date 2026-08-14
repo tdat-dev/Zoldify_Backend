@@ -10,6 +10,7 @@ import compression from 'compression';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.setGlobalPrefix('api/v1');
 
   // CORS strict - chỉ allow domain trong env, không dùng '*' (CSRF protection)
   const allowedOrigins = (process.env.SITE_URL || 'http://localhost:3001')

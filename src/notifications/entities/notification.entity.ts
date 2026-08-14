@@ -19,6 +19,7 @@ export enum NotificationType {
 }
 
 @Entity('notifications')
+@Index('idx_user_id', ['user'])
 @Index('idx_user_read', ['user', 'is_read'])
 @Index('idx_created_at', ['created_at'])
 export class Notification {
