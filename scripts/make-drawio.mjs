@@ -2210,10 +2210,12 @@ function cicdDiagram() {
   vertex(s, { value: 'CI checks — all must pass', style: S.boundary, x: 340, y: 40, w: 560, h: 250 });
   const c1 = step('lint + typecheck', 370, 90, 240);
   const c2 = step('boundaries:check\nblocks context violations', 370, 155, 240, '#ffe8cc');
-  const c3 = step('test\n37 tests, money on real MySQL', 370, 220, 240);
+  // Không ghi số lượng test vào hình: con số cũ (37) đã sai chỉ sau vài ngày,
+  // và một sơ đồ nói sai một con số thì người đọc nghi ngờ cả phần còn lại.
+  const c3 = step('test\nmoney runs on real MySQL', 370, 220, 240);
   const c4 = step('build', 640, 90, 230);
   const c5 = step('openapi:check\ndiffers from commit means fail', 640, 155, 230, '#ffe8cc');
-  const c6 = step('diagrams:check\n25 diagrams must parse', 640, 220, 230, '#ffe8cc');
+  const c6 = step('diagrams:check + drawio:check\nMermaid and draw.io must both parse', 640, 220, 230, '#ffe8cc');
 
   // Nút quyết định đặt DƯỚI khung, không nằm trong.
   //
@@ -2228,9 +2230,13 @@ function cicdDiagram() {
   const review = step('Reviewed by\nanother member', 990, 150, 220);
   const merge = step('Merge into develop', 990, 240, 220);
   const main = step('Merge develop into main', 990, 330, 220);
-  const build = step('Build image,\npush to GHCR', 990, 420, 220);
-  const deploy = step('SSH to VPS\ncompose pull and up -d', 990, 510, 220);
-  const migrate = step('Run migrations\nseparate step, has a rollback', 990, 600, 220);
+  // Ba bước triển khai tô đỏ vì chúng mô tả thứ CHƯA CÓ, không phải thứ đang
+  // chạy. Không có Dockerfile và không có file compose trong cả bốn repo —
+  // `scripts/test-db.mjs` bật MySQL bằng `docker run` trần. Vẽ chúng bằng màu
+  // của bước đã dựng là nói sai đúng chỗ người chấm sẽ hỏi (chương VI).
+  const build = step('Build image,\npush to GHCR', 990, 420, 220, '#ffe0e0');
+  const deploy = step('SSH to VPS\ncompose pull and up -d', 990, 510, 220, '#ffe0e0');
+  const migrate = step('Run migrations\nseparate step, has a rollback', 990, 600, 220, '#ffe0e0');
   const health = vertex(s, {
     value: '/api/v1/health\nok?', style: S.decision, x: 1010, y: 690, w: 180, h: 80,
   });
@@ -2241,7 +2247,14 @@ function cicdDiagram() {
 
   f(dev, pr);
   f(pr, c1);
-  f(gate, dev, 'no');
+  // Đường quay lại khi CI đỏ. Đi vòng trong rãnh x=310 — bên phải cột
+  // dev/pr (hết ở 280) và bên trái khung CI (bắt đầu ở 340). Bản thẳng trước
+  // đó cắt chéo qua khung và chạm ô `test`.
+  edge(s, {
+    source: gate, target: dev, value: 'no',
+    style: S.flow + 'exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;',
+    points: [[310, 365], [310, 85]],
+  });
   f(gate, review, 'yes');
   f(review, merge);
   f(merge, main);
@@ -2262,7 +2275,21 @@ function cicdDiagram() {
       'on them rendering.\n\n' +
       'NOT BUILT YET: the backend has no .github/workflows at all. This is B, week 1.',
     style: S.note,
-    x: 60, y: 420, w: 620, h: 180,
+    x: 60, y: 420, w: 620, h: 170,
+  });
+
+  vertex(s, {
+    value:
+      'The red column is a plan, not a description\n\n' +
+      'There is no Dockerfile and no compose file in any of the four repositories.\n' +
+      'The only container in the project is started by scripts/test-db.mjs with a\n' +
+      'bare `docker run mysql:8` for the test database.\n\n' +
+      'So "compose pull and up -d" describes a deployment that has never run. Chapter\n' +
+      'VI of the report asks for installation instructions, and right now there is no\n' +
+      'file to show. Writing the Dockerfile and the compose file is roughly half a\n' +
+      'day and it is what turns this column black.',
+    style: S.note,
+    x: 60, y: 610, w: 620, h: 160,
   });
 
   // Cùng một hình dạng pipeline chạy cho từng repo. Vẽ bốn lần thì sơ đồ dài
@@ -2278,7 +2305,7 @@ function cicdDiagram() {
       'the shop repo must stay byte-identical. Without it the two copies drift, which\n' +
       'is exactly how the order-status table ended up with four versions.',
     style: S.note,
-    x: 60, y: 620, w: 620, h: 190,
+    x: 60, y: 790, w: 620, h: 190,
   });
 
   return s;
@@ -2311,7 +2338,7 @@ const FILES = [
   ['r5-state-order-lifecycle.drawio', [orderStateDiagram()], { width: 1000, height: 880 }],
   ['r6-state-escrow-lifecycle.drawio', [escrowStateDiagram()], { width: 1050, height: 400 }],
   ['r7-screen-navigation.drawio', [navigationDiagram()], { width: 1400, height: 840 }],
-  ['r8-cicd-pipeline.drawio', [cicdDiagram()], { width: 1280, height: 900 }],
+  ['r8-cicd-pipeline.drawio', [cicdDiagram()], { width: 1280, height: 1040 }],
 ];
 
 fs.mkdirSync(OUT, { recursive: true });
