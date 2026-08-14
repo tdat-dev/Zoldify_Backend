@@ -69,3 +69,8 @@ docs/system-design/exports/
 # File sao luu tam cua draw.io
 .$*
 *.bkp
+
+# Anh kho tai ve cho hang demo (npm run seed:demo). Script tu tai lai neu thieu.
+# Khong commit: day la anh nguon ngoai chua ra ban quyen, dung cho du lieu gia —
+# de vao repo cua mot san thuong mai la ruoc rui ro phap ly.
+public/media/demo/
