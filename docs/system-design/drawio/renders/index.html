@@ -114,6 +114,17 @@
     max-width: 74ch;
     margin: 0;
   }
+  .warn {
+    border: 1px solid var(--was);
+    border-left-width: 3px;
+    background: var(--was-bg);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 16px;
+    color: var(--ink-2);
+    max-width: 74ch;
+    margin: 0;
+  }
+  .warn strong { color: var(--was); }
 
   .card {
     background: var(--card);
@@ -208,6 +219,15 @@
       nó không biết một cái nhãn có đang che mất tên trạng thái hay không.
       <em>Cú pháp hợp lệ không nói gì về việc hình có đúng.</em>
       Đó là lý do có <code>npm run drawio:shoot</code>.
+    </p>
+
+    <p class="warn">
+      <strong>Ảnh trong thư mục này CHỈ để kiểm, không được đưa vào báo cáo.</strong>
+      Đề bài cấm chụp màn hình sơ đồ, và đây đúng là ảnh chụp màn hình — nhìn ra ngay
+      vì nét mảnh bị vỡ. Ảnh nộp phải xuất từ draw.io:
+      <code>File → Export as → PNG</code> (Zoom 200%, tắt nền trong suốt) cho
+      PowerPoint, hoặc <code>SVG</code> cho Word. Riêng ảnh chụp <em>giao diện</em>
+      ở mục UI Design thì được — đó là yêu cầu khác.
     </p>
   </div>
 
@@ -515,7 +535,8 @@
   <footer>
     <p><strong>File gốc</strong> ở <code>docs/system-design/drawio/*.drawio</code> — mở bằng draw.io hoặc VS Code (extension Draw.io Integration).</p>
     <p><strong>Dựng lại sơ đồ</strong> <code>npm run drawio:make -- --force &lt;tên&gt;</code> · <strong>kiểm cú pháp</strong> <code>npm run drawio:check</code> · <strong>chụp lại ảnh</strong> <code>npm run drawio:shoot</code></p>
-    <p>Ảnh trong thư mục này do <code>drawio:shoot</code> sinh ra. Sửa sơ đồ xong thì chạy lại rồi <em>mở ảnh ra nhìn</em> — không script nào tự bắt được lỗi đè hình.</p>
+    <p>Ảnh trong thư mục này do <code>drawio:shoot</code> sinh ra, <strong>chỉ để kiểm</strong>. Sửa sơ đồ xong thì chạy lại rồi <em>mở ảnh ra nhìn</em> — không script nào tự bắt được lỗi đè hình.</p>
+    <p><strong>Ảnh nộp báo cáo</strong> phải xuất từ draw.io (<code>File → Export as → PNG/SVG</code>), không lấy từ đây.</p>
   </footer>
 
 </div>
