@@ -203,6 +203,16 @@ export const S = {
   /** Liên kết actor với use case — đường thẳng không mũi tên */
   assoc: 'endArrow=none;html=1;strokeColor=#333333;',
 
+  /**
+   * Tổng quát hoá — tam giác RỖNG, nét liền. Dùng cho kế thừa actor và kế
+   * thừa lớp.
+   *
+   * Phân biệt với `flow` (tam giác ĐẶC): đặc là luồng đi hoặc phụ thuộc
+   * hướng, rỗng là quan hệ "là một". Vẽ nhầm hai cái này là lỗi ký pháp mà
+   * người chấm UML nhìn ra ngay.
+   */
+  generalize: 'endArrow=block;endFill=0;endSize=14;html=1;strokeColor=#333333;',
+
   /** Phụ thuộc — nét đứt có mũi tên mở */
   depend: 'endArrow=open;endFill=0;dashed=1;html=1;strokeColor=#666666;fontSize=11;',
 
