@@ -179,7 +179,23 @@ export class ProductsService {
         skip: offset,
         take: numLimit,
         order,
-        relations: ['category', 'seller'],
+        relations: { category: true, seller: true },
+        /**
+         * CHỈ lấy vài cột của người bán và danh mục.
+         *
+         * Trước đây nạp nguyên bản ghi users cho MỖI sản phẩm, trên một endpoint
+         * công khai không cần đăng nhập. Đo được: email và số điện thoại người
+         * bán lộ ra với bất kỳ ai gọi API, và riêng đối tượng seller chiếm 43%
+         * gói tin (532 byte/sản phẩm trong gói 24,6 KB).
+         *
+         * Ô hàng trong lưới chỉ cần tên và ảnh đại diện người bán. Không liệt kê
+         * cột nào của chính sản phẩm ở đây — bỏ trống thì TypeORM lấy đủ, nên
+         * thêm cột mới cho products sau này không phải sửa lại chỗ này.
+         */
+        select: {
+          seller: { id: true, full_name: true, avatar: true },
+          category: { id: true, name: true, slug: true },
+        },
       });
     }
 
@@ -199,7 +215,14 @@ export class ProductsService {
   async findOne(id: number) {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations: ['category', 'seller'], // Tự động load đầy đủ thông tin danh mục và người bán sản phẩm
+      relations: { category: true, seller: true },
+      // Cùng lý do với findAll: trang chi tiết cũng công khai, nên chỉ đưa ra
+      // phần người mua cần thấy về người bán. Bản trước trả cả email,
+      // phone_number, email_verified, is_locked, token_version.
+      select: {
+        seller: { id: true, full_name: true, avatar: true, last_seen: true },
+        category: { id: true, name: true, slug: true },
+      },
     });
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);

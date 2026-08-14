@@ -77,9 +77,24 @@ export class User {
   @Column({ type: 'varchar', length: 10, nullable: true })
   gender: string;
 
-  // Token làm mới (refresh token) để duy trì đăng nhập
+  /**
+   * Token làm mới (refresh token) để duy trì đăng nhập.
+   *
+   * `select: false` — GIỐNG password, và vì đúng một lý do.
+   *
+   * Trước đây cột này chỉ có @ApiHideProperty(). Thứ đó CHỈ giấu khỏi trang tài
+   * liệu Swagger; nó không hề ảnh hưởng tới dữ liệu thật trả về. Hậu quả đo
+   * được: GET /api/v1/products — công khai, không cần đăng nhập — nạp
+   * `relations: ['seller']` tức nguyên bản ghi users, nên mỗi sản phẩm kèm theo
+   * refresh token còn hiệu lực của người bán. Giải mã ra là một JWT hợp lệ
+   * mang sub/role của họ, hạn còn một tuần.
+   *
+   * An toàn để khoá vì cột này chỉ được GHI (auth.service, users.service),
+   * không chỗ nào đọc lại để kiểm tra. Khác với token_version — cột đó
+   * jwt.strategy đọc mỗi request, khoá nó là chặn đăng nhập toàn hệ thống.
+   */
   @ApiHideProperty()
-  @Column({ type: 'varchar', length: 500, nullable: true })
+  @Column({ type: 'varchar', length: 500, nullable: true, select: false })
   refresh_token: string;
 
   // Phiên bản token (tăng mỗi lần đổi token)
