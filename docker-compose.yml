@@ -1,0 +1,110 @@
+# Cụm chạy Zoldify Backend trên một VPS.
+#
+#   cp .env.sample .env      rồi điền, ít nhất DB_PASSWORD và hai khoá JWT
+#   docker compose up -d --build
+#   docker compose logs -f api
+#
+# Ba dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
+#   mysql    →  migrate (chạy một lần rồi thoát)  →  api
+#
+# KHÔNG có Redis trong đây, dù `r2-container` từng vẽ. Bộ nhớ đệm hiện là
+# `CacheModule.register()` — nằm trong chính tiến trình Node. Thêm Redis vào
+# compose lúc chưa có dòng code nào nói chuyện với nó chỉ tạo ra một container
+# chạy không, và một sơ đồ nói dối.
+
+name: zoldify
+
+services:
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      # `:?` làm compose DỪNG kèm thông báo khi biến trống, thay vì dựng một
+      # database có mật khẩu rỗng rồi để đó.
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD đang trống — điền vào .env trước khi chạy}
+      MYSQL_DATABASE: ${DB_DATABASE:-zoldify}
+    command:
+      # utf8mb4 để tên sản phẩm tiếng Việt và emoji không thành dấu hỏi.
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # `migrate` chờ cái này. Thiếu healthcheck thì migration chạy lúc MySQL
+      # mới bật cổng nhưng chưa nhận kết nối, và nó hỏng ngẫu nhiên — lần được
+      # lần không, tuỳ máy nhanh chậm.
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-p${DB_PASSWORD}']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # Mở cổng ra máy chủ chỉ khi cần soi bằng công cụ ngoài. Để đóng thì chỉ có
+    # container trong cùng mạng nói chuyện được với database.
+    # ports:
+    #   - '3306:3306'
+
+  # Chạy migration NHƯ MỘT BƯỚC RIÊNG, không nhét vào lúc api khởi động.
+  #
+  # Nếu để api tự chạy migration lúc boot: dựng hai bản api là hai tiến trình
+  # cùng đổi lược đồ một lúc, và migration hỏng thì api vào vòng khởi động lại
+  # vô tận, mỗi vòng thử migrate lại một lần. Ở đây hỏng là dừng hẳn, `api`
+  # không bao giờ khởi động, và log nằm nguyên một chỗ để đọc.
+  migrate:
+    build:
+      context: .
+      target: runtime
+    image: zoldify-backend:latest
+    restart: 'no'
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_USERNAME: root
+    command:
+      - node
+      - ./node_modules/typeorm/cli.js
+      - migration:run
+      - -d
+      - dist/data-source.js
+
+  api:
+    build:
+      context: .
+      target: runtime
+    image: zoldify-backend:latest
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      # Ghi đè bốn biến này SAU env_file. Trong .env chúng trỏ vào 127.0.0.1 cho
+      # lúc chạy trên máy cá nhân; trong mạng của compose, `127.0.0.1` là chính
+      # container api chứ không phải MySQL.
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_USERNAME: root
+      PORT: '3000'
+    ports:
+      - '${API_PORT:-3000}:3000'
+    volumes:
+      # ĐÂY LÀ DÒNG QUYẾT ĐỊNH ẢNH SẢN PHẨM CÓ SỐNG QUA LẦN DEPLOY SAU KHÔNG.
+      #
+      # Ảnh người bán tải lên đi vào `public/images/{folder_type}` trên đĩa —
+      # không có R2, không có S3, xem multer.config.ts. Không có dòng này thì
+      # chúng nằm trong lớp ghi của container, và `docker compose up` với ảnh
+      # mới tạo container mới: toàn bộ ảnh hàng của mọi người bán biến mất.
+      #
+      # Volume có TÊN chứ không phải bind mount, nên lần tạo đầu Docker chép
+      # nội dung sẵn có trong ảnh vào volume — 26 tấm ảnh danh mục đang được
+      # git theo dõi vẫn còn.
+      - product-images:/app/public/images
+
+volumes:
+  mysql-data:
+  product-images:
