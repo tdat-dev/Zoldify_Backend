@@ -1680,15 +1680,39 @@ function containerDiagram() {
   });
 
   vertex(s, {
-    value: 'Single VPS — Docker Compose  (target deployment)',
+    value: 'Single VPS — Docker Compose',
     style: S.boundary, x: 400, y: 40, w: 640, h: 620,
   });
 
   const caddy = box('Caddy\nautomatic TLS, load balancing', 440, 90, 280, 70);
   const api = box('API x3\nNestJS, stateless', 440, 210, 280, 80);
-  const worker = box('Worker x1\nBullMQ + cron', 760, 210, 240, 80);
+
+  // WORKER VÀ REDIS ĐỀU CHƯA CÓ — cùng một loại sai đã sửa ở R2 phía dưới.
+  //
+  // Không có BullMQ trong package.json và không có worker riêng: `TasksModule`
+  // được chính `AppModule` nạp, nên cron chạy BÊN TRONG tiến trình API.
+  // Không có client Redis nào trong `src/` — hai chỗ duy nhất nhắc tới Redis là
+  // hai dòng chú thích TODO trong products.service.ts. Bộ nhớ đệm là
+  // `CacheModule.register()`, tức nằm trong bộ nhớ của chính tiến trình; bộ đếm
+  // chặn spam của ThrottlerModule cũng vậy.
+  //
+  // Vẽ hai cái này màu xanh là khẳng định API không giữ trạng thái, mà đó chính
+  // là điều nó KHÔNG làm được hôm nay.
+  const worker = vertex(s, {
+    value: 'Worker x1  (planned)\nBullMQ + cron\ntoday the cron runs inside the API',
+    style: S.component +
+      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+    x: 760, y: 210, w: 240, h: 80,
+  });
   const mysql = store('MySQL 8\nsource of truth', 440, 340);
-  const redis = store('Redis 7\ncache · throttle\nsocket adapter · queue', 760, 340);
+  // Cùng hình hộp 3D như MySQL để so sánh được, chỉ khác màu.
+  const redis = vertex(s, {
+    value: 'Redis 7  (planned)\ncache · throttle\nsocket adapter · queue',
+    style:
+      S.node3d +
+      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+    x: 760, y: 340, w: 220, h: 90,
+  });
 
   // R2 CHƯA CÓ THẬT. Không có client R2/S3 nào trong `src/`; multer ghi thẳng
   // xuống `public/images/{folder}` trên đĩa VPS (xem catalog/files/multer.config.ts).
@@ -1738,8 +1762,14 @@ function containerDiagram() {
       'Four things this diagram states:\n' +
       '1. The API keeps NO state, so it can be replicated. Everything that used to\n' +
       '   live in process memory — cache, rate-limit counters, socket lists — is in Redis.\n' +
+      '   NOT TRUE YET: there is no Redis client in src/. CacheModule.register() and\n' +
+      '   ThrottlerModule both keep their state inside the Node process, so today the\n' +
+      '   API is stateful and the x3 above is a target, not a fact.\n' +
       '2. Exactly ONE worker. Cron inside the API would run the reconciliation job\n' +
       '   three times; for a job that touches money that is a serious bug.\n' +
+      '   NOT TRUE YET: TasksModule is imported by AppModule, so the cron runs inside\n' +
+      '   the API. Harmless while there is one replica — and the exact reason a second\n' +
+      '   replica cannot simply be started.\n' +
       '3. Images ARE on the VPS disk today — multer writes to public/images/{folder},\n' +
       '   and there is no R2 or S3 client anywhere in src/. That blocks point 1: a\n' +
       '   second API replica cannot serve an image the first one wrote. Moving to R2\n' +
@@ -1748,13 +1778,18 @@ function containerDiagram() {
       '   shipped in the customer bundle. Sessions are per-origin, so an admin who\n' +
       '   also sells signs in twice.\n\n' +
       'Checked against the code on 14/08/2026. Red = decided, not built.\n\n' +
-      'The VPS box itself is a target, not a running system: there is no Dockerfile and\n' +
-      'no compose file in any of the four repos, and scripts/test-db.mjs starts MySQL\n' +
-      'with a bare `docker run`. What is drawn inside the box is how it is meant to be\n' +
-      'deployed. Whether a redeploy would keep user uploads cannot be answered from\n' +
-      'this repository — that depends on a volume mount that has not been written yet.',
+      'The box is now buildable. Dockerfile and docker-compose.yml exist in\n' +
+      'Zoldify_Backend, and the stack has been brought up from an empty volume and\n' +
+      'answered on /api/v1/products. Compose starts exactly what the code needs:\n' +
+      'mysql, a one-shot migrate step, and one api. No Redis, no worker.\n\n' +
+      'The uploads question has an answer now: compose mounts a NAMED volume at\n' +
+      '/app/public/images, and a file written there survives docker compose down and\n' +
+      'up — measured, not assumed. That keeps uploads across a redeploy but does not\n' +
+      'unblock point 1: a volume lives on one machine, so it still cannot be shared\n' +
+      'by two API replicas. Only object storage fixes that.\n\n' +
+      'See DEPLOY.md for the commands and for what is still missing.',
     style: S.note,
-    x: 60, y: 700, w: 740, h: 285,
+    x: 60, y: 700, w: 740, h: 480,
   });
 
   return s;
@@ -2230,13 +2265,12 @@ function cicdDiagram() {
   const review = step('Reviewed by\nanother member', 990, 150, 220);
   const merge = step('Merge into develop', 990, 240, 220);
   const main = step('Merge develop into main', 990, 330, 220);
-  // Ba bước triển khai tô đỏ vì chúng mô tả thứ CHƯA CÓ, không phải thứ đang
-  // chạy. Không có Dockerfile và không có file compose trong cả bốn repo —
-  // `scripts/test-db.mjs` bật MySQL bằng `docker run` trần. Vẽ chúng bằng màu
-  // của bước đã dựng là nói sai đúng chỗ người chấm sẽ hỏi (chương VI).
+  // Hai bước còn đỏ vì chúng cần CI và một máy chủ — chưa có cái nào. Bước
+  // migration đã đen: nó là dịch vụ `migrate` trong docker-compose.yml, chạy
+  // một lần rồi thoát, và đã chạy thật.
   const build = step('Build image,\npush to GHCR', 990, 420, 220, '#ffe0e0');
   const deploy = step('SSH to VPS\ncompose pull and up -d', 990, 510, 220, '#ffe0e0');
-  const migrate = step('Run migrations\nseparate step, has a rollback', 990, 600, 220, '#ffe0e0');
+  const migrate = step('Run migrations\nservice `migrate`, chạy trước api', 990, 600, 220);
   const health = vertex(s, {
     value: '/api/v1/health\nok?', style: S.decision, x: 1010, y: 690, w: 180, h: 80,
   });
@@ -2284,12 +2318,15 @@ function cicdDiagram() {
       'There is no Dockerfile and no compose file in any of the four repositories.\n' +
       'The only container in the project is started by scripts/test-db.mjs with a\n' +
       'bare `docker run mysql:8` for the test database.\n\n' +
-      'So "compose pull and up -d" describes a deployment that has never run. Chapter\n' +
-      'VI of the report asks for installation instructions, and right now there is no\n' +
-      'file to show. Writing the Dockerfile and the compose file is roughly half a\n' +
-      'day and it is what turns this column black.',
+      'Dockerfile and docker-compose.yml now exist, and `docker compose up -d --build`\n' +
+      'has been run from an empty volume: 25 tables migrated, both containers healthy,\n' +
+      '/api/v1/products answering. So the migration step is real and is drawn black.\n\n' +
+      'The two boxes still red need things that do not exist: there is no\n' +
+      '.github/workflows anywhere, so nothing builds or pushes an image; and there is\n' +
+      'no VPS to ssh into. Until then a deploy is `git pull` then `npm run docker:up`\n' +
+      'on the machine itself, which builds locally and skips GHCR entirely.',
     style: S.note,
-    x: 60, y: 610, w: 620, h: 160,
+    x: 60, y: 610, w: 620, h: 170,
   });
 
   // Cùng một hình dạng pipeline chạy cho từng repo. Vẽ bốn lần thì sơ đồ dài
@@ -2332,7 +2369,7 @@ const FILES = [
   // Không có slide riêng trong mẫu, nhưng cần cho báo cáo và cho việc hiểu
   // hệ thống. Đặt tên mô tả thay vì số slide.
   ['r1-system-context.drawio', [contextDiagram()], { width: 1350, height: 820 }],
-  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 1060 }],
+  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 1260 }],
   ['r3-component-bounded-contexts.drawio', [componentDiagram()], { width: 1250, height: 890 }],
   ['r4-fund-flow.drawio', [fundFlowDiagram()], { width: 1350, height: 760 }],
   ['r5-state-order-lifecycle.drawio', [orderStateDiagram()], { width: 1000, height: 880 }],
