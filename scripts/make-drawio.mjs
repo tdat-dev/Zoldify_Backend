@@ -462,12 +462,14 @@ function sequenceDiagram() {
   const LIFE_H = 900;
 
   // Tâm mỗi lifeline. Thông điệp vẽ từ tâm sang tâm nên phải giữ lại con số.
+  // Khoảng cách ledger↔db phải rộng hơn nhãn dài nhất chạy giữa hai cột đó
+  // (bước 8, ~305px), nếu không chữ tràn lên thanh kích hoạt của lifeline.
   const L = {
     payos: 130,
     api: 400,
     ledger: 680,
-    db: 950,
-    notif: 1220,
+    db: 1000,
+    notif: 1290,
   };
   const lane = (v, cx, w) =>
     vertex(s, { value: v, style: S.lifeline, x: cx - w / 2, y: TOP, w, h: LIFE_H });
@@ -482,10 +484,10 @@ function sequenceDiagram() {
   const bar = (cx, y, h) =>
     vertex(s, { style: S.activation, x: cx - 5, y, w: 10, h });
 
-  bar(L.api, 150, 640);
-  bar(L.ledger, 250, 400);
-  bar(L.db, 290, 330);
-  bar(L.notif, 760, 40);
+  bar(L.api, 150, 690);
+  bar(L.ledger, 250, 490);
+  bar(L.db, 290, 380);
+  bar(L.notif, 770, 40);
 
   const m = (from, to, y, v, style = S.msg) =>
     edgeAt(s, { x1: from, y1: y, x2: to, y2: y, value: v, style });
@@ -504,39 +506,59 @@ function sequenceDiagram() {
   m(L.ledger, L.db, 290, '4. BEGIN TRANSACTION');
   m(L.ledger, L.db, 330, '5. SELECT ledger_transactions WHERE idempotency_key');
   m(L.db, L.ledger, 370, '6. found / not found', S.ret);
-  m(L.ledger, L.db, 500, '7. INSERT transaction, INSERT entries');
-  m(L.ledger, L.db, 540, '8. SELECT ledger_accounts FOR UPDATE, UPDATE balance');
-  m(L.ledger, L.db, 580, '9. UPDATE orders, INSERT escrows');
-  m(L.ledger, L.db, 620, '10. COMMIT');
-  m(L.ledger, L.api, 660, '11. LedgerTransaction', S.ret);
-  m(L.api, L.notif, 780, '12. notify buyer, after commit');
-  m(L.api, L.payos, 830, '13. 200 OK', S.ret);
 
-  // Khung alt bao các bước 7-10, tức nhánh "khoá còn mới".
-  // Tab của umlFrame rộng theo tham số width trong style; để mặc định 80 thì
-  // nhãn dài bị bẻ dòng tràn xuống thân khung.
+  // ─────────────────────────────────────────────────────────────────────────
+  // Khung `alt` phải có ĐỦ HAI NGĂN, ngăn cách bằng một nét đứt ngang, và
+  // guard của ngăn thứ hai nằm BÊN TRONG khung.
+  //
+  // Bản trước chỉ vẽ một ngăn `[key is new]` rồi đẩy `else [key already used]`
+  // xuống thành một ghi chú rời ở đáy trang. Đó không phải `alt` — một `alt`
+  // một ngăn nói rằng khi khoá đã dùng thì KHÔNG có gì xảy ra cả, trong khi
+  // thực tế đường đi ấy vẫn phải đóng transaction đã mở ở bước 4. Người đọc
+  // sơ đồ không có nghĩa vụ ghép hai chỗ rời nhau lại với nhau.
+  // ─────────────────────────────────────────────────────────────────────────
+  // Mép trái khung lùi ra 540 để cái tab `alt` (rộng 120) kết thúc TRƯỚC
+  // thanh kích hoạt của LedgerService ở x=675, thay vì đè lên nó.
+  const ALT_X = 540;
+  const ALT_W = 550;
   vertex(s, {
     value: 'alt  [key is new]',
-    style: S.frame.replace('width=80', 'width=190'),
-    x: 590, y: 470, w: 480, h: 200,
+    style: S.frame.replace('width=80', 'width=120'),
+    x: ALT_X, y: 400, w: ALT_W, h: 300,
   });
+
+  m(L.ledger, L.db, 450, '7. INSERT transaction, INSERT entries');
+  m(L.ledger, L.db, 490, '8. SELECT ledger_accounts FOR UPDATE, UPDATE balance');
+  m(L.ledger, L.db, 530, '9. UPDATE orders, INSERT escrows');
+  m(L.ledger, L.db, 570, '10. COMMIT');
+
+  // Vách ngăn giữa hai toán hạng của `alt`
+  vertex(s, {
+    style: 'line;strokeWidth=1;html=1;dashed=1;strokeColor=#666666;fillColor=none;',
+    x: ALT_X, y: 600, w: ALT_W, h: 10,
+  });
+  vertex(s, {
+    value: '[key already used]',
+    style: 'text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;',
+    x: ALT_X + 10, y: 610, w: 220, h: 18,
+  });
+  m(L.ledger, L.db, 660, "7'. COMMIT — nothing was written");
+
+  m(L.ledger, L.api, 730, '11. LedgerTransaction', S.ret);
+  m(L.api, L.notif, 780, '12. notify buyer, after commit');
+  m(L.api, L.payos, 830, '13. 200 OK', S.ret);
 
   vertex(s, {
     value:
       'Steps 4 to 10 are ONE transaction. The idempotency key and the money share a fate:\n' +
       'a crash rolls both back, so the retry succeeds cleanly. The old code committed the\n' +
-      'key first, so a crash silently swallowed the payment.',
+      'key first, so a crash silently swallowed the payment.\n\n' +
+      'The lower branch is the normal path when PayOS resends the webhook, not an error.\n' +
+      'LedgerService finds the existing row at step 5, writes nothing, and returns it —\n' +
+      'so the caller gets the same LedgerTransaction it got the first time. That is what\n' +
+      'makes the endpoint safe to retry any number of times.',
     style: S.note,
-    x: 60, y: 990, w: 660, h: 80,
-  });
-
-  vertex(s, {
-    value:
-      'else [key already used]\n' +
-      'Return the existing transaction and move no money.\n' +
-      'This is the normal path when PayOS resends, not an error.',
-    style: S.note,
-    x: 780, y: 990, w: 540, h: 80,
+    x: 60, y: 1010, w: 700, h: 130,
   });
 
   return s;
@@ -888,35 +910,61 @@ function componentDiagram() {
   const ctx = (v, x, y, w = 300, h = 90) =>
     vertex(s, { value: v, style: S.component + 'verticalAlign=middle;align=center;spacingLeft=0;', x, y, w, h });
 
-  const ops = ctx('Ops\nadmin · settings · tasks', 420, 60);
-  const ordering = ctx('Ordering\ncarts · orders · ghn', 80, 220);
-  const money = ctx(
-    'Money\nledger · wallets · escrows\npayments · payos · sepay · withdrawals',
-    440, 220, 360, 100);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bản trước tự mâu thuẫn: ghi chú viết "Arrows point DOWNWARD only" nhưng
+  // `Ordering` và `Money` lại được vẽ NGANG HÀNG nhau, nên mũi tên phụ thuộc
+  // giữa chúng nằm ngang. Sơ đồ tuyên bố kiến trúc phân tầng mà không xếp
+  // theo tầng thì người đọc không có cách nào kiểm chứng luật ấy bằng mắt.
+  //
+  // Nay xếp đúng bốn tầng, tầng dưới không bao giờ biết tầng trên:
+  //   tầng 3  Ops        — chỉ nó gọi xuống, không ai gọi nó
+  //   tầng 2  Ordering
+  //   tầng 1  Catalog · Money · Messaging
+  //   tầng 0  Identity   — nền móng, phụ thuộc vào không ai
+  //
+  // Mũi tên `Ordering → Money` trước cắm vào cạnh TRÁI của Money, đúng chỗ ba
+  // ô cổng (port) của ký hiệu component, nhìn ra hai đầu mũi tên chồng nhau.
+  // Nay vào từ cạnh trên, tránh hẳn vùng cổng.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const ops = ctx('Ops\nadmin · settings · tasks', 560, 60);
+  const ordering = ctx('Ordering\ncarts · orders · ghn', 560, 220);
   const catalog = ctx(
     'Catalog\nproducts · categories · shop\nfiles · interactions · follows',
-    80, 400, 320, 100);
-  const messaging = ctx('Messaging\nchat · notifications · firebase', 840, 400, 300, 90);
-  const identity = ctx('Identity\nauth · users · addresses', 400, 580, 320, 90);
+    120, 390, 320, 110);
+  const money = ctx(
+    'Money\nledger · wallets · escrows\npayments · payos · sepay · withdrawals',
+    520, 390, 380, 110);
+  const messaging = ctx('Messaging\nchat · notifications · firebase', 980, 390, 300, 110);
+  const identity = ctx('Identity\nauth · users · addresses', 520, 610, 320, 90);
 
   // Money tô đậm vì nó là context được bảo vệ chặt nhất
   vertex(s, {
     value: '',
     style: 'rounded=0;html=1;fillColor=none;strokeColor=#2C67C8;strokeWidth=3;dashed=1;',
-    x: 425, y: 205, w: 390, h: 130,
+    x: 505, y: 375, w: 410, h: 140,
   });
 
-  const dep = (a, b) => edge(s, { source: a, target: b, style: S.flow });
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const dep = (a, b, anchors = '', points) =>
+    edge(s, { source: a, target: b, style: S.flow + anchors, points });
 
-  dep(ops, ordering);
-  dep(ops, money);
-  dep(ops, catalog);
-  dep(ordering, catalog);
-  dep(ordering, money);
-  dep(ordering, identity);
-  dep(catalog, identity);
-  dep(messaging, identity);
-  dep(money, identity);
+  // Ops gọi xuống ba context. Hai đường vòng ra ngoài hẳn để không đi xuyên
+  // qua `Ordering` đang nằm chắn ngay bên dưới.
+  dep(ops, ordering, at(0.5, 1, 0.5, 0));
+  // Vào Money từ CẠNH TRÊN chứ không phải cạnh phải: cạnh phải nằm sát viền
+  // đứt "protected core", mũi tên đâm vào đó trông như đang trỏ vào cái viền.
+  dep(ops, money, at(1, 0.5, 0.85, 0), [[960, 105], [960, 355], [843, 355]]);
+  dep(ops, catalog, at(0, 0.5, 0, 0.5), [[90, 105], [90, 445]]);
+
+  dep(ordering, money, at(0.5, 1, 0.5, 0));
+  dep(ordering, catalog, at(0, 0.5, 0.8, 0));
+  dep(ordering, identity, at(0, 0.75, 0.2, 0), [[480, 285], [480, 575], [584, 575]]);
+
+  dep(catalog, identity, at(0.5, 1, 0, 0.7), [[280, 500], [280, 673]]);
+  dep(money, identity, at(0.5, 1, 0.6, 0));
+  dep(messaging, identity, at(0.2, 1, 1, 0.5));
 
   vertex(s, {
     value:
@@ -929,13 +977,13 @@ function componentDiagram() {
       'The rule is enforced by eslint-plugin-boundaries, not by convention. Current\n' +
       'debt: 29 legacy violations, allowed to shrink but never to grow.',
     style: S.note,
-    x: 80, y: 700, w: 660, h: 150,
+    x: 80, y: 760, w: 660, h: 155,
   });
 
   vertex(s, {
     value: 'Money — the protected core.\nEvery balance change goes through LedgerService.post()',
     style: S.note,
-    x: 860, y: 220, w: 300, h: 60,
+    x: 980, y: 580, w: 320, h: 70,
   });
 
   return s;
@@ -956,13 +1004,17 @@ function fundFlowDiagram() {
       x, y, w: 230, h: 80,
     });
 
+  // Khoảng cách ngang giữa các cột phải RỘNG HƠN nhãn dài nhất chạy qua nó.
+  // Bản trước để cột 2 ở x=380, cách gateway đúng 90px, trong khi nhãn
+  // `1b · order paid via PayOS` rộng ~145px — nên nó tràn lên cả hai hộp.
+  // Ba cột nay cách nhau 150px, 120px và 140px.
   const gateway = acc('gateway_clearing\nmoney arriving from PayOS', 60, 260, '#eef6ff');
-  const buyer = acc('buyer.available\nbuyer wallet', 380, 100, '#ffffff');
-  const hold = acc('escrow_hold\nheld by Zoldify', 380, 320, '#ffd700');
-  const seller = acc('seller.available\nseller wallet', 720, 200, '#ffffff');
-  const revenue = acc('platform.revenue\nZoldify revenue', 720, 420, '#90ee90');
-  const pending = acc('seller.withdrawal_pending\nawaiting manual payout', 1050, 200, '#fff3cd');
-  const bank = acc('bank_external\nleft the system', 1050, 380, '#e8e8e8');
+  const buyer = acc('buyer.available\nbuyer wallet', 440, 100, '#ffffff');
+  const hold = acc('escrow_hold\nheld by Zoldify', 440, 320, '#ffd700');
+  const seller = acc('seller.available\nseller wallet', 790, 200, '#ffffff');
+  const revenue = acc('platform.revenue\nZoldify revenue', 790, 420, '#90ee90');
+  const pending = acc('seller.withdrawal_pending\nawaiting manual payout', 1160, 200, '#fff3cd');
+  const bank = acc('bank_external\nleft the system', 1160, 380, '#e8e8e8');
 
   const f = (a, b, v, anchors = '') =>
     edge(s, { source: a, target: b, value: v, style: S.flow + anchors });
@@ -1106,10 +1158,12 @@ function escrowStateDiagram() {
 
   const start = vertex(s, { style: S.initial, x: 95, y: 60, w: 30, h: 30 });
   const holding = st('holding', 25, 170, '#ffd700');
-  const released = st('released', 400, 70, '#d5f5dd');
-  const refunded = st('refunded', 400, 190, '#ffe0e0');
-  const cancelled = st('cancelled', 400, 310, '#e8e8e8');
-  const done = vertex(s, { style: S.final, x: 700, y: 185, w: 30, h: 30 });
+  // Cột phải đẩy từ x=400 ra 440: nhãn `order cancelled or refunded` rộng
+  // ~150px, ở khoảng cách cũ nó chạm mép trái hộp `refunded`.
+  const released = st('released', 440, 70, '#d5f5dd');
+  const refunded = st('refunded', 440, 190, '#ffe0e0');
+  const cancelled = st('cancelled', 440, 310, '#e8e8e8');
+  const done = vertex(s, { style: S.final, x: 760, y: 185, w: 30, h: 30 });
 
   const t = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
 
@@ -1125,7 +1179,9 @@ function escrowStateDiagram() {
     value:
       'The escrow_hold balance must ALWAYS match the real bank account.\n' +
       'An hourly reconciliation job checks it.',
-    style: S.note, x: 25, y: 300, w: 330, h: 55,
+    // Ghi chú hạ xuống y=420: ở y=300 nó nằm đúng trên đường
+    // `payment window expired`, mép trên hộp chạm vào nét vẽ.
+    style: S.note, x: 25, y: 420, w: 340, h: 55,
   });
 
   vertex(s, {
@@ -1133,7 +1189,7 @@ function escrowStateDiagram() {
       'TERMINAL states. There is no way back.\n' +
       'To reverse one, post an opposite ledger transaction;\n' +
       'never edit the existing rows. ledger_entries is append-only.',
-    style: S.note, x: 640, y: 60, w: 360, h: 70,
+    style: S.note, x: 700, y: 60, w: 360, h: 70,
   });
 
   return s;

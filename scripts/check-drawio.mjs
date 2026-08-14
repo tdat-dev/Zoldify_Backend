@@ -20,6 +20,9 @@ const DIR = path.join(ROOT, 'docs', 'system-design', 'drawio');
 const KNOWN_SHAPES = new Set([
   'umlActor', 'umlLifeline', 'umlFrame', 'note', 'cube', 'module',
   'endState', 'startState', 'process', 'table', 'partialRectangle',
+  // Shape stencil (tên có dấu chấm) — draw.io nạp từ thư viện hình rời.
+  // `flowchart.or` là vòng tròn có dấu X, dùng làm flow final của UML.
+  'mxgraph.flowchart.or',
 ]);
 
 /** Kiểu mũi tên hợp lệ mà bộ sinh có dùng */
@@ -90,7 +93,10 @@ for (const file of files) {
   }
 
   // 4. Tên shape phải là shape draw.io biết
-  for (const m of xml.matchAll(/shape=([a-zA-Z0-9_]+)/g)) {
+  // Dấu chấm phải nằm trong tên bắt được: shape stencil tên dạng
+  // `mxgraph.flowchart.or`, cắt ở dấu chấm thì tên nào cũng thành "mxgraph"
+  // và bộ kiểm báo sai cho mọi shape thư viện.
+  for (const m of xml.matchAll(/shape=([a-zA-Z0-9_.]+)/g)) {
     if (!KNOWN_SHAPES.has(m[1])) report(file, `shape=${m[1]} không nằm trong danh sách đã biết`);
   }
 
