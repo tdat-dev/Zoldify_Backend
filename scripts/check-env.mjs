@@ -15,6 +15,8 @@
  */
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 /**
  * `required: true` — thiếu là máy chủ không khởi động được, hoặc khởi động rồi
@@ -47,9 +49,33 @@ const VARS = [
   { name: 'PAYOS_CLIENT_ID', required: false, hint: 'Thiếu thì luồng thanh toán hỏng, phần còn lại chạy.' },
   { name: 'PAYOS_API_KEY', required: false },
   { name: 'PAYOS_CHECKSUM_KEY', required: false },
+  {
+    name: 'PAYOS_HOST',
+    required: false,
+    hint: 'Trống thì trỏ thẳng vào máy chủ THẬT của PayOS (api-merchant.payos.vn) — mọi link tạo ra là giao dịch thật. Đặt sang sandbox khi còn đang thử.',
+  },
   { name: 'GHN_TOKEN', required: false, hint: 'Thiếu thì đơn vẫn xác nhận được, chỉ không có mã vận đơn.' },
   { name: 'SEPAY_WEBHOOK_SECRET', required: false, hint: 'Thiếu thì không đối soát được biến động số dư ngân hàng.' },
 ];
+
+/**
+ * Khoá Firebase là một FILE, không phải biến — nên nó lọt khỏi mọi lần soát
+ * biến môi trường. Thiếu nó thì backend vẫn khởi động bình thường, chỉ có đăng
+ * nhập bằng Google tắt câm; không ai để ý cho tới khi người dùng kêu.
+ *
+ * Thứ tự tìm ở đây phải khớp FirebaseService.candidatePaths(), nếu không thì
+ * script báo "có" mà server vẫn không nạp được. Bỏ ứng viên thứ ba (đường dẫn
+ * theo __dirname, trỏ vào dist/) vì script luôn chạy từ gốc dự án — và cũng vì
+ * đặt khoá trong dist/ là sai: `nest build` xoá sạch thư mục đó.
+ */
+function findFirebaseKey() {
+  const fromEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
+  const candidates = [
+    ...(fromEnv ? [resolve(fromEnv)] : []),
+    join(process.cwd(), 'firebase-service-account.json'),
+  ];
+  return candidates.find((p) => existsSync(p)) || null;
+}
 
 const missing = [];
 const emptyOptional = [];
@@ -71,6 +97,29 @@ for (const v of VARS) {
   const mark = present ? 'co ' : v.required ? 'THIEU' : '  -  ';
   console.log(`  [${mark}] ${v.name}`);
 }
+
+// In ĐƯỜNG DẪN chứ không chỉ "có/không": khi máy có nhiều bản khoá lệch nhau,
+// đây là thứ duy nhất cho biết bản nào sẽ được nạp.
+const firebaseKey = findFirebaseKey();
+console.log(
+  `\n  [${firebaseKey ? 'co ' : '  -  '}] firebase-service-account.json` +
+    (firebaseKey
+      ? `\n         ${firebaseKey}`
+      : '\n         Trống thì đăng nhập bằng Google tắt, phần còn lại chạy.'),
+);
+
+// Ngoại lệ DUY NHẤT của luật "không in giá trị": PAYOS_HOST là một URL, không
+// phải bí mật — và nhầm nó là tạo giao dịch THẬT bằng tiền thật trong lúc còn
+// đang thử. Biết mình đang trỏ vào đâu quan trọng hơn nhiều so với việc giấu
+// một cái tên miền. Vẫn không in gì khác ngoài host.
+const payosHost = process.env.PAYOS_HOST || 'https://api-merchant.payos.vn';
+const isLivePayos = payosHost.includes('api-merchant.payos.vn');
+console.log(
+  `\n  PayOS trỏ vào: ${payosHost}` +
+    (isLivePayos
+      ? '\n         ĐÂY LÀ MÁY CHỦ THẬT — mọi link tạo ra là giao dịch thật.'
+      : '\n         Không phải host thật của PayOS — coi như đang thử.'),
+);
 
 if (emptyOptional.length) {
   console.log('\nTrống nhưng không chặn khởi động:');
