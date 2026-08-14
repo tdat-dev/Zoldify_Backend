@@ -8,6 +8,25 @@ import {
 import { Category } from '@catalog/categories/entities/category.entity';
 import { Shop, ShopStatus } from '@catalog/shop/entities/shop.entity';
 
+/**
+ * Đường dẫn sản phẩm cho sitemap — phải khớp CHÍNH XÁC với cách frontend dựng
+ * link (Zoldify_Frontend/src/lib/product-url.ts). Hai chỗ lệch nhau là sitemap
+ * lại nộp cho Google những URL mà bấm vào không ra gì, đúng lỗi vừa sửa.
+ */
+function productPath(p: { id: number; name?: string; slug?: string }): string {
+  const words = (p.slug || p.name || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+  return words ? `/product/${words}-p${p.id}` : `/product/${p.id}`;
+}
+
 @Injectable()
 export class SitemapService {
   private readonly siteUrl: string;
@@ -26,24 +45,38 @@ export class SitemapService {
   async generateUrls() {
     const urls: Array<{ loc: string; lastmod?: string; priority: string }> = [];
 
-    // Static pages
-    const staticPages = [
+    /**
+     * Chỉ những trang CÓ NỘI DUNG công khai.
+     *
+     * Bản trước liệt kê /cart, /login, /register — trong khi public/robots.txt
+     * lại ghi `Disallow: /cart`. Tức là vừa bảo Google đừng vào, vừa nộp nó
+     * trong sitemap: một mâu thuẫn tự phát ra, và Search Console báo lỗi
+     * "Submitted URL blocked by robots.txt".
+     *
+     * Giỏ hàng và đăng nhập cũng không có gì để xếp hạng: nội dung của chúng
+     * phụ thuộc người đang đăng nhập, với khách vãng lai chỉ là một khung rỗng.
+     */
+    urls.push(
       { loc: `${this.siteUrl}/`, priority: '1.0' },
       { loc: `${this.siteUrl}/search`, priority: '0.8' },
-      { loc: `${this.siteUrl}/cart`, priority: '0.5' },
-      { loc: `${this.siteUrl}/login`, priority: '0.3' },
-      { loc: `${this.siteUrl}/register`, priority: '0.3' },
-    ];
-    urls.push(...staticPages);
+    );
 
     // Active products
     const products = await this.productRepository.find({
       where: { status: ProductStatus.ACTIVE },
-      select: ['id', 'slug', 'updated_at'],
+      select: ['id', 'name', 'slug', 'updated_at'],
     });
     for (const product of products) {
       urls.push({
-        loc: `${this.siteUrl}/product/${product.slug || product.id}`,
+        // `<slug>-p<id>`, KHÔNG phải slug trần.
+        //
+        // Bản trước phát `/product/${slug || id}`. Ứng dụng lại tra sản phẩm
+        // theo id, nên mọi URL dạng slug đều mở ra trang "không tìm thấy" mà
+        // vẫn đáp HTTP 200 — đo được: cả 377 URL sản phẩm trong sitemap đều
+        // như vậy. Google gọi đó là soft 404 và vẫn lập chỉ mục trang rỗng.
+        //
+        // Đuôi -p<id> giữ chữ cho người đọc mà vẫn cho máy một khoá chắc chắn.
+        loc: `${this.siteUrl}${productPath(product)}`,
         lastmod: product.updated_at?.toISOString().split('T')[0],
         priority: '0.8',
       });
