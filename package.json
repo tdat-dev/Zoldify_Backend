@@ -35,7 +35,8 @@
     "drawio:make": "node scripts/make-drawio.mjs",
     "drawio:check": "node scripts/check-drawio.mjs",
     "drawio:shoot": "node scripts/shoot-drawio.mjs",
-    "categories:relink": "node -r ts-node/register -r tsconfig-paths/register scripts/relink-category-images.ts"
+    "categories:relink": "node -r ts-node/register -r tsconfig-paths/register scripts/relink-category-images.ts",
+    "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-catalog.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.6",
