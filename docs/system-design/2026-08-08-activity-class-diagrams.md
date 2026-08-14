@@ -185,7 +185,7 @@ flowchart TD
     D1 -- yes --> O4 --> O5 --> O6 --> O7 --> D2
 
     D2 -- "COD" --> O8
-    O8 --> N1
+    O8 --> Fork
 
     D2 -- "PayOS" --> P1
     P1 --> P2 --> O8b["COMMIT"]
@@ -225,6 +225,12 @@ flowchart TD
 |---|---|---|---|
 | `O3` | `SELECT ... FOR UPDATE` khi trừ kho. Hiện đọc rồi ghi không khoá → hai người mua món cuối cùng cùng lúc thì kho về âm | A | 3 giờ |
 | `N2` | Tạo vận đơn GHN tự động sau khi trả tiền | B | 0,5 ngày |
+
+**Đơn COD vẫn phải tạo vận đơn.** Trước đây nhánh COD chỉ chạy vào `N1` (báo người
+bán) rồi hết — đọc ra thành "đơn COD không có vận đơn GHN", trong khi COD chỉ khác
+PayOS ở chỗ *tiền trả lúc nào*, còn hàng thì vẫn phải giao y hệt. Nay cả hai nhánh
+cùng vào thanh fork, nên `N1` và `N2` chạy cho mọi đơn. Bản `06-activity-diagram.drawio`
+vẽ đúng từ đầu; chỗ lệch này được sửa theo nó.
 
 **Vì sao có hai nhánh COMMIT.** Với COD, đơn chốt xong là hết. Với PayOS thì phải
 tạo được link thanh toán **trước khi** commit — nếu PayOS trả lỗi mà đơn đã commit,
