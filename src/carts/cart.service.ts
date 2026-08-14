@@ -30,14 +30,14 @@ export class CartService {
     if (existingCart) {
       existingCart.quantity += quantity || 1;
       await this.cartRepository.save(existingCart);
-      return this.findOne(existingCart.id, user);
+      return await this.findOne(existingCart.id, user);
     }
     const saved = await this.cartRepository.save({
       user: { id: user.id },
       product: { id: product_id },
       quantity: quantity || 1
     })
-    return this.findOne(saved.id, user);
+    return await this.findOne(saved.id, user);
   }
 
   async findAll(user: IUser) {
@@ -75,7 +75,7 @@ export class CartService {
     }
     const { quantity } = updateCartDto;
     await this.cartRepository.update(id, { quantity: quantity || cart.quantity });
-    return this.findOne(id, user);
+    return await this.findOne(id, user);
   }
 
   async remove(id: number, user: IUser) {

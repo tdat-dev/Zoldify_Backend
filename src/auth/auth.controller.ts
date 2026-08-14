@@ -96,7 +96,7 @@ export class AuthController {
       await this.userRepository.update(user.id, { avatar: fbUser.avatar });
     }
 
-    return this.authService.login(user);
+    return await this.authService.login(user);
   }
 
   @Public()

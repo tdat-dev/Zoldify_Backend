@@ -54,7 +54,7 @@ export class PayosController {
       if (!dto.amount) {
         throw new BadRequestException('amount là bắt buộc khi type = topup');
       }
-      return this.payosService.createWalletTopupLink(dto.amount, user.id);
+      return await this.payosService.createWalletTopupLink(dto.amount, user.id);
     }
     throw new BadRequestException('Type không hợp lệ');
   }

@@ -35,6 +35,6 @@ export class SepayController {
     }
 
     // Bước 3: Xử lý webhook
-    return this.sepayService.handleWebhook(req.body);
+    return await this.sepayService.handleWebhook(req.body);
   }
 }

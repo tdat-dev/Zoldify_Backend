@@ -263,33 +263,6 @@ export class OrdersService {
           console.error('GHN createOrder failed:', err.message);
         }
       }
-      order.status = updateOrderDto.status;
-    }
-
-    if (updateOrderDto.status) {
-      // Nếu xác nhận đơn và chưa có tracking_code → tạo GHN
-      if (updateOrderDto.status === OrderStatus.CONFIRMED && !order.tracking_code && order.ghn_district_id) {
-        try {
-          const ghnOrder = await this.ghnService.createOrder({
-            to_name: order.receiver_name,
-            to_phone: order.receiver_phone,
-            to_address: order.shipping_address,
-            to_ward_code: order.ghn_ward_code,
-            to_district_id: order.ghn_district_id,
-            weight: 500,
-            cod_amount: order.payment_method === 'cod' ? Number(order.final_amount) : 0,
-            items: order.items.map(item => ({
-              name: item.product_name,
-              quantity: item.quantity,
-              weight: 200,
-              price: item.price,
-            })),
-          });
-          order.tracking_code = ghnOrder.order_code;
-        } catch (err) {
-          console.error('GHN createOrder failed:', err.message);
-        }
-      }
 
       // Tạo escrow khi order được đánh dấu là đã thanh toán (PAID)
       if (updateOrderDto.is_paid === true && !order.is_paid) {
@@ -322,6 +295,13 @@ export class OrdersService {
 
       order.status = updateOrderDto.status;
     }
+
+    if (updateOrderDto.is_paid !== undefined) {
+      order.is_paid = updateOrderDto.is_paid;
+    }
+
+    await this.orderRepository.save(order);
+    return await this.findOne(id, user);
   }
 
   async cancel(id: number, user: IUser) {
