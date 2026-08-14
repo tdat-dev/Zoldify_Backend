@@ -510,6 +510,666 @@ function cancelRefundActivityDiagram() {
 }
 
 // ===========================================================================
+// 2c. ACTIVITY DIAGRAM — đăng bán một món.
+//
+// Việc mà TOÀN BỘ sàn phụ thuộc vào: không có người đăng bán thì không có gì
+// để mua. Chưa sơ đồ nào vẽ nó.
+// ===========================================================================
+function listItemActivityDiagram() {
+  const s = createSheet('Activity Diagram - List an Item for Sale');
+
+  const laneH = 1180;
+  const l1 = vertex(s, { value: 'Seller', style: S.laneV, x: 40, y: 40, w: 380, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 420, y: 40, w: 1000, h: laneH });
+  const l3 = vertex(s, { value: 'VPS disk · MySQL', style: S.laneV, x: 1420, y: 40, w: 330, h: laneH });
+
+  //   x 140-500  trục chính
+  //   x 560-780  nhánh lỗi
+  const act = (lane, v, x, y, w = 320, h = 50, style = S.action) =>
+    vertex(s, { value: v, style, x, y, w, h, parent: lane });
+
+  const start = vertex(s, { style: S.initial, x: 175, y: 60, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Fill in the listing form:\nname · price · condition · stock', 30, 115, 320, 60);
+
+  // Vòng lặp tải ảnh. Vẽ hẳn ra vì đây là chỗ khác kỳ vọng nhất.
+  vertex(s, {
+    value: 'ONE REQUEST PER IMAGE',
+    style:
+      'rounded=0;html=1;fillColor=none;strokeColor=#b8860b;strokeWidth=2;dashed=1;' +
+      'verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontSize=11;fontColor=#b8860b;',
+    x: 20, y: 210, w: 340, h: 250, parent: l1,
+  });
+  const a2 = act(l1, 'Pick one photo', 30, 250, 320, 45);
+  const a3 = act(l1, 'POST /files/upload\nheader folder_type', 30, 320, 320, 55);
+  const dMore = vertex(s, {
+    value: 'Another\nphoto?',
+    style: S.decision, x: 105, y: 395, w: 170, h: 55, parent: l1,
+  });
+  const a4 = act(l1, 'POST /products with the returned URLs', 30, 500, 320, 55);
+
+  const f1 = act(l2, 'Check the file extension', 140, 250, 360, 45);
+  const dExt = vertex(s, {
+    value: 'jpg png gif webp\nsvg bmp pdf doc?',
+    style: S.decision, x: 230, y: 320, w: 180, h: 90, parent: l2,
+  });
+  const errExt = act(l2, '400 — format rejected', 560, 335, 220, 60, S.actionTodo);
+  const errEndExt = vertex(s, { style: S.final, x: 655, y: 420, w: 30, h: 30, parent: l2 });
+
+  const f2 = act(l2, 'Write the file to\npublic/images/{folder_type}', 140, 440, 360, 55);
+  const f3 = act(
+    l2,
+    'Build the URL from the REQUEST host\nreq.protocol + req.get(host)',
+    140, 520, 360, 55, S.actionTodo,
+  );
+  const f4 = act(l2, 'Save a row in `files`, return the URL', 140, 600, 360, 50);
+
+  const p1 = act(l2, 'Validate the body against CreateProductDto', 140, 700, 360, 50);
+  const p2 = act(
+    l2,
+    'Copy ONLY whitelisted fields\nanything else is dropped in silence',
+    140, 775, 360, 55, S.actionTodo,
+  );
+  const p3 = act(l2, 'Save the product, seller = caller', 140, 855, 360, 50);
+  // KHÔNG dùng fork ở đây. Trong code hai việc này nối tiếp nhau (`await`), và
+  // "hàng lên sàn ngay" không phải một hành động — nó là hệ quả của việc lưu.
+  // Vẽ fork là nói sai rằng chúng chạy song song.
+  const p4 = act(l2, 'Listing is public immediately — no review step', 140, 930, 360, 50, S.actionTodo);
+  const p5 = act(l2, 'Notify every follower of this seller', 140, 1005, 360, 50);
+  const endP = vertex(s, { style: S.final, x: 305, y: 1085, w: 30, h: 30, parent: l2 });
+
+  const d1 = act(l3, 'File on the VPS disk', 30, 440, 270, 50);
+  const d2 = act(l3, 'Row in `files`', 30, 600, 270, 50);
+  const d3 = act(l3, 'Row in `products`', 30, 855, 270, 50);
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  f(start, a1);
+  f(a1, a2);
+  f(a2, a3);
+  f(a3, f1, '', at(1, 0.5, 0, 0.5));
+  f(f1, dExt);
+  f(dExt, errExt, 'no', at(1, 0.5, 0, 0.5));
+  f(errExt, errEndExt);
+  f(dExt, f2, 'yes');
+  f(f2, d1, '', at(1, 0.5, 0, 0.5));
+  f(f2, f3);
+  f(f3, f4);
+  f(f4, d2, '', at(1, 0.5, 0, 0.5));
+  // Về lại làn người bán để hỏi còn ảnh nào nữa không.
+  //
+  // Waypoint là toạ độ TUYỆT ĐỐI. x=530 nằm trong lề trái của làn giữa (làn bắt
+  // đầu ở 420, ô đầu tiên ở 560) nên rãnh đó trống. Bản thẳng trước đó cắt chéo
+  // qua hai cạnh khác.
+  f(f4, dMore, '', at(0, 0.5, 1, 0.5), [[530, 665], [530, 462]]);
+  f(dMore, a2, 'yes', at(0, 0.5, 0, 0.5), [[70, 422], [70, 312]]);
+  f(dMore, a4, 'no');
+  f(a4, p1, '', at(1, 0.5, 0, 0.5));
+  f(p1, p2);
+  f(p2, p3);
+  f(p3, d3, '', at(1, 0.5, 0, 0.5));
+  f(p3, p4);
+  f(p4, p5);
+  f(p5, endP);
+
+  vertex(s, {
+    value:
+      'Three red boxes, three real defects\n\n' +
+      '1. THE URL IS BUILT FROM THE REQUEST. files.controller.ts writes\n' +
+      '   `${req.protocol}://${req.get(host)}/public/images/...` into the database.\n' +
+      '   Every photo therefore carries whichever hostname the uploader happened to\n' +
+      '   reach. Behind a reverse proxy that is http://localhost:3000; after a domain\n' +
+      '   change every older photo points at the old domain. The stored value should\n' +
+      '   be the path, and the host should be added when reading.\n\n' +
+      '2. THE WHITELIST DROPS FIELDS WITHOUT SAYING SO. products.service.create()\n' +
+      '   copies a fixed list of fields. A field the DTO accepted but the list forgot\n' +
+      '   is discarded and the API still answers 201. This already happened once with\n' +
+      '   `currency`: send USD, get 201, row says VND.\n\n' +
+      '3. NOTHING REVIEWS THE LISTING. It is visible the moment it is saved. For a\n' +
+      '   second-hand marketplace whose selling point is trust, that is the gap a\n' +
+      '   grader will ask about.',
+    style: S.note,
+    x: 40, y: 1250, w: 830, h: 300,
+  });
+
+  vertex(s, {
+    value:
+      'Why the loop is drawn instead of one upload step\n\n' +
+      'The route uses FileInterceptor(fileUpload) — SINGLE file. The multer config\n' +
+      'allows files: 10, which reads like ten photos per request, but that limit\n' +
+      'never applies: the interceptor accepts one field, one file. A client with six\n' +
+      'photos makes six requests and assembles the URL list itself.\n\n' +
+      'Consequence worth saying out loud: those six uploads are not one transaction.\n' +
+      'If the browser closes after the fourth, four files sit on disk and in `files`\n' +
+      'with no product pointing at them. Nothing collects them.\n\n' +
+      'fileSize is 100MB per file — for a marketplace photo that is roughly fifty\n' +
+      'times what is needed, and it is the whole VPS disk on the line.',
+    style: S.note,
+    x: 900, y: 1250, w: 830, h: 300,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 2d. ACTIVITY DIAGRAM — vận đơn GHN.
+// ===========================================================================
+function ghnActivityDiagram() {
+  const s = createSheet('Activity Diagram - GHN Shipment');
+
+  // Nhánh lỗi nằm BÊN TRÁI trục chính, không phải bên phải.
+  //
+  // Bản đầu đặt cả `skip` lẫn `fail` ở cột phải, và hỏng hai lần vì thế: đường
+  // vòng từ `skip` xuống `Save the order` chạy xuyên qua ô `fail`, còn cạnh từ
+  // `Create the shipment` sang làn GHN chạy ngang qua thân nó — chữ trong ô đỏ
+  // bị gạch ngang bởi hai đường kẻ. Bên phải trục chính là đường ra làn GHN,
+  // không được để hình nào chắn.
+  //
+  // Làn giữa chia:
+  //   x  20      rãnh dọc cho đường vòng của `skip`, không hình nào đặt vào
+  //   x  40-290  cột nhánh lỗi
+  //   x 360-700  trục chính (hình thoi w=180 cùng tâm với hành động)
+  //   x  >700    trống, để đi thẳng sang làn GHN
+  const laneH = 1010;
+  const l1 = vertex(s, { value: 'Seller', style: S.laneV, x: 40, y: 40, w: 330, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 370, y: 40, w: 1000, h: laneH });
+  const l3 = vertex(s, { value: 'GHN', style: S.laneV, x: 1370, y: 40, w: 340, h: laneH });
+
+  const act = (lane, v, x, y, w = 340, h = 50, style = S.action) =>
+    vertex(s, { value: v, style, x, y, w, h, parent: lane });
+
+  const start = vertex(s, { style: S.initial, x: 150, y: 60, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Press Confirm on the order', 20, 115, 290);
+
+  const b1 = act(l2, 'Check the caller is the seller', 360, 190);
+  const d1 = vertex(s, {
+    value: 'No tracking code yet\nAND ghn_district_id set?',
+    style: S.decision, x: 440, y: 270, w: 180, h: 100, parent: l2,
+  });
+  const skip = act(l2, 'Skip the carrier.\nSeller types the code in later.', 40, 285, 250, 60);
+
+  const g1 = act(l2, 'Ask GHN which services serve\nthat district', 360, 410, 340, 55);
+  const d2 = vertex(s, {
+    value: 'A service with\nservice_type_id = 2?',
+    style: S.decision, x: 440, y: 490, w: 180, h: 100, parent: l2,
+  });
+  const g2 = act(
+    l2,
+    'Create the shipment\nweight 500g flat · 200g per item\ncod_amount = final_amount if COD, else 0',
+    360, 630, 340, 70,
+  );
+  const g3 = act(l2, 'Store ghnOrder.order_code\nas the tracking code', 360, 730, 340, 55);
+
+  const fail = act(
+    l2,
+    'catch → console.error\nOrder is STILL confirmed, with no shipment',
+    40, 630, 250, 70, S.actionTodo,
+  );
+  const failEnd = vertex(s, { style: S.flowFinal, x: 150, y: 730, w: 30, h: 30, parent: l2 });
+
+  const b2 = act(l2, 'Save the order as confirmed', 360, 820);
+  const endN = vertex(s, { style: S.final, x: 515, y: 900, w: 30, h: 30, parent: l2 });
+
+  const p1 = act(l3, 'available-services', 30, 410, 280, 50);
+  const p2 = act(l3, 'shipping-order/create\nreturns order_code', 30, 630, 280, 55);
+  const p3 = act(
+    l3,
+    'Parcel moves.\nNOBODY TELLS ZOLDIFY.',
+    30, 800, 280, 60, S.actionTodo,
+  );
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  f(start, a1);
+  f(a1, b1, '', at(1, 0.5, 0, 0.5));
+  f(b1, d1);
+  f(d1, skip, 'no', at(0, 0.5, 1, 0.5));
+  // Bỏ qua hãng vận chuyển vẫn phải lưu đơn. Đi vòng trong rãnh x=390 tuyệt
+  // đối — bên trái cột nhánh lỗi (bắt đầu ở 410) nên không chạm ô `fail`.
+  f(skip, b2, '', at(0, 0.5, 0, 0.5), [[390, 355], [390, 885]]);
+  f(d1, g1, 'yes');
+  f(g1, p1, '', at(1, 0.5, 0, 0.5));
+  f(g1, d2);
+  f(d2, fail, 'no', at(0, 0.5, 1, 0.5));
+  f(d2, g2, 'yes');
+  f(g2, p2, '', at(1, 0.5, 0, 0.5));
+  f(g2, g3);
+  f(g3, b2);
+  f(fail, failEnd);
+  f(b2, endN);
+  edge(s, {
+    source: p2, target: p3, value: 'days later',
+    style: S.depend + 'strokeColor=#c62828;',
+  });
+
+  vertex(s, {
+    value:
+      'THE HALF THAT DOES NOT EXIST: STATUS SYNC\n\n' +
+      'Zoldify calls GHN once, stores order_code, and never speaks to GHN again.\n' +
+      'There is no webhook route and no polling job. Search the repository for a GHN\n' +
+      'callback and there is nothing to find.\n\n' +
+      'So picked up, in transit, delivered, delivery failed, returned to sender —\n' +
+      'none of it reaches the order. `status` only moves when a human presses a\n' +
+      'button in the seller UI.\n\n' +
+      'That matters more here than on an ordinary shop, because DELIVERED is the\n' +
+      'event that releases the escrow. The money is waiting on a fact the system\n' +
+      'cannot observe. Today a seller can mark their own order delivered and be paid\n' +
+      'for a parcel that never left the house.\n\n' +
+      'Two ways to close it: register a GHN webhook, or poll the tracking endpoint on\n' +
+      'a schedule. The webhook is cheaper and faster; polling survives a missed call.',
+    style: S.note,
+    x: 40, y: 1080, w: 800, h: 300,
+  });
+
+  vertex(s, {
+    value:
+      'Smaller things this diagram had to be honest about\n\n' +
+      'WEIGHT IS INVENTED. Every parcel is declared 500g, every line item 200g. GHN\n' +
+      'prices by weight, so the quoted fee is fiction for anything heavier — and the\n' +
+      'buyer already paid the quoted fee. Nothing in the product form asks for weight.\n\n' +
+      'THE FAILURE IS SWALLOWED ON PURPOSE, and that part is defensible: a shipment\n' +
+      'is not money, and a seller can type the code in by hand. But it goes to\n' +
+      'console.error, not the logger, so it lands nowhere anyone looks.\n\n' +
+      'service_type_id = 2 IS HARDCODED. If a district only offers another service\n' +
+      'type, the order simply gets no shipment.\n\n' +
+      'THE CARRIER IS ONE FIXED PICKUP POINT — GHN_FROM_DISTRICT_ID out of the\n' +
+      'environment. Every parcel is declared as leaving the same address, no matter\n' +
+      'which seller it belongs to. That is a warehouse model, and Zoldify is a\n' +
+      'marketplace of individuals.',
+    style: S.note,
+    x: 870, y: 1080, w: 800, h: 300,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 2e. ACTIVITY DIAGRAM — nạp ví.
+// ===========================================================================
+function topupActivityDiagram() {
+  const s = createSheet('Activity Diagram - Top Up the Wallet');
+
+  const laneH = 1120;
+  const l1 = vertex(s, { value: 'User', style: S.laneV, x: 40, y: 40, w: 340, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 380, y: 40, w: 980, h: laneH });
+  const l3 = vertex(s, { value: 'PayOS · bank', style: S.laneV, x: 1360, y: 40, w: 340, h: laneH });
+
+  const act = (lane, v, x, y, w = 330, h = 50, style = S.action) =>
+    vertex(s, { value: v, style, x, y, w, h, parent: lane });
+
+  const start = vertex(s, { style: S.initial, x: 155, y: 60, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Enter an amount, press Top up', 20, 115, 300);
+  const a2 = act(l1, 'Scan the QR and pay from the bank app', 20, 470, 300, 55);
+
+  const b1 = act(l2, 'POST /payos/create-link  type = topup', 140, 190, 360, 50);
+  const d1 = vertex(s, {
+    value: '10.000đ ≤ amount\n≤ 50.000.000đ?',
+    style: S.decision, x: 230, y: 270, w: 180, h: 90, parent: l2,
+  });
+  const err1 = act(l2, '400 — amount out of range', 580, 285, 230, 60, S.actionTodo);
+  const errEnd1 = vertex(s, { style: S.final, x: 680, y: 375, w: 30, h: 30, parent: l2 });
+
+  const b2 = act(
+    l2,
+    'Ask PayOS for a link, save a PENDING payment\nWALLET_TOPUP · expires in 15 min',
+    140, 390, 360, 60,
+  );
+
+  // `parent: l2` là bắt buộc. Thiếu nó, toạ độ được hiểu là tuyệt đối trên
+  // trang chứ không phải theo làn, và khung rơi lệch sang trái tới mức cạnh
+  // phải của nó cắt đôi ô bút toán bên trong.
+  vertex(s, {
+    value: 'ONE TRANSACTION',
+    style:
+      'rounded=0;html=1;fillColor=none;strokeColor=#2e7d32;strokeWidth=2;dashed=1;' +
+      'verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontSize=11;fontColor=#2e7d32;',
+    x: 110, y: 605, w: 430, h: 320, parent: l2,
+  });
+
+  const w1 = act(l2, 'Verify the PayOS signature', 140, 645, 360, 45);
+  const d2 = vertex(s, {
+    value: 'Idempotency key\nalready posted?',
+    style: S.decision, x: 230, y: 710, w: 180, h: 90, parent: l2,
+  });
+  const dupEnd = vertex(s, { style: S.flowFinal, x: 655, y: 740, w: 30, h: 30, parent: l2 });
+  const w2 = act(
+    l2,
+    'Post to the ledger\ngateway_clearing −X → user.available +X',
+    140, 840, 360, 60, S.actionDone,
+  );
+  const endN = vertex(s, { style: S.final, x: 305, y: 960, w: 30, h: 30, parent: l2 });
+
+  const p1 = act(l3, 'Return checkoutUrl + QR', 25, 390, 290, 50);
+  const p2 = act(l3, 'Money lands in the real\nbank account', 25, 545, 290, 55);
+  const p3 = act(l3, 'Call the webhook', 25, 645, 290, 45);
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  f(start, a1);
+  f(a1, b1, '', at(1, 0.5, 0, 0.5));
+  f(b1, d1);
+  f(d1, err1, 'no', at(1, 0.5, 0, 0.5));
+  f(err1, errEnd1);
+  f(d1, b2, 'yes');
+  f(b2, p1, '', at(1, 0.5, 0, 0.5));
+  // Đường trả link về cho người dùng. Đi xuống trong rãnh x=1300 tuyệt đối
+  // (bên phải mọi hình của làn giữa, ô xa nhất hết ở 1190) rồi mới rẽ ngang ở
+  // y=537 — đúng tâm ô `Scan the QR`, và dưới đáy ô `Ask PayOS for a link`
+  // (hết ở 490) nên đoạn ngang không chạm hình nào.
+  f(p1, a2, '', at(0, 0.5, 1, 0.5), [[1300, 455], [1300, 537]]);
+  f(a2, p2, '', at(1, 0.5, 0, 0.5));
+  f(p2, p3);
+  f(p3, w1, '', at(0, 0.5, 1, 0.5));
+  f(w1, d2);
+  f(d2, dupEnd, 'yes', at(1, 0.5, 0, 0.5));
+  f(d2, w2, 'no');
+  f(w2, endN, 'COMMIT');
+
+  vertex(s, {
+    value:
+      'THE HOLE THAT WAS HERE UNTIL 14 AUGUST\n\n' +
+      'POST /api/v1/payments with body {"amount": 999999999} called\n' +
+      'walletsService.topup(user.id, amount) directly. Any signed-in account could\n' +
+      'credit itself any sum. No bank transfer, no admin, no PayOS — and the ledger\n' +
+      'entry it produced was indistinguishable from a real top-up.\n\n' +
+      'The money was immediately spendable, and withdrawable through\n' +
+      'POST /withdrawals. Only the admin approval step stood between a fabricated\n' +
+      'balance and a real bank payout — and the admin sees nothing but a normal\n' +
+      'looking balance.\n\n' +
+      'POST /wallets/topup was worse in a quieter way: WalletsController carried no\n' +
+      'guard at all, so a route into a function that writes to the ledger was\n' +
+      'reachable without logging in. It answered 500 rather than 401 only because\n' +
+      '@User() returned undefined and the code tripped over user.id.\n\n' +
+      'Fixed: the /payments branch refuses and names the PayOS route; the wallets\n' +
+      'controller takes JwtAuthGuard at class level and AdminGuard on topup;\n' +
+      'route-guards.spec.ts now fails the build if any route loses its guard.',
+    style: S.note,
+    x: 40, y: 1190, w: 840, h: 330,
+  });
+
+  vertex(s, {
+    value:
+      'Why the wallet is only credited by the webhook\n\n' +
+      'The ledger account `gateway_clearing` represents money that PayOS is holding\n' +
+      'on our behalf. Every credit to a user wallet is paid for out of it, so the sum\n' +
+      'of what we have handed out must always match what the gateway actually\n' +
+      'received. Crediting a wallet without a matching bank event breaks that\n' +
+      'equality, and it breaks it invisibly — the books still balance to zero because\n' +
+      'the fake entry has two sides. It only surfaces when someone compares\n' +
+      'gateway_clearing against the PayOS statement.\n\n' +
+      'That is the whole reason the credit lives in the webhook and nowhere else.\n\n' +
+      'The idempotency key is payos:{orderCode}:{paymentLinkId}, so PayOS may call\n' +
+      'the webhook as many times as it likes. The second call finds the transaction\n' +
+      'already posted and stops — a flow final, not an activity final: the request\n' +
+      'still returns 200, which is what stops PayOS retrying forever.\n\n' +
+      'The same key is used by GET /payos/refresh/:orderId, so whichever arrives\n' +
+      'first wins and the other becomes a no-op.',
+    style: S.note,
+    x: 910, y: 1190, w: 840, h: 330,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 2f. ACTIVITY DIAGRAM — đăng nhập và vòng đời token.
+// ===========================================================================
+function loginActivityDiagram() {
+  const s = createSheet('Activity Diagram - Login and Token Lifetime');
+
+  // MỘT luồng duy nhất, không phải ba luồng rời.
+  //
+  // Bản đầu vẽ đăng nhập, gọi API và đăng xuất như ba đoạn tách nhau, mỗi đoạn
+  // treo lơ lửng — riêng `Serve the request` không có cạnh ra nào cả, tức là
+  // một hành động không bao giờ kết thúc. Nối liền lại thành một mạch: đăng
+  // nhập → dùng token → đăng xuất, đúng nghĩa "vòng đời token" ở tiêu đề.
+  const laneH = 1180;
+  const l1 = vertex(s, { value: 'User', style: S.laneV, x: 40, y: 40, w: 340, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 380, y: 40, w: 980, h: laneH });
+  const l3 = vertex(s, { value: 'MySQL', style: S.laneV, x: 1360, y: 40, w: 300, h: laneH });
+
+  const act = (lane, v, x, y, w = 340, h = 50, style = S.action) =>
+    vertex(s, { value: v, style, x, y, w, h, parent: lane });
+
+  const start = vertex(s, { style: S.initial, x: 155, y: 60, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Enter email and password', 20, 115, 300);
+  const a2 = act(l1, 'Call an endpoint with the access token', 20, 690, 300, 55);
+  const a3 = act(l1, 'Press Log out', 20, 1000, 300);
+
+  const b1 = act(l2, 'LocalAuthGuard → validateUser', 140, 190, 340);
+  const d1 = vertex(s, {
+    value: 'bcrypt compare\nmatches?',
+    style: S.decision, x: 225, y: 265, w: 180, h: 90, parent: l2,
+  });
+  const err1 = act(l2, '401 — wrong credentials', 580, 280, 230, 60, S.actionTodo);
+  const errEnd1 = vertex(s, { style: S.final, x: 680, y: 370, w: 30, h: 30, parent: l2 });
+
+  const b2 = act(l2, 'Read token_version from the user row', 140, 385, 340);
+  // Thanh fork phải TRÙM được tâm của cả hai nhánh, nếu không hai cạnh toả ra
+  // đều là đường chéo và nhìn không ra là song song. Tâm b3 = 255, tâm b4 = 535.
+  const fork = vertex(s, { style: S.bar, x: 240, y: 460, w: 310, h: 8, parent: l2 });
+  const b3 = act(l2, 'Sign the access token', 130, 500, 250, 45);
+  const b4 = act(l2, 'Sign the refresh token,\nstore it on the user row', 410, 500, 250, 55);
+  const join = vertex(s, { style: S.bar, x: 240, y: 600, w: 310, h: 8, parent: l2 });
+
+  const b5 = act(l2, 'JwtStrategy decodes the token', 140, 760, 340, 45);
+  const d2 = vertex(s, {
+    value: 'payload.token_version\n= the row today?',
+    style: S.decision, x: 225, y: 830, w: 180, h: 90, parent: l2,
+  });
+  const err2 = act(l2, '401 — token retired', 580, 845, 230, 60, S.actionTodo);
+  const errEnd2 = vertex(s, { style: S.final, x: 680, y: 935, w: 30, h: 30, parent: l2 });
+  const ok = act(l2, 'Serve the request', 140, 950, 340, 45, S.actionDone);
+
+  const b6 = act(l2, 'token_version += 1, clear refresh_token', 140, 1030, 340, 50);
+  const endN = vertex(s, { style: S.final, x: 295, y: 1105, w: 30, h: 30, parent: l2 });
+
+  const m1 = act(l3, 'users.refresh_token', 20, 500, 250, 55);
+  const m2 = act(l3, 'users.token_version', 20, 1030, 250, 50);
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  f(start, a1);
+  f(a1, b1, '', at(1, 0.5, 0, 0.5));
+  f(b1, d1);
+  f(d1, err1, 'no', at(1, 0.5, 0, 0.5));
+  f(err1, errEnd1);
+  f(d1, b2, 'yes');
+  f(b2, fork);
+  f(fork, b3, '', at(0.05, 1, 0.5, 0));
+  f(fork, b4, '', at(0.95, 1, 0.5, 0));
+  f(b4, m1, '', at(1, 0.5, 0, 0.5));
+  f(b3, join, '', at(0.5, 1, 0.05, 0));
+  f(b4, join, '', at(0.5, 1, 0.95, 0));
+  // Token về tay người dùng, rồi người dùng mang nó đi gọi API.
+  f(join, a2, '', at(0, 0.5, 0.5, 0));
+  f(a2, b5, '', at(1, 0.5, 0, 0.5));
+  f(b5, d2);
+  f(d2, err2, 'no', at(1, 0.5, 0, 0.5));
+  f(err2, errEnd2);
+  f(d2, ok, 'yes');
+  // Mạch chạy tiếp: phục vụ xong thì tới lúc người dùng đăng xuất.
+  f(ok, a3, '', at(0, 0.5, 1, 0.5));
+  f(a3, b6, '', at(1, 0.5, 0, 0.5));
+  f(b6, m2, '', at(1, 0.5, 0, 0.5));
+  f(b6, endN);
+
+  vertex(s, {
+    value:
+      'THERE IS NO REFRESH ENDPOINT\n\n' +
+      'The refresh token is signed at login and written to users.refresh_token, and\n' +
+      'then nothing ever reads it. AuthController has login, register, OTP, firebase,\n' +
+      'forgot-password, change-password, logout and profile — and no route that\n' +
+      'exchanges a refresh token for a new access token.\n\n' +
+      'So the second half of the usual pair does not exist. When the access token\n' +
+      'expires the user is simply logged out and types their password again. The\n' +
+      'refresh token is a stored credential that buys nothing.\n\n' +
+      'Worth stating plainly at the defence, because the diagram of a login flow\n' +
+      'normally implies a refresh loop, and a grader will look for it. Either build\n' +
+      'POST /auth/refresh, or stop issuing and storing the token.\n\n' +
+      'Storing it is not free: user.entity.ts already notes that a leaked row hands\n' +
+      'over a valid refresh token, and nothing checks whether the stored one matches\n' +
+      'the one presented — because nothing presents one.',
+    style: S.note,
+    x: 40, y: 1290, w: 820, h: 300,
+  });
+
+  vertex(s, {
+    value:
+      'What token_version buys, and what it costs\n\n' +
+      'A JWT cannot be withdrawn once handed out — that is the trade a stateless\n' +
+      'token makes. token_version buys the withdrawal back: the number is signed into\n' +
+      'the payload, JwtStrategy compares it against the row on EVERY request, and\n' +
+      'logout increments it. Every token issued before that moment stops working at\n' +
+      'once, on every device.\n\n' +
+      'That is the right call for a system holding money. A stolen token stops being\n' +
+      'useful the moment the owner logs out, instead of staying valid until it\n' +
+      'expires.\n\n' +
+      'The cost is one row read per authenticated request, which is exactly the cost\n' +
+      'a stateless token was supposed to avoid. Worth it here; worth knowing it is\n' +
+      'the reason `users` is the hottest table in the system.\n\n' +
+      'The parallel bars are a real fork: the two tokens are signed independently and\n' +
+      'the response needs both. UML requires the fork to be closed by a join, and\n' +
+      'the join is what the response waits on.',
+    style: S.note,
+    x: 890, y: 1290, w: 820, h: 300,
+  });
+
+  return s;
+}
+
+// ===========================================================================
+// 2g. ACTIVITY DIAGRAM — đối soát sổ cái.
+//
+// Vẽ theo quy ước TO-BE: đây là luồng ĐÚNG, và gần như toàn bộ nó là ô đỏ, vì
+// hiện chưa có dòng code nào chạy nó.
+// ===========================================================================
+function reconcileActivityDiagram() {
+  const s = createSheet('Activity Diagram - Ledger Reconciliation (TO BE)');
+
+  const laneH = 900;
+  const l1 = vertex(s, { value: 'Hourly job', style: S.laneV, x: 40, y: 40, w: 340, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 380, y: 40, w: 1120, h: laneH });
+  const l3 = vertex(s, { value: 'Admin', style: S.laneV, x: 1500, y: 40, w: 320, h: laneH });
+
+  const act = (lane, v, x, y, w = 340, h = 50, style = S.actionTodo) =>
+    vertex(s, { value: v, style, x, y, w, h, parent: lane });
+
+  const start = vertex(s, { style: S.initial, x: 155, y: 60, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Wake up on the hour', 20, 115, 300);
+
+  // Thanh fork phải trùm tâm của cả BA nhánh (210 · 550 · 890), nếu không
+  // nhánh ngoài cùng bị nối bằng một đường chéo dài trông như cạnh lạc.
+  const fork = vertex(s, { style: S.bar, x: 200, y: 200, w: 700, h: 8, parent: l2 });
+
+  const c1 = act(
+    l2,
+    'CHECK 1 — every transaction balances\nSUM(entries) per transaction = 0',
+    60, 250, 300, 60,
+  );
+  const c2 = act(
+    l2,
+    'CHECK 2 — cached balance matches\naccounts.balance = SUM(its entries)',
+    400, 250, 300, 60,
+  );
+  const c3 = act(
+    l2,
+    'CHECK 3 — escrow rows match the ledger\nHOLDING rows = escrow_hold balance',
+    740, 250, 300, 60,
+  );
+
+  const join = vertex(s, { style: S.bar, x: 200, y: 350, w: 700, h: 8, parent: l2 });
+
+  const d1 = vertex(s, {
+    value: 'All three\nagree?',
+    style: S.decision, x: 250, y: 400, w: 180, h: 90, parent: l2,
+  });
+  const okBox = act(l2, 'Log the totals, do nothing else', 660, 415, 300, 50, S.action);
+  const okEnd = vertex(s, { style: S.final, x: 795, y: 490, w: 30, h: 30, parent: l2 });
+
+  const e1 = act(l2, 'Write a discrepancy record\nwith the account and the gap', 160, 540, 340, 60);
+  const e2 = act(l2, 'RAISE AN ALARM — do NOT auto-correct', 160, 630, 340, 50);
+  const e3 = act(l2, 'Freeze withdrawals until it is cleared', 160, 710, 340, 50);
+  const endN = vertex(s, { style: S.final, x: 315, y: 800, w: 30, h: 30, parent: l2 });
+
+  const p1 = act(l3, 'Sees the alarm,\ninvestigates by hand', 20, 630, 260, 60);
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  f(start, a1);
+  f(a1, fork, '', at(1, 0.5, 0, 0.5));
+  f(fork, c1, '', at(0.014, 1, 0.5, 0));
+  f(fork, c2, '', at(0.5, 1, 0.5, 0));
+  f(fork, c3, '', at(0.986, 1, 0.5, 0));
+  f(c1, join, '', at(0.5, 1, 0.014, 0));
+  f(c2, join, '', at(0.5, 1, 0.5, 0));
+  f(c3, join, '', at(0.5, 1, 0.986, 0));
+  f(join, d1);
+  f(d1, okBox, 'yes', at(1, 0.5, 0, 0.5));
+  f(okBox, okEnd);
+  f(d1, e1, 'no');
+  f(e1, e2);
+  f(e2, e3);
+  f(e2, p1, '', at(1, 0.5, 0, 0.5));
+  f(e3, endN);
+
+  vertex(s, {
+    value:
+      'EVERY BOX IS RED. NONE OF THIS EXISTS.\n\n' +
+      'Four places in the source already describe this job as though it runs:\n' +
+      'ledger-account.entity.ts says an hourly job compares the two numbers,\n' +
+      'orders.service.ts says the reconciliation job will spot the drift, seed.ts\n' +
+      'says it surfaces in production, r6-state-escrow-lifecycle says an hourly\n' +
+      'reconciliation job checks it.\n\n' +
+      'The only cron in the repository is TasksService.autoCancelOrders. There is no\n' +
+      'reconciliation job. Comments described an intention and then were read back as\n' +
+      'a description of the system — which is exactly how a team ends up believing it\n' +
+      'has a safety net it does not have.\n\n' +
+      'This diagram is drawn to the same TO BE convention as the rest of the set: it\n' +
+      'is the correct flow, drawn in red because it is not built. It is the smallest\n' +
+      'piece of real work left that would most change what the system can promise.',
+    style: S.note,
+    x: 40, y: 970, w: 800, h: 260,
+  });
+
+  vertex(s, {
+    value:
+      'Why it must not correct anything by itself\n\n' +
+      'A gap between the ledger and the cached balance means one of two things: the\n' +
+      'ledger is right and the cache drifted, or something wrote money by a path\n' +
+      'nobody knows about. Those need opposite responses, and the job cannot tell\n' +
+      'them apart. A job that silently rewrites the balance to match destroys the\n' +
+      'evidence of the second case — and the second case is the one that matters.\n\n' +
+      'So: record, alarm, freeze withdrawals, and let a person look. Freezing is the\n' +
+      'part that is easy to leave out and expensive to leave out, because a\n' +
+      'withdrawal is the one operation that turns a number in the database into money\n' +
+      'that cannot be recalled.\n\n' +
+      'CHECK 1 is the invariant the whole double-entry design exists to guarantee, so\n' +
+      'a failure there means a bug in LedgerService.post itself. CHECK 3 is the one\n' +
+      'that catches the bugs found on 14 August: an escrow left HOLDING with no money\n' +
+      'behind it shows up here and nowhere else.',
+    style: S.note,
+    x: 870, y: 970, w: 800, h: 260,
+  });
+
+  return s;
+}
+
+// ===========================================================================
 // 3. CLASS DIAGRAM — slide 8
 // ===========================================================================
 function classDiagram() {
@@ -1632,6 +2292,11 @@ const FILES = [
   ['05-use-case-diagram.drawio', [useCaseDiagram()], { width: 1400, height: 1540 }],
   ['06-activity-diagram.drawio', [activityDiagram()], { width: 1750, height: 2000 }],
   ['06b-activity-cancel-refund.drawio', [cancelRefundActivityDiagram()], { width: 1900, height: 1600 }],
+  ['06c-activity-list-item.drawio', [listItemActivityDiagram()], { width: 1800, height: 1600 }],
+  ['06d-activity-ghn-shipment.drawio', [ghnActivityDiagram()], { width: 1750, height: 1430 }],
+  ['06e-activity-topup.drawio', [topupActivityDiagram()], { width: 1800, height: 1570 }],
+  ['06f-activity-login.drawio', [loginActivityDiagram()], { width: 1760, height: 1660 }],
+  ['06g-activity-ledger-reconcile.drawio', [reconcileActivityDiagram()], { width: 1880, height: 1280 }],
   ['08-class-diagram.drawio', [classDiagram()], { width: 1600, height: 1000 }],
   ['09-sequence-diagram.drawio', [sequenceDiagram()], { width: 1400, height: 1110 }],
   ['10-entity-relationship-diagram.drawio', [erDiagram()], { width: 1200, height: 920 }],

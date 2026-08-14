@@ -490,6 +490,75 @@
     </figure>
   </section>
 
+  <!-- ================= sáu activity mới ================= -->
+  <section class="card" id="activity-moi">
+    <header class="card-head">
+      <div class="card-id"><span class="num">08</span><code>06b … 06g</code></div>
+      <h2>Sáu activity diagram mới</h2>
+      <p class="slide">slide 6 · vẽ mới · 3 lỗi tiền tìm ra trong lúc vẽ</p>
+    </header>
+    <p class="clean">
+      Mục II cần <em>nhiều</em> activity diagram. Sáu cái này lấp phần còn thiếu:
+      huỷ đơn · đăng bán · vận đơn · nạp ví · đăng nhập · đối soát.
+      Quy ước như cả bộ: hình là luồng <strong>đúng</strong>, ô đỏ là chỗ code
+      hiện chưa làm hoặc làm sai.
+    </p>
+    <ol class="defects">
+      <li>
+        <span class="chip k-model">tìm ra khi vẽ</span>
+        <div class="defect-body">
+          <p><code>POST /payments {"amount": N}</code> gọi thẳng <code>walletsService.topup()</code>. Bất kỳ tài khoản đã đăng nhập nào cũng tự cộng cho mình số tiền tuỳ ý, rồi rút ra qua <code>POST /withdrawals</code>.</p>
+          <p class="now">Nhánh đó bị chặn, chỉ còn đường PayOS. Xem <code>06e</code>.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-model">tìm ra khi vẽ</span>
+        <div class="defect-body">
+          <p><code>WalletsController</code> không có guard nào — bốn route đọc <code>user.id</code> từ <code>@User()</code> mà không ai gắn <code>request.user</code> vào.</p>
+          <p class="now"><code>JwtAuthGuard</code> cấp lớp, <code>AdminGuard</code> riêng cho <code>topup</code>, và <code>route-guards.spec.ts</code> làm đỏ build nếu route nào mất guard.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-model">tìm ra khi vẽ</span>
+        <div class="defect-body">
+          <p>Job huỷ đơn quá hạn tự chép lại luồng huỷ và chép sai — trả hàng về kho trước, hoàn tiền sau, không chung transaction. Nó còn quét cả đơn <em>đã có mã vận đơn</em>.</p>
+          <p class="now">Job chỉ còn đi tìm đơn; việc huỷ giao cho <code>OrdersService.cancelExpired</code>, chung đúng một đường với người dùng bấm huỷ.</p>
+        </div>
+      </li>
+      <li>
+        <span class="chip k-draw">đè hình</span>
+        <div class="defect-body">
+          <p>Lượt render đầu: <code>06d</code> có hai cạnh chạy xuyên qua ô đỏ (chữ trong ô bị gạch ngang), <code>06e</code> khung transaction thiếu <code>parent</code> nên cắt đôi ô bút toán, <code>06f</code> ghi chú đè lên làn bơi và <code>Serve the request</code> không có cạnh ra.</p>
+          <p class="now">Nhánh lỗi của <code>06d</code> chuyển sang trái để chừa đường ra làn GHN; ba cái kia sửa toạ độ và nối liền mạch. Đã render lại và nhìn từng cái.</p>
+        </div>
+      </li>
+    </ol>
+    <figure>
+      <div class="canvas"><img src="06b-activity-cancel-refund.png" alt="Activity — huỷ đơn và hoàn tiền" loading="lazy"></div>
+      <figcaption>06b-activity-cancel-refund.png · huỷ đơn và hoàn tiền</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="06c-activity-list-item.png" alt="Activity — đăng bán một món" loading="lazy"></div>
+      <figcaption>06c-activity-list-item.png · đăng bán một món</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="06d-activity-ghn-shipment.png" alt="Activity — vận đơn GHN" loading="lazy"></div>
+      <figcaption>06d-activity-ghn-shipment.png · vận đơn GHN — nửa đồng bộ trạng thái chưa tồn tại</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="06e-activity-topup.png" alt="Activity — nạp ví" loading="lazy"></div>
+      <figcaption>06e-activity-topup.png · nạp ví — kèm lỗ hổng đã bịt</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="06f-activity-login.png" alt="Activity — đăng nhập và vòng đời token" loading="lazy"></div>
+      <figcaption>06f-activity-login.png · đăng nhập — không có endpoint làm mới token</figcaption>
+    </figure>
+    <figure>
+      <div class="canvas"><img src="06g-activity-ledger-reconcile.png" alt="Activity — đối soát sổ cái" loading="lazy"></div>
+      <figcaption>06g-activity-ledger-reconcile.png · đối soát sổ cái — vẽ TO BE, chưa có dòng code nào</figcaption>
+    </figure>
+  </section>
+
   <!-- ================= còn lại ================= -->
   <section class="card" id="con-lai">
     <header class="card-head">
