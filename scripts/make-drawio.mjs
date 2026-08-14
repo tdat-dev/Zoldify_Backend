@@ -1020,7 +1020,7 @@ function containerDiagram() {
   });
 
   vertex(s, {
-    value: 'Single VPS — Docker Compose',
+    value: 'Single VPS — Docker Compose  (target deployment)',
     style: S.boundary, x: 400, y: 40, w: 640, h: 620,
   });
 
@@ -1082,15 +1082,19 @@ function containerDiagram() {
       '   three times; for a job that touches money that is a serious bug.\n' +
       '3. Images ARE on the VPS disk today — multer writes to public/images/{folder},\n' +
       '   and there is no R2 or S3 client anywhere in src/. That blocks point 1: a\n' +
-      '   second API replica cannot serve an image the first one wrote, and a redeploy\n' +
-      '   wipes the folder. Moving to R2 is decided, not built.\n' +
+      '   second API replica cannot serve an image the first one wrote. Moving to R2\n' +
+      '   is decided, not built.\n' +
       '4. Admin is its own deployable on its own hostname, so admin code is never\n' +
       '   shipped in the customer bundle. Sessions are per-origin, so an admin who\n' +
       '   also sells signs in twice.\n\n' +
-      'Red = decided, not built yet. This diagram is checked against the code, so a red\n' +
-      'box means the code disagrees with the plan — not that the plan is aspirational.',
+      'Checked against the code on 14/08/2026. Red = decided, not built.\n\n' +
+      'The VPS box itself is a target, not a running system: there is no Dockerfile and\n' +
+      'no compose file in any of the four repos, and scripts/test-db.mjs starts MySQL\n' +
+      'with a bare `docker run`. What is drawn inside the box is how it is meant to be\n' +
+      'deployed. Whether a redeploy would keep user uploads cannot be answered from\n' +
+      'this repository — that depends on a volume mount that has not been written yet.',
     style: S.note,
-    x: 60, y: 700, w: 720, h: 235,
+    x: 60, y: 700, w: 740, h: 285,
   });
 
   return s;
@@ -1636,7 +1640,7 @@ const FILES = [
   // Không có slide riêng trong mẫu, nhưng cần cho báo cáo và cho việc hiểu
   // hệ thống. Đặt tên mô tả thay vì số slide.
   ['r1-system-context.drawio', [contextDiagram()], { width: 1350, height: 820 }],
-  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 1000 }],
+  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 1060 }],
   ['r3-component-bounded-contexts.drawio', [componentDiagram()], { width: 1250, height: 890 }],
   ['r4-fund-flow.drawio', [fundFlowDiagram()], { width: 1350, height: 760 }],
   ['r5-state-order-lifecycle.drawio', [orderStateDiagram()], { width: 1000, height: 880 }],
