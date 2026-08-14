@@ -136,6 +136,16 @@ export const S = {
   /** Nút kết thúc — vòng tròn có viền */
   final: 'ellipse;html=1;shape=endState;fillColor=#000000;strokeColor=#000000;',
 
+  /**
+   * Flow final — vòng tròn có dấu X. Kết thúc RIÊNG một luồng, hoạt động vẫn
+   * chạy tiếp.
+   *
+   * Phân biệt với `final`: chạm activity final là CẢ hoạt động dừng, kể cả các
+   * nhánh song song đang chạy dở. Nhánh phụ (webhook trùng, giao dịch bị bỏ
+   * qua) mà nối vào activity final là nói sai — nó khai tử luôn nhánh chính.
+   */
+  flowFinal: 'ellipse;html=1;shape=mxgraph.flowchart.or;fillColor=none;strokeColor=#333333;',
+
   /** Hành động — chữ nhật bo tròn */
   action:
     'rounded=1;arcSize=40;whiteSpace=wrap;html=1;fontSize=12;' +

@@ -187,98 +187,148 @@ function useCaseDiagram() {
 function activityDiagram() {
   const s = createSheet('Activity Diagram - Place Order and Pay');
 
-  // Ba làn bơi dọc = ba partition của UML.
-  // Làn giữa rộng hơn vì nhánh lỗi phải nằm CẠNH nhánh chính, không được
-  // chồng lên hình thoi.
-  const laneH = 1320;
-  const l1 = vertex(s, { value: 'Buyer', style: S.laneV, x: 40, y: 40, w: 400, h: laneH });
-  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 440, y: 40, w: 660, h: laneH });
-  const l3 = vertex(s, { value: 'PayOS', style: S.laneV, x: 1100, y: 40, w: 340, h: laneH });
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bản trước hỏng cả mô hình lẫn bố cục.
+  //
+  // MÔ HÌNH — hai nhánh sau fork cùng chạy vào MỘT activity final. Sai: chạm
+  // activity final là CẢ hoạt động dừng ngay, nên nhánh nào về đích trước sẽ
+  // khai tử nhánh còn lại. Đúng UML là gộp lại bằng thanh JOIN rồi mới kết
+  // thúc một lần.
+  //
+  // Nhánh phụ cũng vậy: `Roll back` và webhook trùng khoá đều nối vào cùng
+  // activity final ở tận đáy làn Buyer. Hai đường chéo dài đó vừa nói sai
+  // (chúng kết thúc luồng của mình, không kết thúc cả hoạt động) vừa cắt
+  // ngang qua ô `Create PayOS payment link`. Thay bằng nút kết thúc ĐẶT NGAY
+  // CẠNH chỗ nó xảy ra: rollback dùng activity final riêng, webhook trùng
+  // dùng flow final (vòng tròn có X) vì hoạt động vẫn chạy tiếp.
+  //
+  // BỐ CỤC — `Choose payment method` nằm dưới `Lock product rows`, nên mũi
+  // tên giữa hai ô đi NGƯỢC lên trên. Cột làn giữa nay bắt đầu bên dưới ô
+  // cuối cùng của làn Buyer để mọi mũi tên đều xuôi xuống.
+  //
+  // Waypoint nhánh COD trước đặt ở x=490 tuyệt đối, mà các ô của làn giữa bắt
+  // đầu ở x=480 — đường chạy XUYÊN QUA thân ba cái ô. Nay làn giữa chừa hẳn
+  // một rãnh trống x 460-560 và không hình nào được đặt vào đó.
+  // ─────────────────────────────────────────────────────────────────────────
 
-  // Toạ độ trong làn là tương đối so với làn
+  const laneH = 1530;
+  const l1 = vertex(s, { value: 'Buyer', style: S.laneV, x: 40, y: 40, w: 400, h: laneH });
+  const l2 = vertex(s, { value: 'Zoldify Backend', style: S.laneV, x: 440, y: 40, w: 700, h: laneH });
+  const l3 = vertex(s, { value: 'PayOS', style: S.laneV, x: 1140, y: 40, w: 340, h: laneH });
+
+  // Toạ độ con là tương đối so với gốc trái-trên của làn.
+  //
+  // Làn giữa chia làm ba cột:
+  //   x  20-100  rãnh trống, chỉ để nhánh COD chạy dọc
+  //   x 130-490  trục chính (hành động w=360, hình thoi w=180 cùng tâm 310)
+  //   x 530-680  nhánh rẽ ra khỏi trục chính
   const act = (lane, v, x, y, w = 300, h = 50, style = S.action) =>
     vertex(s, { value: v, style, x, y, w, h, parent: lane });
 
-  // Trục chính của làn giữa: hành động x=40 w=360, hình thoi x=130 w=180.
-  // Cả hai cùng tâm 220. Nhánh lỗi để riêng ở x=460.
   const start = vertex(s, { style: S.initial, x: 175, y: 60, w: 30, h: 30, parent: l1 });
-  const a1 = act(l1, 'Review cart and press Checkout', 40, 120);
-  const a2 = act(l1, 'Fill in receiver name, phone, address', 40, 200);
-  const a3 = act(l1, 'Choose payment method', 40, 280);
-  const a4 = act(l1, 'Pay on the PayOS page', 40, 730);
-  const endN = vertex(s, { style: S.final, x: 175, y: 1230, w: 30, h: 30, parent: l1 });
+  const a1 = act(l1, 'Review cart and press Checkout', 40, 115);
+  const a2 = act(l1, 'Fill in receiver name, phone, address', 40, 195);
+  const a3 = act(l1, 'Choose payment method', 40, 275);
+  const a4 = act(l1, 'Pay on the PayOS page', 40, 900);
 
-  const b1 = act(l2, 'Lock product rows and verify stock', 40, 120, 360);
+  const b1 = act(l2, 'Lock product rows and verify stock', 130, 345, 360);
   const d1 = vertex(s, {
     value: 'All items\nin stock?',
-    style: S.decision, x: 130, y: 210, w: 180, h: 90, parent: l2,
+    style: S.decision, x: 220, y: 425, w: 180, h: 90, parent: l2,
   });
-  const rollback = act(l2, 'Roll back,\nno order created', 460, 220, 180, 60, S.actionTodo);
+  const rollback = act(l2, 'Roll back,\nno order created', 530, 440, 180, 60, S.actionTodo);
+  const rollbackEnd = vertex(s, { style: S.final, x: 605, y: 550, w: 30, h: 30, parent: l2 });
 
-  const b2 = act(l2, 'Compute totals, insert order and items,\ndecrement stock', 40, 350, 360, 60);
+  const b2 = act(l2, 'Compute totals, insert order and items,\ndecrement stock', 130, 555, 360, 60);
   const d2 = vertex(s, {
     value: 'Payment\nmethod?',
-    style: S.decision, x: 130, y: 450, w: 180, h: 90, parent: l2,
+    style: S.decision, x: 220, y: 645, w: 180, h: 90, parent: l2,
   });
-  const b3 = act(l2, 'Create PayOS payment link', 40, 590, 360);
+  const b3 = act(l2, 'Create PayOS payment link', 130, 780, 360);
 
-  const b4 = act(l2, 'Verify webhook signature', 40, 830, 360);
+  const b4 = act(l2, 'Verify webhook signature', 130, 1020, 360);
   const d3 = vertex(s, {
     value: 'Idempotency key\nalready used?',
-    style: S.decision, x: 130, y: 920, w: 180, h: 90, parent: l2,
+    style: S.decision, x: 220, y: 1100, w: 180, h: 90, parent: l2,
   });
+  // Flow final, KHÔNG phải activity final: webhook gửi trùng thì bỏ qua luồng
+  // này, hoạt động vẫn sống.
+  const dup = vertex(s, { style: S.flowFinal, x: 570, y: 1130, w: 30, h: 30, parent: l2 });
+
   const b5 = act(
     l2,
     'ONE TRANSACTION\nledger entries · order marked paid · escrow rows per seller',
-    40, 1060, 360, 80, S.actionDone,
+    130, 1230, 360, 70, S.actionDone,
   );
 
-  const fork = vertex(s, { style: S.bar, x: 70, y: 1170, w: 300, h: 6, parent: l2 });
-  const n1 = act(l2, 'Notify sellers', 40, 1200, 170, 40);
-  const n2 = act(l2, 'Create GHN shipment', 230, 1200, 170, 40);
+  const fork = vertex(s, { style: S.bar, x: 160, y: 1330, w: 300, h: 6, parent: l2 });
+  const n1 = act(l2, 'Notify sellers', 130, 1360, 160, 40);
+  const n2 = act(l2, 'Create GHN shipment', 330, 1360, 160, 40);
+  const join = vertex(s, { style: S.bar, x: 160, y: 1425, w: 300, h: 6, parent: l2 });
+  const endN = vertex(s, { style: S.final, x: 295, y: 1455, w: 30, h: 30, parent: l2 });
 
-  const p1 = act(l3, 'Return checkout URL and QR code', 20, 650, 300);
-  const p2 = act(l3, 'Send confirmation webhook', 20, 830, 300);
+  const p1 = act(l3, 'Return checkout URL and QR code', 20, 840, 300);
+  const p2 = act(l3, 'Send confirmation webhook', 20, 960, 300);
 
-  const f = (a, b, v = '') => edge(s, { source: a, target: b, value: v, style: S.flow });
+  const f = (a, b, v = '', style = '') =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style });
+
+  /** Neo cứng hai đầu — để draw.io tự chọn cạnh là nó bám cạnh gần nhất. */
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
 
   f(start, a1);
   f(a1, a2);
   f(a2, a3);
-  f(a3, b1);
+  f(a3, b1, '', at(1, 0.5, 0, 0.5));
+
   f(b1, d1);
-  f(d1, rollback, 'no');
+  f(d1, rollback, 'no', at(1, 0.5, 0, 0.5));
+  f(rollback, rollbackEnd);
   f(d1, b2, 'yes');
   f(b2, d2);
   f(d2, b3, 'PayOS');
-  f(b3, p1);
-  f(p1, a4);
-  f(a4, p2);
-  f(p2, b4);
+
+  // Ba lượt qua lại với PayOS. Chúng nằm trong dải y 1020-1090 của làn giữa —
+  // dải đó cố ý để trống nên không đường nào đè lên hình.
+  f(b3, p1, '', at(1, 0.5, 0, 0.3));
+  f(p1, a4, '', at(0, 0.75, 1, 0.35));
+  f(a4, p2, '', at(1, 0.75, 0, 0.3));
+  f(p2, b4, '', at(0, 0.75, 1, 0.5));
+
   f(b4, d3);
+  f(d3, dup, 'yes, ignore', at(1, 0.5, 0, 0.5));
   f(d3, b5, 'no');
+
   f(b5, fork);
   f(fork, n1);
   f(fork, n2);
-  f(n1, endN);
-  f(n2, endN);
-  // Nhánh COD bỏ qua toàn bộ phần thanh toán. Ép nó đi vòng sát mép trái làn
-  // giữa bằng waypoint tuyệt đối — để draw.io tự định tuyến thì đường cắt
-  // thẳng qua ô "Verify webhook signature" và nhãn đè lên chữ trong ô đó.
+  f(n1, join);
+  f(n2, join);
+  f(join, endN);
+
+  // Nhánh COD bỏ qua toàn bộ phần thanh toán và đi thẳng tới fork: đơn đã tạo,
+  // người bán vẫn phải giao, chỉ là chưa có tiền vào ký quỹ. Ép đi trong rãnh
+  // trống x=500 tuyệt đối (làn giữa bắt đầu ở 440, trục chính ở 570).
   edge(s, {
-    source: d2, target: fork, value: 'Cash on delivery', style: S.flow,
-    points: [[490, 535], [490, 1213]],
+    source: d2,
+    target: fork,
+    value: 'Cash on delivery',
+    style: S.flow + 'exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;',
+    points: [[500, 730], [500, 1373]],
   });
-  f(d3, endN, 'yes, ignore');
-  f(rollback, endN);
 
   vertex(s, {
     value:
-      'The thick black bar is a UML fork node: once the payment commits,\n' +
-      'notifying the sellers and creating the shipment run in parallel.\n' +
-      'Green marks the step that is already implemented; red is the failure path.',
+      'Thanh đậm là fork/join của UML. Sau khi thanh toán commit, việc báo người bán\n' +
+      'và việc tạo vận đơn chạy song song, rồi phải GẶP LẠI ở thanh join trước khi\n' +
+      'hoạt động kết thúc — nếu để mỗi nhánh tự chạy vào nút kết thúc thì nhánh về\n' +
+      'trước sẽ giết nhánh còn lại, đó là ngữ nghĩa của activity final.\n\n' +
+      'Vòng tròn có dấu X là flow final: luồng đó dừng, hoạt động vẫn tiếp tục. Dùng\n' +
+      'cho webhook PayOS gửi trùng — bỏ qua là đúng, không phải lỗi.\n\n' +
+      'Xanh lá là bước đã hiện thực xong; đỏ là nhánh thất bại.',
     style: S.note,
-    x: 40, y: 1400, w: 520, h: 80,
+    x: 40, y: 1610, w: 620, h: 165,
   });
 
   return s;
@@ -968,31 +1018,60 @@ function orderStateDiagram() {
       x, y, w: 170, h: 55,
     });
 
-  const start = vertex(s, { style: S.initial, x: 90, y: 60, w: 30, h: 30 });
-  const pending = st('pending', 20, 160);
-  const confirmed = st('confirmed', 20, 290);
-  const processing = st('processing', 20, 420);
-  const shipping = st('shipping', 20, 550);
-  const delivered = st('delivered', 320, 550, '#d5f5dd');
-  const cancelled = st('cancelled', 620, 160, '#ffe0e0');
-  const refunded = st('refunded', 620, 400, '#ffe0e0');
-  const done = vertex(s, { style: S.final, x: 900, y: 300, w: 30, h: 30 });
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bản trước có ba lỗi nhìn thấy ngay trên hình:
+  //
+  //  1. Nhãn `RELEASE escrow` rơi đúng lên tên trạng thái `refunded`, che mất
+  //     chữ. Nguyên nhân: cạnh `delivered → done` đi xuyên qua chính ô
+  //     `refunded`, mà điểm giữa cạnh — chỗ draw.io đặt nhãn — nằm trong ô đó.
+  //  2. Nhãn `[ship directly]` rơi vào giữa ô `processing`, che luôn tên
+  //     trạng thái. Cạnh `confirmed → shipping` nhảy cóc qua `processing` nên
+  //     điểm giữa của nó chính là tâm ô bị nhảy cóc.
+  //  3. Hai cạnh `delivered → refunded` và `delivered → done` gần như trùng
+  //     phương, hai nhãn chồng nhau.
+  //
+  // Cách chữa chung: KHÔNG để cạnh nào đi xuyên cột trạng thái. Trục chính là
+  // một cột dọc; cạnh nhảy cóc chạy trong rãnh trống x=50 bên trái; các
+  // trạng thái kết thúc tách hẳn sang phải; mỗi cạnh vào/ra một ô dùng một
+  // điểm neo khác nhau.
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const t = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
+  const start = vertex(s, { style: S.initial, x: 190, y: 50, w: 30, h: 30 });
+  const pending = st('pending', 120, 120);
+  const confirmed = st('confirmed', 120, 250);
+  const processing = st('processing', 120, 380);
+  const shipping = st('shipping', 120, 510);
+  const delivered = st('delivered', 120, 640, '#d5f5dd');
+  const cancelled = st('cancelled', 490, 120, '#ffe0e0');
+  const refunded = st('refunded', 490, 420, '#ffe0e0');
+  const done = vertex(s, { style: S.final, x: 810, y: 290, w: 30, h: 30 });
 
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const t = (a, b, v, style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
+
+  // Trục chính, thẳng đứng
   t(start, pending, 'buyer places order');
   t(pending, confirmed, 'seller accepts');
   t(confirmed, processing, 'preparing goods');
-  t(confirmed, shipping, 'ship directly');
   t(processing, shipping, 'GHN shipment created');
   t(shipping, delivered, 'buyer confirms receipt');
-  t(pending, cancelled, 'cancel before acceptance');
-  t(confirmed, cancelled, 'cancel after acceptance');
-  t(delivered, refunded, 'admin refunds');
-  t(cancelled, refunded, 'admin refunds');
-  t(delivered, done, 'RELEASE escrow');
-  t(refunded, done, 'REFUND escrow');
-  t(cancelled, done, '');
+
+  // Nhảy cóc qua `processing`: chạy trong rãnh trống bên trái cột trạng thái.
+  t(confirmed, shipping, 'ship directly', at(0, 0.5, 0, 0.5), [[50, 277], [50, 537]]);
+
+  // Sang nhánh huỷ / hoàn tiền. Mỗi cạnh một điểm neo riêng để hai nhãn không
+  // rơi cùng chỗ.
+  t(pending, cancelled, 'cancel before acceptance', at(1, 0.5, 0, 0.5));
+  t(confirmed, cancelled, 'cancel after acceptance', at(1, 0.25, 0, 0.85));
+  t(cancelled, refunded, 'admin refunds', at(0.5, 1, 0.5, 0));
+  t(delivered, refunded, 'admin refunds', at(1, 0.2, 0.5, 1));
+
+  // Ba lối vào trạng thái kết thúc, ba hướng khác nhau.
+  t(cancelled, done, 'nothing was paid', at(1, 0.5, 0.5, 0));
+  t(refunded, done, 'REFUND escrow', at(1, 0.5, 0, 0.5));
+  t(delivered, done, 'RELEASE escrow', at(1, 0.8, 0.5, 1), [[825, 684]]);
 
   vertex(s, {
     value:
@@ -1007,7 +1086,7 @@ function orderStateDiagram() {
       'The principle: whoever gains must not be the one who presses the button.\n' +
       'A seller marking their own order delivered would be releasing their own escrow.',
     style: S.note,
-    x: 20, y: 680, w: 700, h: 170,
+    x: 40, y: 780, w: 700, h: 180,
   });
 
   return s;
@@ -1075,76 +1154,121 @@ function navigationDiagram() {
       x, y, w, h: 46,
     });
 
-  const start = vertex(s, { style: S.initial, x: 75, y: 40, w: 30, h: 30 });
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bản trước là cái hỏng nặng nhất trong cả bộ. Bảy đường đi XUYÊN QUA thân
+  // các ô màn hình: `Valid token? → home` xuyên `log in` và `forgot password`;
+  // `home → product detail` xuyên `search`; `my orders → order detail` xuyên
+  // cả `chat` lẫn `cart`; `chat → chat room` và `profile → dashboard` cùng
+  // xuyên `cart`; `profile → settings` xuyên `checkout`. Và ô
+  // `payment/return` bị CHÍNH GHI CHÚ đè lên, mất hẳn khỏi hình.
+  //
+  // Nguyên nhân gốc: xếp màn hình thành lưới 2 cột rồi để draw.io tự định
+  // tuyến. Trong lưới 2 cột, mọi đường đi ngang đều đâm vào ô cột bên cạnh.
+  //
+  // Cách dựng lại: mỗi nhóm là MỘT CỘT DỌC, giữa các cột chừa rãnh trống, và
+  // mọi đường đi xa được bẻ góc vuông chạy trong rãnh. Đường dài hơn nhưng
+  // không có đường nào chạm vào một ô nào.
+  //
+  //   rãnh x=30            lối `yes` vòng ra ngoài nhóm (auth)
+  //   rãnh x 290-360       giữa (tabs) và cột mua hàng
+  //   rãnh y 350-430       băng ngang trống giữa (auth) và phần thân
+  //   rãnh x 530-620       giữa cột mua hàng và cột sau-đặt-hàng
+  //   rãnh x 810-880       trước khối seller
+  //   rãnh y > 810         băng ngang dưới đáy mọi cột
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const start = vertex(s, { style: S.initial, x: 130, y: 40, w: 30, h: 30 });
   const check = vertex(s, {
-    value: 'Valid token?', style: S.decision, x: 20, y: 110, w: 150, h: 70,
+    value: 'Valid token?', style: S.decision, x: 60, y: 110, w: 170, h: 70,
   });
 
-  vertex(s, { value: '(auth) — 4 screens', style: S.boundary, x: 20, y: 230, w: 380, h: 140 });
-  const login = scr('log in', 40, 270);
-  const register = scr('register', 220, 270);
-  const forgot = scr('forgot password', 40, 320-10+16);
-  const verify = scr('verify email', 220, 326);
+  vertex(s, { value: '(auth) — 4 screens', style: S.boundary, x: 60, y: 240, w: 620, h: 110 });
+  const login = scr('log in', 75, 280, 140);
+  const register = scr('register', 225, 280, 140);
+  const forgot = scr('forgot password', 375, 280, 140);
+  const verify = scr('verify email', 525, 280, 140);
 
-  vertex(s, { value: '(tabs) — 5 screens', style: S.boundary, x: 20, y: 420, w: 380, h: 200 });
-  const home = scr('home', 40, 460);
-  const search = scr('search', 220, 460);
-  const myorders = scr('my orders', 40, 520);
-  const chatlist = scr('chat', 220, 520);
-  const profile = scr('profile', 130, 570);
+  // Ô đầu tiên phải cách mép trên hộp nhóm ≥35px, nếu không nó đè lên chính
+  // tiêu đề của nhóm — `boundary` đặt tiêu đề bên trong, sát mép trên.
+  vertex(s, { value: '(tabs) — 5 screens', style: S.boundary, x: 60, y: 430, w: 230, h: 330 });
+  const home = scr('home', 75, 465);
+  const search = scr('search', 75, 525);
+  const myorders = scr('my orders', 75, 585);
+  const chatlist = scr('chat', 75, 645);
+  const profile = scr('profile', 75, 705);
 
-  const product = scr('product detail', 470, 460);
-  const shop = scr('seller shop', 470, 400);
-  const cart = scr('cart', 470, 520);
-  const checkout = scr('checkout', 470, 580);
-  const payos = scr('PayOS WebView', 470, 640, 170, '#fff3cd');
-  const ret = scr('payment/return', 470, 700);
-  const orderDetail = scr('order detail', 700, 520);
-  const tracking = scr('GHN tracking', 700, 580);
-  const room = scr('chat room', 700, 460);
+  const settings = scr('settings and addresses', 60, 800, 200);
 
-  vertex(s, { value: 'seller/ — 9 screens', style: S.boundary, x: 940, y: 400, w: 400, h: 260 });
-  const dash = scr('dashboard', 960, 440);
-  const prods = scr('my products', 1150, 440);
-  const newProd = scr('list an item', 960, 500);
-  const editProd = scr('edit listing', 1150, 500);
-  const sorders = scr('sales orders', 960, 560);
-  const wallet = scr('wallet', 1150, 560);
-  const withdraw = scr('withdraw', 960, 615);
-  const txns = scr('transactions', 1150, 615);
+  // Cột mua hàng
+  const shop = scr('seller shop', 360, 430);
+  const product = scr('product detail', 360, 490);
+  const cart = scr('cart', 360, 550);
+  const checkout = scr('checkout', 360, 610);
+  const payos = scr('PayOS WebView', 360, 670, 170, '#fff3cd');
+  const ret = scr('payment/return', 360, 760);
 
-  const settings = scr('settings and addresses', 700, 640, 200);
+  // Cột sau khi đặt hàng
+  const room = scr('chat room', 620, 430);
+  const orderDetail = scr('order detail', 620, 550);
+  const tracking = scr('GHN tracking', 620, 610);
 
-  const f = (a, b, v = '', style = S.flow) =>
-    edge(s, { source: a, target: b, value: v, style });
+  vertex(s, { value: 'seller/ — 8 screens', style: S.boundary, x: 880, y: 410, w: 410, h: 280 });
+  const dash = scr('dashboard', 900, 450);
+  const prods = scr('my products', 1095, 450);
+  const newProd = scr('list an item', 900, 510);
+  const editProd = scr('edit listing', 1095, 510);
+  const sorders = scr('sales orders', 900, 570);
+  const wallet = scr('wallet', 1095, 570);
+  const withdraw = scr('withdraw', 900, 630);
+  const txns = scr('transactions', 1095, 630);
+
+  const at = (ex, ey, nx, ny) =>
+    `exitX=${ex};exitY=${ey};exitDx=0;exitDy=0;entryX=${nx};entryY=${ny};entryDx=0;entryDy=0;`;
+  const f = (a, b, v = '', style = '', points) =>
+    edge(s, { source: a, target: b, value: v, style: S.flow + style, points });
 
   f(start, check);
-  f(check, login, 'no');
-  f(check, home, 'yes');
-  f(login, home, '');
-  f(home, product);
-  f(search, product);
-  f(product, shop);
-  f(product, cart);
-  f(cart, checkout);
-  f(checkout, payos);
-  f(payos, ret, 'deep link', S.depend);
-  f(ret, orderDetail);
-  f(myorders, orderDetail);
-  f(orderDetail, tracking);
-  f(chatlist, room);
-  f(profile, dash);
-  f(profile, settings);
+  f(check, login, 'no', at(0.5, 1, 0.5, 0));
+  // `yes` vòng hẳn ra ngoài mép trái để không đâm qua (auth)
+  f(check, home, 'yes', at(0, 0.5, 0, 0.5), [[30, 145], [30, 488]]);
+  // Vào `home` lệch sang trái: nhãn nhóm `(tabs) — 5 screens` nằm giữa mép
+  // trên hộp nhóm, cắm mũi tên vào giữa là đè mất chữ.
+  f(login, home, '', at(0.5, 1, 0.15, 0), [[145, 395], [100, 395]]);
+
+  // Trong cột mua hàng mọi bước nối thẳng đứng
+  f(home, product, '', at(1, 0.5, 0, 0.5));
+  f(search, product, '', at(1, 0.5, 0, 0.85));
+  f(product, shop, '', at(0.5, 0, 0.5, 1));
+  f(product, cart, '', at(0.5, 1, 0.5, 0));
+  f(cart, checkout, '', at(0.5, 1, 0.5, 0));
+  f(checkout, payos, '', at(0.5, 1, 0.5, 0));
+  edge(s, {
+    source: payos, target: ret, value: 'deep link',
+    style: S.depend + at(0.5, 1, 0.5, 0),
+  });
+
+  // Ba đường dài, bẻ góc vuông trong rãnh trống
+  f(ret, orderDetail, '', at(1, 0.5, 0, 0.5), [[600, 783], [600, 573]]);
+  f(myorders, orderDetail, '', at(1, 0.5, 0, 0.2), [[310, 608], [310, 380], [560, 380], [560, 559]]);
+  f(chatlist, room, '', at(1, 0.5, 0, 0.5), [[330, 668], [330, 400], [580, 400], [580, 453]]);
+  f(profile, dash, '', at(1, 0.5, 0, 0.5), [[340, 728], [340, 830], [840, 830], [840, 473]]);
+
+  f(orderDetail, tracking, '', at(0.5, 1, 0.5, 0));
+  f(profile, settings, '', at(0.5, 1, 0.5, 0));
 
   vertex(s, {
     value:
       'The deep link zoldify://payment/return only navigates the UI. The single source\n' +
       'of truth for "this was paid" is the PayOS webhook hitting the backend — a user\n' +
       'can close the browser before being redirected, and a URL can be typed by hand.\n\n' +
-      'The seller block is roughly half the total app work. Cut to 5 core screens\n' +
-      'because the team is four people; sellers keep the full flow on the web.',
+      'The eight seller screens are roughly half the total app work. They are the\n' +
+      'first thing to cut if the four-person team runs short: sellers already have\n' +
+      'the full flow on the web, buyers do not.\n\n' +
+      'Screens inside a group box are drawn without arrows between them on purpose —\n' +
+      'a group is a navigation stack, and every screen in it is reachable from every\n' +
+      'other. Arrows are only drawn where one stack hands over to another.',
     style: S.note,
-    x: 20, y: 700, w: 620, h: 110,
+    x: 360, y: 880, w: 640, h: 175,
   });
 
   return s;
