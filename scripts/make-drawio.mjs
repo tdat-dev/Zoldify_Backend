@@ -1021,7 +1021,7 @@ function containerDiagram() {
 
   vertex(s, {
     value: 'Single VPS — Docker Compose',
-    style: S.boundary, x: 400, y: 40, w: 640, h: 560,
+    style: S.boundary, x: 400, y: 40, w: 640, h: 620,
   });
 
   const caddy = box('Caddy\nautomatic TLS, load balancing', 440, 90, 280, 70);
@@ -1030,11 +1030,25 @@ function containerDiagram() {
   const mysql = store('MySQL 8\nsource of truth', 440, 340);
   const redis = store('Redis 7\ncache · throttle\nsocket adapter · queue', 760, 340);
 
-  // R2 phải nằm NGOÀI khung VPS. Bản trước đặt nó ở (440,480), tức lọt hẳn vào
-  // trong khung "Single VPS", trong khi chú thích ngay dưới sơ đồ lại viết
-  // "Images are not on the VPS disk". Sơ đồ tự cãi chính nó, và đây là loại
-  // mâu thuẫn giám khảo chỉ ra được trong ba giây.
-  const r2 = box('Cloudflare R2\nobject storage, outside the VPS', 1100, 90, 250, 80);
+  // R2 CHƯA CÓ THẬT. Không có client R2/S3 nào trong `src/`; multer ghi thẳng
+  // xuống `public/images/{folder}` trên đĩa VPS (xem catalog/files/multer.config.ts).
+  //
+  // Bản trước vẽ R2 bằng đúng màu của thành phần đã dựng, và ghi chú khẳng
+  // định "Images are not on the VPS disk". Cả hai đều sai so với code. Sơ đồ
+  // kiến trúc mà nói sai chỗ để ảnh là thứ giám khảo hỏi một câu là lộ.
+  //
+  // Nay: ổ đĩa VPS vẽ thật (nằm trong khung), R2 vẽ đỏ = đã quyết, chưa dựng.
+  // Đặt giữa, ngay dưới khe hở MySQL–Redis (x 660-760), để đường từ API đi
+  // thẳng đứng trong khe đó. Bản đầu để ở (760,470) nên đường phải cắt chéo
+  // qua khe và nhãn `writes images today` rơi đè lên hộp Redis.
+  const disk = store('VPS disk\npublic/images/{folder}', 600, 480);
+  const r2 = vertex(s, {
+    value: 'Cloudflare R2  (planned)\nobject storage, outside the VPS',
+    style:
+      S.component +
+      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+    x: 1100, y: 90, w: 250, h: 80,
+  });
 
   const f = (a, b, v, style = S.flow) => edge(s, { source: a, target: b, value: v, style });
 
@@ -1056,7 +1070,8 @@ function containerDiagram() {
   // Rời api từ cạnh TRÊN và vào R2 từ cạnh TRÁI, đi qua hành lang trống giữa
   // hàng Caddy và hàng API. Bản trước để draw.io tự định tuyến: đường cắt thẳng
   // qua hộp MySQL và nhãn "upload" dính vào nhãn "MySQL 8" thành "MySQupload".
-  f(api, r2, 'upload', S.depend + at(0.5, 0, 0, 0.5));
+  f(api, disk, 'writes images today', S.flow + at(0.96, 1, 0.5, 0));
+  f(api, r2, 'upload  (planned)', S.depend + at(0.5, 0, 0, 0.5));
 
   vertex(s, {
     value:
@@ -1065,13 +1080,17 @@ function containerDiagram() {
       '   live in process memory — cache, rate-limit counters, socket lists — is in Redis.\n' +
       '2. Exactly ONE worker. Cron inside the API would run the reconciliation job\n' +
       '   three times; for a job that touches money that is a serious bug.\n' +
-      '3. Images are not on the VPS disk. Required for replication, and so a redeploy\n' +
-      '   does not wipe them.\n' +
+      '3. Images ARE on the VPS disk today — multer writes to public/images/{folder},\n' +
+      '   and there is no R2 or S3 client anywhere in src/. That blocks point 1: a\n' +
+      '   second API replica cannot serve an image the first one wrote, and a redeploy\n' +
+      '   wipes the folder. Moving to R2 is decided, not built.\n' +
       '4. Admin is its own deployable on its own hostname, so admin code is never\n' +
       '   shipped in the customer bundle. Sessions are per-origin, so an admin who\n' +
-      '   also sells signs in twice. Red = decided on 13/08/2026, not built yet.',
+      '   also sells signs in twice.\n\n' +
+      'Red = decided, not built yet. This diagram is checked against the code, so a red\n' +
+      'box means the code disagrees with the plan — not that the plan is aspirational.',
     style: S.note,
-    x: 60, y: 640, w: 700, h: 150,
+    x: 60, y: 700, w: 720, h: 235,
   });
 
   return s;
@@ -1617,7 +1636,7 @@ const FILES = [
   // Không có slide riêng trong mẫu, nhưng cần cho báo cáo và cho việc hiểu
   // hệ thống. Đặt tên mô tả thay vì số slide.
   ['r1-system-context.drawio', [contextDiagram()], { width: 1350, height: 820 }],
-  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 840 }],
+  ['r2-container.drawio', [containerDiagram()], { width: 1420, height: 1000 }],
   ['r3-component-bounded-contexts.drawio', [componentDiagram()], { width: 1250, height: 890 }],
   ['r4-fund-flow.drawio', [fundFlowDiagram()], { width: 1350, height: 760 }],
   ['r5-state-order-lifecycle.drawio', [orderStateDiagram()], { width: 1000, height: 880 }],
