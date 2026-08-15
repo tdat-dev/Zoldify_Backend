@@ -1,0 +1,58 @@
+name: Deploy Backend
+
+# CD kiểu "pull rồi build trên VPS": gate lint+build xanh mới SSH vào VPS,
+# git reset --hard về đúng nhánh, rồi docker compose up -d --build.
+#   - nhánh chore/soat-cau-hinh-payos-firebase  -> PRODUCTION (api.zoldify.com)
+#   - nhánh staging                             -> STAGING   (api-staging.zoldify.com)
+# Secrets cần: VPS_HOST, VPS_USER, VPS_SSH_KEY (đã set sẵn trong repo).
+
+on:
+  push:
+    branches:
+      - chore/soat-cau-hinh-payos-firebase
+      - staging
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Lint & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run build
+
+  deploy:
+    name: Deploy to VPS
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            REF='${{ github.ref_name }}'
+            if [ "$REF" = "staging" ]; then
+              DIR=/opt/staging/zoldify-backend; PROJ=zoldify-staging
+            else
+              DIR=/opt/zoldify-backend; PROJ=zoldify
+            fi
+            cd "$DIR"
+            git fetch origin "$REF"
+            git checkout -B "$REF" "origin/$REF"
+            docker compose -p "$PROJ" up -d --build
+            docker image prune -f || true
+            echo "Deployed $REF to $DIR (project $PROJ)"

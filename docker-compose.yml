@@ -11,8 +11,10 @@
 # `CacheModule.register()` — nằm trong chính tiến trình Node. Thêm Redis vào
 # compose lúc chưa có dòng code nào nói chuyện với nó chỉ tạo ra một container
 # chạy không, và một sơ đồ nói dối.
-
-name: zoldify
+#
+# KHÔNG đặt `name:` ở đây — tên project truyền lúc chạy bằng cờ `-p`
+# (prod: `-p zoldify`, staging: `-p zoldify-staging`) để CÙNG một file compose
+# này chạy được cả hai môi trường; khác biệt cổng/URL nằm ở .env mỗi bên.
 
 services:
   mysql:
@@ -104,6 +106,11 @@ services:
       # nội dung sẵn có trong ảnh vào volume — 26 tấm ảnh danh mục đang được
       # git theo dõi vẫn còn.
       - product-images:/app/public/images
+      # Khoá Firebase Admin để verify token đăng nhập Google. File này KHÔNG vào
+      # git (là secret, đã gitignore) — mỗi máy deploy tự đặt vào gốc repo và
+      # chown cho UID 1000 (user `node` trong ảnh). Thiếu file thì
+      # POST /api/auth/firebase trả 401 "Firebase chưa được cấu hình".
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
 
 volumes:
   mysql-data:
