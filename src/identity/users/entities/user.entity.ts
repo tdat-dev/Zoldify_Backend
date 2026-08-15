@@ -50,8 +50,10 @@ export class User {
   })
   role: UserRole;
 
-  // Đường dẫn ảnh đại diện - VARCHAR(255), có thể null
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  // Đường dẫn ảnh đại diện - TEXT, có thể null.
+  // TEXT chứ không VARCHAR(255): avatar URL của Google (decoded.picture khi
+  // đăng nhập Firebase) vượt 255 ký tự, gây ER_DATA_TOO_LONG → 500 lúc login.
+  @Column({ type: 'text', nullable: true })
   avatar: string;
 
   // Không còn cột `balance` ở đây.
