@@ -1,53 +1,42 @@
-import { Injectable } from "@nestjs/common";
-import { MulterModuleOptions, MulterOptionsFactory } from "@nestjs/platform-express";
-import fs from "fs";
-import { diskStorage } from "multer";
-import path, { join } from "path";
+import { Injectable } from '@nestjs/common';
+import {
+  MulterModuleOptions,
+  MulterOptionsFactory,
+} from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 
 @Injectable()
 export class MulterConfigService implements MulterOptionsFactory {
-  getRootPath = () => { // trả ra đường link của thư mục root
-    return process.cwd();
-  };
-
-  ensureExists(targetDirectory: string) {
-    if (!fs.existsSync(targetDirectory)) {
-      fs.mkdirSync(targetDirectory, { recursive: true });
-    }// Thư mục không tồn tại thì tạo ra thư mục đó
-  }
   createMulterOptions(): MulterModuleOptions {
-  return {
-    storage: diskStorage({
-      destination: (req, file, cb) => {
-        const folder = req?.headers?.folder_type ?? "default";
-        this.ensureExists(`public/images/${folder}`);
-        cb(null, join(this.getRootPath(), `public/images/${folder}`))
+    return {
+      // Giữ file trong RAM (buffer) rồi controller quyết định đẩy lên R2 hay
+      // ghi đĩa. Không dùng diskStorage nữa vì đích lưu giờ là object storage.
+      storage: memoryStorage(),
+      fileFilter: (req, file, cb) => {
+        const allowedFileTypes = [
+          'jpg',
+          'jpeg',
+          'png',
+          'gif',
+          'webp',
+          'svg',
+          'bmp',
+          'pdf',
+          'doc',
+          'docx',
+        ];
+        const fileExtension =
+          file.originalname.split('.').pop()?.toLowerCase() || '';
+        if (allowedFileTypes.includes(fileExtension)) {
+          cb(null, true);
+        } else {
+          cb(new Error('Định dạng file không hợp lệ'), false);
+        }
       },
-      filename: (req, file, cb) => {
-        let extName = path.extname(file.originalname);
-
-        let baseName = path.basename(file.originalname, extName);
-
-        let finalName = `${baseName}-${Date.now()}${extName}`
-        cb(null, finalName)
+      limits: {
+        fileSize: 1024 * 1024 * 100, // 100MB
+        files: 10,
       },
-
-    }),
-    fileFilter: (req, file, cb) => {
-      const allowedFileTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'pdf', 'doc', 'docx'];
-      const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || '';
-      const isValidFileType = allowedFileTypes.includes(fileExtension);
-      if (isValidFileType) {
-        cb(null, true);
-      } else {
-        cb(new Error('Định dạng file không hợp lệ'), false);
-      }
-    },
-    // Giới hạn về kích thước và số lượng file
-    limits: {
-      fileSize: 1024 * 1024 * 100, // 100MB
-      files: 10,
-    },
-  };
- }
+    };
+  }
 }
