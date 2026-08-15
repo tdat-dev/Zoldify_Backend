@@ -18,7 +18,11 @@ import { Public } from '@common/decorators/public.decorator';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
-import { CreatePayosLinkDto, CancelPayosLinkDto, PayosPaymentType } from './dto/create-link.dto';
+import {
+  CreatePayosLinkDto,
+  CancelPayosLinkDto,
+  PayosPaymentType,
+} from './dto/create-link.dto';
 import { EscrowsService } from '@money/escrows/escrows.service';
 
 @Controller('payos')
@@ -41,7 +45,10 @@ export class PayosController {
       if (!dto.order_id) {
         throw new BadRequestException('order_id là bắt buộc khi type = order');
       }
-      const result = await this.payosService.createOrderPaymentLink(dto.order_id, user.id);
+      const result = await this.payosService.createOrderPaymentLink(
+        dto.order_id,
+        user.id,
+      );
 
       // Tạo escrow sau khi tạo payment link (chưa paid, chờ webhook)
       try {
@@ -71,11 +78,11 @@ export class PayosController {
   }
 
   @UseGuards(JwtAuthGuard)
-@Get('refresh/:orderId')
-@ResponseMessage('Refresh trạng thái PayOS thành công')
-async refresh(@Param('orderId') orderId: string, @User() user: IUser) {
-  return this.payosService.refreshOrderStatus(+orderId, user.id);
-}
+  @Get('refresh/:orderId')
+  @ResponseMessage('Refresh trạng thái PayOS thành công')
+  async refresh(@Param('orderId') orderId: string, @User() user: IUser) {
+    return this.payosService.refreshOrderStatus(+orderId, user.id);
+  }
 
   /**
    * Lấy trạng thái payment link theo payos_order_code
@@ -84,8 +91,8 @@ async refresh(@Param('orderId') orderId: string, @User() user: IUser) {
   @UseGuards(JwtAuthGuard)
   @Get('status/:code')
   @ResponseMessage('Lấy trạng thái payment thành công')
-  async getPaymentLinkStatus(@Param('code') code: string) {
-    return this.payosService.getPaymentLinkStatus(code);
+  async getPaymentLinkStatus(@Param('code') code: string, @User() user: IUser) {
+    return this.payosService.getPaymentLinkStatus(code, user.id);
   }
 
   /**

@@ -210,25 +210,60 @@ export class PayosService {
     };
   }
 
-  async getPaymentLinkStatus(payosOrderCode: string) {
+  /**
+   * Mọi thứ màn thanh toán cần, tra bằng mã đơn PayOS.
+   *
+   * MỘT endpoint cho CẢ HAI luồng — trả tiền đơn hàng và nạp ví — vì chúng
+   * khác nhau đúng ở chỗ có `orderId` hay không. Tách làm hai sẽ phải nhân đôi
+   * cả màn hình lẫn vòng dò trạng thái.
+   *
+   * TRẢ VỀ CẢ qrCode: nếu chỉ trả trạng thái thì màn thanh toán không sống nổi
+   * qua một lần tải lại trang — mà tải lại là chuyện thường: người ta chuyển
+   * khoản xong quay về, hoặc mở link trên máy khác để quét bằng điện thoại.
+   *
+   * `userId` để KIỂM QUYỀN. Bản trước chỉ chặn bằng JwtAuthGuard, tức bất kỳ ai
+   * đã đăng nhập cũng tra được mã của người khác — mà mã đơn PayOS là số tăng
+   * dần, đoán được.
+   */
+  async getPaymentLinkStatus(payosOrderCode: string, userId: number) {
     const payment = await this.paymentRepository.findOne({
       where: { payos_order_code: payosOrderCode },
+      relations: ['user', 'order'],
     });
     if (!payment) {
       throw new NotFoundException('Không tìm thấy payment');
     }
+    if (payment.user?.id !== userId) {
+      // Cùng thông báo với "không tìm thấy": nói "bạn không có quyền" là xác
+      // nhận mã đó có thật, biến chỗ này thành công cụ dò mã.
+      throw new NotFoundException('Không tìm thấy payment');
+    }
+
     let payosStatus: string | null = null;
+    let expiresAt: number | null = null;
     try {
       const link = await this.payos.paymentRequests.get(Number(payosOrderCode));
       payosStatus = link.status;
+      // Hạn hết hiệu lực lấy SỐNG từ PayOS chứ không lưu cột riêng: nó do PayOS
+      // quyết, lưu lại là tự tạo thêm một nguồn sự thật thứ hai để lệch.
+      expiresAt = (link as any).expiredAt ?? null;
     } catch (err: any) {
+      // PayOS lỗi thì vẫn trả dữ liệu đã lưu — mã QR trong DB vẫn quét được.
       this.logger.warn(`Cannot fetch payos status: ${err.message}`);
     }
+
     return {
       paymentStatus: payment.status,
       paid_at: payment.paid_at,
       type: payment.type,
       payosStatus,
+      // Phần để VẼ màn thanh toán:
+      orderCode: payment.payos_order_code,
+      orderId: payment.order?.id ?? null,
+      amount: Number(payment.amount),
+      qrCode: payment.payos_qr_code,
+      checkoutUrl: payment.payos_checkout_url,
+      expiresAt,
     };
   }
   async refreshOrderStatus(orderId: number, userId: number) {
