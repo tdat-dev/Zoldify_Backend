@@ -19,6 +19,11 @@ export class Category {
   @Column({ type: 'varchar', length: 100, unique: true })
   name: string;
 
+  // 2b. Tên tiếng Anh - tự dịch bằng Cloudflare Workers AI khi tạo/sửa danh mục.
+  // Null nếu chưa dịch được (frontend tự fallback về `name`).
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  name_en: string;
+
   // 3. Mô tả chi tiết danh mục - Có thể null (không bắt buộc)
   @Column({ type: 'text', nullable: true })
   description: string;
@@ -52,4 +57,3 @@ export class Category {
   @OneToMany(() => Product, (product) => product.category)
   products: Product[];
 }
-

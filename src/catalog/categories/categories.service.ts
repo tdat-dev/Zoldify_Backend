@@ -1,23 +1,34 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Category } from './entities/category.entity';
 import { Repository } from 'typeorm';
+import { TranslationService } from './translation.service';
 
 @Injectable()
 export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
-  ){}
+    private readonly translation: TranslationService,
+  ) {}
   async create(createCategoryDto: CreateCategoryDto) {
-    const {name} = createCategoryDto;
-    const isName = await this.categoryRepository.findOne({where: {name}})
-    if(isName){
-      throw new BadRequestException(`Danh mục ${name} đã tồn tại!`)
+    const { name } = createCategoryDto;
+    const isName = await this.categoryRepository.findOne({ where: { name } });
+    if (isName) {
+      throw new BadRequestException(`Danh mục ${name} đã tồn tại!`);
     }
-    const saved = await this.categoryRepository.save(createCategoryDto);
+    // Tự dịch tên sang tiếng Anh (Workers AI). Lỗi/chưa cấu hình -> null, bỏ qua.
+    const name_en = await this.translation.viToEn(name);
+    const saved = await this.categoryRepository.save({
+      ...createCategoryDto,
+      ...(name_en ? { name_en } : {}),
+    });
     return this.findOne(saved.id);
   }
 
@@ -32,6 +43,7 @@ export class CategoriesService {
       .leftJoin('products', 'product', 'product.category_id = category.id')
       .select('category.id', 'id')
       .addSelect('category.name', 'name')
+      .addSelect('category.name_en', 'name_en')
       .addSelect('category.image', 'image')
       .addSelect('category.description', 'description')
       .addSelect('category.slug', 'slug')
@@ -48,6 +60,7 @@ export class CategoriesService {
     const result = raw.map((r) => ({
       id: r.id,
       name: r.name,
+      name_en: r.name_en,
       image: r.image,
       description: r.description,
       slug: r.slug,
@@ -83,23 +96,26 @@ export class CategoriesService {
     }
     return category;
   }
-  
 
   async update(id: number, updateCategoryDto: UpdateCategoryDto) {
-    const isExists = await this.categoryRepository.findOne({where: {id}})
-    if(!isExists){
-      throw new BadRequestException(`Không tìm thấy danh mục cần cập nhật`)
+    const isExists = await this.categoryRepository.findOne({ where: { id } });
+    if (!isExists) {
+      throw new BadRequestException(`Không tìm thấy danh mục cần cập nhật`);
     }
-    await this.categoryRepository.update(
-      { id },
-      updateCategoryDto);
-    return await this.categoryRepository.findOne({where: {id}})
+    const patch: Partial<Category> = { ...updateCategoryDto };
+    // Đổi tên thì dịch lại tên tiếng Anh. Không đổi tên -> giữ nguyên name_en.
+    if (updateCategoryDto.name && updateCategoryDto.name !== isExists.name) {
+      const name_en = await this.translation.viToEn(updateCategoryDto.name);
+      if (name_en) patch.name_en = name_en;
+    }
+    await this.categoryRepository.update({ id }, patch);
+    return await this.categoryRepository.findOne({ where: { id } });
   }
 
   async remove(id: number) {
-    const isExists = await this.categoryRepository.findOne({where: {id}})
-    if(!isExists){
-      throw new BadRequestException(`Không tìm thấy danh mục cần xóa`)
+    const isExists = await this.categoryRepository.findOne({ where: { id } });
+    if (!isExists) {
+      throw new BadRequestException(`Không tìm thấy danh mục cần xóa`);
     }
     await this.categoryRepository.softDelete(id);
     return await this.categoryRepository.find();
