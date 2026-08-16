@@ -43,6 +43,12 @@ async function seed() {
       ['seller@zoldify.com'],
     );
 
+    // ─── 1b. Seed admin (khớp tài khoản điền sẵn của Zoldify_Admin) ───
+    await queryRunner.query(
+      `INSERT IGNORE INTO users (full_name, email, password, role, email_verified) VALUES (?, ?, ?, ?, 1)`,
+      ['Admin Zoldify', 'admin@zoldify.com', hashedPw, 'admin'],
+    );
+
     // ─── Cleanup: delete products without images ───
     const cleanup = await queryRunner.query(
       `DELETE FROM products WHERE image IS NULL OR image = '' OR image = 'undefined'`,
@@ -312,6 +318,7 @@ async function seed() {
     await queryRunner.commitTransaction();
     console.log('✅ Seed completed successfully!');
     console.log(`   - 1 seller: seller@zoldify.com / 123456`);
+    console.log(`   - 1 admin: admin@zoldify.com / 123456`);
     console.log(`   - ${categories.length} categories`);
     console.log(`   - ${products.length} products (with images)`);
   } catch (err) {
