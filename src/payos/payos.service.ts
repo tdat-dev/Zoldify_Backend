@@ -12,15 +12,16 @@ import { OrderStatus } from '../orders/entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
-  private payos: PayOS;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly settingsService: SettingsService,
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
     @InjectRepository(Order)
@@ -31,13 +32,15 @@ export class PayosService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(PayosWebhookLog)
     private readonly webhookLogRepository: Repository<PayosWebhookLog>,
-  ) {
-    const clientId = this.configService.get<string>('PAYOS_CLIENT_ID') || '';
-    const apiKey = this.configService.get<string>('PAYOS_API_KEY') || '';
-    const checksumKey = this.configService.get<string>('PAYOS_CHECKSUM_KEY') || '';
+  ) {}
+
+  private async getPayOS(): Promise<PayOS> {
+    const clientId = (await this.settingsService.getValue('payos_client_id')) || this.configService.get<string>('PAYOS_CLIENT_ID') || '';
+    const apiKey = (await this.settingsService.getValue('payos_api_key')) || this.configService.get<string>('PAYOS_API_KEY') || '';
+    const checksumKey = (await this.settingsService.getValue('payos_checksum_key')) || this.configService.get<string>('PAYOS_CHECKSUM_KEY') || '';
     const baseURL = this.configService.get<string>('PAYOS_HOST') || 'https://api-merchant.payos.vn';
 
-    this.payos = new PayOS({ clientId, apiKey, checksumKey, baseURL });
+    return new PayOS({ clientId, apiKey, checksumKey, baseURL });
   }
 
   // ============ ORDER PAYMENT ============
@@ -58,9 +61,10 @@ export class PayosService {
     }
 
     const frontendUrl = this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
+    const payos = await this.getPayOS();
 
     // Tạo payment link qua PayOS
-    const link = await this.payos.paymentRequests.create({
+    const link = await payos.paymentRequests.create({
       orderCode: order.id,
       amount: Math.round(Number(order.final_amount)),
       description: `DH${order.id}`.slice(0, 9),
@@ -123,8 +127,9 @@ export class PayosService {
     const frontendUrl = this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
     // orderCode phải unique → dùng timestamp + userId
     const orderCode = Number(`${Date.now().toString().slice(-7)}${userId}`);
+    const payos = await this.getPayOS();
 
-    const link = await this.payos.paymentRequests.create({
+    const link = await payos.paymentRequests.create({
       orderCode,
       amount: Math.round(amount),
       description: `NAP${userId}`.slice(0, 9),
@@ -189,7 +194,8 @@ export class PayosService {
     }
     let payosStatus: string | null = null;
     try {
-      const link = await this.payos.paymentRequests.get(Number(payosOrderCode));
+      const payos = await this.getPayOS();
+      const link = await payos.paymentRequests.get(Number(payosOrderCode));
       payosStatus = link.status;
     } catch (err: any) {
       this.logger.warn(`Cannot fetch payos status: ${err.message}`);
@@ -223,7 +229,8 @@ export class PayosService {
     // Gọi PayOS API để lấy status thật
     let link;
     try {
-      link = await this.payos.paymentRequests.get(Number(payment.payos_order_code));
+      const payos = await this.getPayOS();
+      link = await payos.paymentRequests.get(Number(payment.payos_order_code));
     } catch (e: any) {
       this.logger.warn(`PayOS API error for orderCode=${payment.payos_order_code}: ${e.message}`);
       throw new BadRequestException('Không kiểm tra được trạng thái từ PayOS: ' + e.message);
@@ -304,7 +311,8 @@ export class PayosService {
     if (payment.status !== PaymentStatus.PENDING) {
       throw new BadRequestException('Chỉ có thể hủy payment đang chờ thanh toán');
     }
-    await this.payos.paymentRequests.cancel(Number(payosOrderCode), 'User cancelled');
+    const payos = await this.getPayOS();
+    await payos.paymentRequests.cancel(Number(payosOrderCode), 'User cancelled');
     payment.status = PaymentStatus.FAILED;
     await this.paymentRepository.save(payment);
     return { cancelled: true, payos_order_code: payosOrderCode };
@@ -316,7 +324,8 @@ export class PayosService {
     // 1. Verify signature
     let webhookData;
     try {
-      webhookData = await this.payos.webhooks.verify(rawBody);
+      const payos = await this.getPayOS();
+      webhookData = await payos.webhooks.verify(rawBody);
     } catch (err: any) {
       this.logger.warn(`Invalid webhook signature: ${err.message}`);
       return { success: false, message: 'Invalid signature' };

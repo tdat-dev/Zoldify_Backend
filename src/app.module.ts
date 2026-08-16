@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { MaintenanceGuard } from './common/guards/maintenance.guard';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager'
 import { AppController } from './app.controller';
@@ -31,6 +32,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { SitemapModule } from './sitemap/sitemap.module';
 import { AdminModule } from './admin/admin.module';
 import { SettingsModule } from './settings/settings.module';
+import { SettingsService } from './settings/settings.service';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 @Module({
   imports: [
@@ -77,22 +79,29 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     FilesModule,
     AddressesModule,
     MailerModule.forRootAsync({
-      imports: [ConfigModule,FollowsModule],
-      useFactory: async (configService: ConfigService) => ({
-        transport: {
-          host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          auth: {
-            user: configService.get<string>('EMAIL_USER'),
-            pass: configService.get<string>('EMAIL_APP_PASSWORD'),
+      imports: [ConfigModule, SettingsModule, FollowsModule],
+      useFactory: async (configService: ConfigService, settingsService: SettingsService) => {
+        const host = await settingsService.getValue('smtp_host') || 'smtp.gmail.com';
+        const portStr = await settingsService.getValue('smtp_port');
+        const port = portStr ? parseInt(portStr, 10) : 587;
+        const user = await settingsService.getValue('smtp_user') || configService.get<string>('EMAIL_USER');
+        const pass = await settingsService.getValue('smtp_pass') || configService.get<string>('EMAIL_APP_PASSWORD');
+        const fromName = await settingsService.getValue('smtp_from_name') || 'Zoldify';
+        const fromEmail = await settingsService.getValue('smtp_from_email') || user;
+
+        return {
+          transport: {
+            host,
+            port,
+            secure: port === 465,
+            auth: { user, pass },
           },
-        },
-        defaults: {
-          from: `"Zoldify" <${configService.get<string>('EMAIL_USER')}>`,
-        },
-      }),
-      inject: [ConfigService],
+          defaults: {
+            from: `"${fromName}" <${fromEmail}>`,
+          },
+        };
+      },
+      inject: [ConfigService, SettingsService],
     }),
     FollowsModule,
     ShopModule,
@@ -111,6 +120,10 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
   controllers: [AppController],
   providers: [
     AppService,
+    {
+      provide: APP_GUARD,
+      useClass: MaintenanceGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

@@ -22,6 +22,11 @@ export class SettingsService {
         { key: 'site_name' },
         { key: 'site_description' },
         { key: 'contact_email' },
+        { key: 'contact_phone' },
+        { key: 'contact_address' },
+        { key: 'contact_facebook' },
+        { key: 'contact_zalo' },
+        { key: 'maintenance_mode' },
       ],
     });
     const map: Record<string, string> = {};

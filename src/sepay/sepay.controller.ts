@@ -29,7 +29,8 @@ export class SepayController {
     const rawBody = req.rawBody || JSON.stringify(req.body);
 
     // Bước 2: Xác thực HMAC signature
-    if (!signature || !this.sepayService.verifySignature(signature, rawBody)) {
+    const isValid = await this.sepayService.verifySignature(signature, rawBody);
+    if (!signature || !isValid) {
       // Chữ ký không hợp lệ → vẫn trả 200 để Sepay không spam
       return { received: true, error: 'Invalid signature' };
     }

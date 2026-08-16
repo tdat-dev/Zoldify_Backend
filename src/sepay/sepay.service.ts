@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from '../orders/entities/order.entity';
 import * as CryptoJS from 'crypto-js';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class SepayService {
   constructor(
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    private readonly settingsService: SettingsService,
   ) {}
 
   /**
@@ -18,8 +20,8 @@ export class SepayService {
    * @param body - Raw body string (chưa parse JSON)
    * @returns true nếu hợp lệ, false nếu không
    */
-  verifySignature(signature: string, body: string): boolean {
-    const secret = process.env.SEPAY_WEBHOOK_SECRET || '';
+  async verifySignature(signature: string, body: string): Promise<boolean> {
+    const secret = (await this.settingsService.getValue('sepay_webhook_secret')) || process.env.SEPAY_WEBHOOK_SECRET || '';
     
     // Tính HMAC-SHA256 với secret và body
     const computed = CryptoJS.HmacSHA256(body, secret).toString();

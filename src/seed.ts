@@ -227,12 +227,41 @@ async function seed() {
       );
     }
 
+    // ─── 4. Seed settings mặc định ───
+    const defaultSettings = [
+      { key: 'site_name', value: 'Zoldify' },
+      { key: 'site_description', value: 'Chợ đồ cũ sinh viên' },
+      { key: 'contact_email', value: 'admin@zoldify.com' },
+      { key: 'contact_phone', value: '' },
+      { key: 'contact_address', value: '' },
+      { key: 'contact_facebook', value: '' },
+      { key: 'contact_zalo', value: '' },
+      { key: 'smtp_host', value: 'smtp.gmail.com' },
+      { key: 'smtp_port', value: '587' },
+      { key: 'smtp_user', value: '' },
+      { key: 'smtp_pass', value: '' },
+      { key: 'smtp_from_name', value: 'Zoldify' },
+      { key: 'smtp_from_email', value: '' },
+      { key: 'payos_client_id', value: '' },
+      { key: 'payos_api_key', value: '' },
+      { key: 'payos_checksum_key', value: '' },
+      { key: 'sepay_webhook_secret', value: '' },
+      { key: 'maintenance_mode', value: 'false' },
+    ];
+    for (const s of defaultSettings) {
+      await queryRunner.query(
+        'INSERT IGNORE INTO settings (`key`, value) VALUES (?, ?)',
+        [s.key, s.value],
+      );
+    }
+
     await queryRunner.commitTransaction();
     console.log('✅ Seed completed successfully!');
     console.log(`   - 1 admin: admin@zoldify.com / 123456`);
     console.log(`   - 1 seller: seller@zoldify.com / 123456`);
     console.log(`   - ${categories.length} categories`);
     console.log(`   - ${products.length} products (with images)`);
+    console.log(`   - ${defaultSettings.length} settings`);
   } catch (err) {
     await queryRunner.rollbackTransaction();
     console.error('❌ Seed failed:', err);

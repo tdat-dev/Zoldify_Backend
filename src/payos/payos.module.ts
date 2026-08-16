@@ -9,12 +9,14 @@ import { Wallet } from '../wallets/entities/wallet.entity';
 import { PayosWebhookLog } from './entities/payos-webhook-log.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EscrowsModule } from '../escrows/escrows.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Payment, Order, User, Wallet, PayosWebhookLog]),
     NotificationsModule,
     EscrowsModule,
+    SettingsModule,
   ],
   controllers: [PayosController],
   providers: [PayosService],
