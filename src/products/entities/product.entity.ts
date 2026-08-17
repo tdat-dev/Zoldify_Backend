@@ -20,6 +20,7 @@ export enum ProductStatus {
   ACTIVE = 'active',     // Đang mở bán
   SOLD = 'sold',         // Đã bán
   REJECTED = 'rejected', // Bị từ chối duyệt
+  BANNED = 'banned',     // Bị khóa/vi phạm
 }
 
 @Entity('products')

@@ -4,9 +4,9 @@ import type { Cache } from '@nestjs/cache-manager';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Product } from './entities/product.entity';
+import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '../follows/entities/follow.entity';
-import { Repository, ILike, Between } from 'typeorm';
+import { Repository, ILike, Between, Not } from 'typeorm';
 import { IUser } from 'src/users/users.interface';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -126,11 +126,12 @@ export class ProductsService {
       if (qs.sort === 'featured') {
         qb.addOrderBy('product.view_count', 'DESC');
       }
+      qb.andWhere('product.status != :banned', { banned: ProductStatus.BANNED });
       qb.skip(offset).take(numLimit);
 
       [result, totalItems] = await qb.getManyAndCount();
     } else {
-      const where: any = {};
+      const where: any = { status: Not(ProductStatus.BANNED) };
       if (qs.category_id) {
         where.category = { id: Number(qs.category_id) };
       }
@@ -217,7 +218,7 @@ export class ProductsService {
     if (user.role !== 'admin' && product.seller.id !== user.id) {
       throw new ForbiddenException('Bạn không có quyền xóa sản phẩm này');
     }
-    await this.productRepository.softDelete(id);
+    await this.productRepository.update(id, { status: ProductStatus.BANNED });
     return { id, deleted: true };
   }
 
