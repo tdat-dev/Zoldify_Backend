@@ -29,6 +29,7 @@ export enum ProductStatus {
 @Index('idx_created_at', ['created_at'])
 @Index('idx_price', ['price'])
 @Index('idx_seller_status', ['seller', 'status'])
+@Index('idx_fulltext_name_desc', ['name', 'description'], { fulltext: true })
 export class Product {
   // 1. ID tự tăng - Khóa chính (Primary Key)
   @PrimaryGeneratedColumn()
