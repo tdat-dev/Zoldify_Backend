@@ -89,7 +89,9 @@ export class OrdersService {
 
     const cartItems = await this.cartRepository.find({
       where: cartWhere,
-      relations: ['product'],
+      // product.seller cần cho: chặn tự mua, và gom theo người bán để tính phí
+      // ship từng người (from = pickup người bán).
+      relations: ['product', 'product.seller'],
     });
 
     if (cartItems.length === 0) {
@@ -171,7 +173,25 @@ export class OrdersService {
       });
     }
 
-    const shippingFee = Number(createOrderDto.shipping_fee ?? 0);
+    // Phí ship do SERVER tính, không tin số client gửi lên. Khi người mua đã
+    // chọn địa chỉ chuẩn GHN, tính phí theo từng người bán (from = pickup của
+    // họ) rồi cộng lại. Lỗi GHN KHÔNG chặn đặt hàng — rơi về số client gửi
+    // (hoặc 0), điền/đối soát sau.
+    let shippingFee = Number(createOrderDto.shipping_fee ?? 0);
+    if (createOrderDto.ghn_district_id && createOrderDto.ghn_ward_code) {
+      try {
+        const quote = await this.quoteShippingBySellerFromCart(
+          cartItems,
+          createOrderDto.ghn_district_id,
+          createOrderDto.ghn_ward_code,
+        );
+        shippingFee = quote.total;
+      } catch (err) {
+        this.logger.error(
+          `Tính phí ship thất bại (đơn của user ${user.id}): ${(err as Error).message}`,
+        );
+      }
+    }
     const discountAmount = 0;
     const finalAmount = totalAmount + shippingFee - discountAmount;
 
@@ -496,6 +516,120 @@ export class OrdersService {
     for (const field of touched) {
       (order as any)[field] = dto[field];
     }
+  }
+
+  /**
+   * Báo giá phí ship theo TỪNG người bán cho một địa chỉ nhận (GHN).
+   *
+   * Dùng cho hai chỗ: hiện breakdown ở checkout, và tính phí thật lúc tạo đơn.
+   * Gom giỏ theo người bán, mỗi người tính phí riêng vì gửi từ địa chỉ (quận)
+   * của họ. Người bán chưa khai pickup thì GHN dùng điểm gửi mặc định của sàn
+   * (from_district_id để trống) — vẫn ra được một con số, cờ has_pickup=false
+   * để client cảnh báo nếu muốn.
+   *
+   * Lỗi GHN của một người bán KHÔNG làm hỏng cả báo giá: phần đó tính 0 và kèm
+   * error, các người bán khác vẫn có phí.
+   */
+  private async quoteShippingBySellerFromCart(
+    cartItems: Cart[],
+    toDistrictId: number,
+    toWardCode: string,
+  ): Promise<{
+    total: number;
+    items: Array<{
+      seller_id: number;
+      seller_name: string;
+      fee: number;
+      has_pickup: boolean;
+      error?: string;
+    }>;
+  }> {
+    const bySeller = new Map<number, { seller: User; weight: number }>();
+    for (const ci of cartItems) {
+      const seller = ci.product?.seller;
+      if (!seller) continue;
+      const g = bySeller.get(seller.id) || { seller, weight: 0 };
+      g.weight += 200 * ci.quantity;
+      bySeller.set(seller.id, g);
+    }
+
+    const sellerIds = Array.from(bySeller.keys());
+    const shops = sellerIds.length
+      ? await this.shopRepository.find({
+          where: { user: { id: In(sellerIds) } },
+          relations: ['user'],
+        })
+      : [];
+    const shopByUser = new Map(shops.map((s) => [s.user.id, s]));
+
+    let total = 0;
+    const items: Array<{
+      seller_id: number;
+      seller_name: string;
+      fee: number;
+      has_pickup: boolean;
+      error?: string;
+    }> = [];
+    for (const [sellerId, { seller, weight }] of bySeller) {
+      const shop = shopByUser.get(sellerId);
+      const hasPickup = !!(
+        shop &&
+        shop.pickup_district_id &&
+        shop.pickup_ward_name &&
+        shop.pickup_district_name &&
+        shop.pickup_province_name
+      );
+      let fee = 0;
+      let error: string | undefined;
+      try {
+        const res = await this.ghnService.calculateFee({
+          to_district_id: toDistrictId,
+          to_ward_code: toWardCode,
+          weight: weight || 500,
+          from_district_id: shop?.pickup_district_id || undefined,
+        });
+        fee = Number(res?.total || 0);
+      } catch (e) {
+        error = (e as Error).message;
+      }
+      total += fee;
+      items.push({
+        seller_id: sellerId,
+        seller_name: shop?.name || seller.full_name || `#${sellerId}`,
+        fee,
+        has_pickup: hasPickup,
+        error,
+      });
+    }
+    return { total, items };
+  }
+
+  /**
+   * Báo giá phí ship cho giỏ của người dùng — endpoint cho checkout hiện phí
+   * theo từng shop trước khi đặt.
+   */
+  async getShippingQuote(
+    userId: number,
+    dto: {
+      to_district_id: number;
+      to_ward_code: string;
+      cart_item_ids?: number[];
+    },
+  ) {
+    const where: any = { user: { id: userId } };
+    if (dto.cart_item_ids?.length) where.id = In(dto.cart_item_ids);
+    const cartItems = await this.cartRepository.find({
+      where,
+      relations: ['product', 'product.seller'],
+    });
+    if (!cartItems.length) {
+      throw new BadRequestException('Giỏ hàng trống');
+    }
+    return this.quoteShippingBySellerFromCart(
+      cartItems,
+      dto.to_district_id,
+      dto.to_ward_code,
+    );
   }
 
   /**

@@ -1,7 +1,19 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+  ForbiddenException,
+} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { ShippingQuoteDto } from './dto/shipping-quote.dto';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
@@ -22,6 +34,13 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Báo giá phí ship thành công')
+  @Post('shipping-quote')
+  shippingQuote(@Body() dto: ShippingQuoteDto, @User() user: IUser) {
+    return this.ordersService.getShippingQuote(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy danh sách đơn hàng thành công')
   @ApiPaginated(Order)
   @Get()
@@ -37,7 +56,12 @@ export class OrdersController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy thống kê dashboard thành công')
-  @ApiShape({ total_users: 'number', total_products: 'number', total_orders: 'number', total_revenue: 'number' })
+  @ApiShape({
+    total_users: 'number',
+    total_products: 'number',
+    total_orders: 'number',
+    total_revenue: 'number',
+  })
   @Get('stats')
   getStats(@User() user: IUser) {
     if (user.role !== 'admin') {
@@ -56,7 +80,11 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật trạng thái đơn hàng thành công')
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() updateOrderDto: UpdateOrderDto, @User() user: IUser) {
+  updateStatus(
+    @Param('id') id: string,
+    @Body() updateOrderDto: UpdateOrderDto,
+    @User() user: IUser,
+  ) {
     return this.ordersService.updateStatus(+id, updateOrderDto, user);
   }
 
