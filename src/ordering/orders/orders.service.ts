@@ -11,8 +11,13 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
 import { OrderItem } from './entities/order-item.entity';
+import {
+  OrderShipment,
+  ShipmentStatus,
+} from './entities/order-shipment.entity';
 import { Cart } from '@ordering/carts/entities/cart.entity';
 import { Product } from '@catalog/products/entities/product.entity';
+import { Shop } from '@catalog/shop/entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { DataSource, EntityManager, Repository, In } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
@@ -31,6 +36,10 @@ export class OrdersService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectRepository(OrderShipment)
+    private readonly shipmentRepository: Repository<OrderShipment>,
+    @InjectRepository(Shop)
+    private readonly shopRepository: Repository<Shop>,
     @InjectRepository(Cart)
     private readonly cartRepository: Repository<Cart>,
     @InjectRepository(Product)
@@ -412,14 +421,12 @@ export class OrdersService {
 
     this.applyDeliveryInfo(order, updateOrderDto, actors);
 
-    // Tạo vận đơn GHN khi người bán xác nhận. Lỗi GHN KHÔNG chặn việc xác
-    // nhận — vận đơn không phải tiền, thiếu thì điền tay sau được.
-    if (
-      nextStatus === OrderStatus.CONFIRMED &&
-      !order.tracking_code &&
-      order.ghn_district_id
-    ) {
-      await this.tryCreateGhnOrder(order);
+    // Tạo vận đơn GHN khi người bán xác nhận — MỘT vận đơn cho MỖI người bán,
+    // gửi từ địa chỉ của chính họ. Lỗi GHN KHÔNG chặn việc xác nhận: vận đơn
+    // không phải tiền, thiếu thì điền tay sau được. Idempotent theo (đơn, người
+    // bán) nên gọi lại không tạo trùng.
+    if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
+      await this.createGhnShipmentsPerSeller(order);
     }
 
     if (updateOrderDto.is_paid === true && !order.is_paid) {
@@ -491,27 +498,124 @@ export class OrdersService {
     }
   }
 
-  private async tryCreateGhnOrder(order: Order): Promise<void> {
-    try {
-      const ghnOrder = await this.ghnService.createOrder({
-        to_name: order.receiver_name,
-        to_phone: order.receiver_phone,
-        to_address: order.shipping_address,
-        to_ward_code: order.ghn_ward_code,
-        to_district_id: order.ghn_district_id,
-        weight: 500,
-        cod_amount:
-          order.payment_method === 'cod' ? Number(order.final_amount) : 0,
-        items: order.items.map((item) => ({
-          name: item.product_name,
-          quantity: item.quantity,
-          weight: 200,
-          price: item.price,
-        })),
-      });
-      order.tracking_code = ghnOrder.order_code;
-    } catch (err) {
-      console.error('Tạo vận đơn GHN thất bại:', (err as Error).message);
+  /**
+   * Tạo vận đơn GHN theo TỪNG người bán trong đơn.
+   *
+   * Sàn C2C: một đơn có thể gồm hàng của nhiều người bán, mỗi người tự gửi từ
+   * nhà mình. Nên gom món theo người bán rồi tạo một vận đơn riêng cho mỗi
+   * người — địa chỉ gửi là pickup của Shop người đó, tiền thu hộ (COD) là tổng
+   * phần của riêng họ.
+   *
+   * Nguyên tắc:
+   *  - Idempotent: đã có vận đơn cho (đơn, người bán) thì bỏ qua, không tạo lại.
+   *  - Cô lập lỗi: người bán A hỏng KHÔNG chặn người bán B — mỗi người một
+   *    try/catch, lỗi lưu vào shipment để còn nhìn thấy.
+   *  - Fallback: người bán chưa khai địa chỉ lấy hàng thì bỏ trống from_*, GHN
+   *    tự dùng địa chỉ shop nền tảng (header ShopId).
+   */
+  private async createGhnShipmentsPerSeller(order: Order): Promise<void> {
+    // Gom món theo người bán (product.seller). Món mất product/seller (sản phẩm
+    // đã xoá) thì không gửi được — bỏ qua.
+    const bySeller = new Map<number, { seller: User; items: OrderItem[] }>();
+    for (const item of order.items || []) {
+      const seller = item.product?.seller;
+      if (!seller) continue;
+      const group = bySeller.get(seller.id);
+      if (group) group.items.push(item);
+      else bySeller.set(seller.id, { seller, items: [item] });
+    }
+    if (bySeller.size === 0) return;
+
+    const sellerIds = Array.from(bySeller.keys());
+
+    // Đã tạo vận đơn cho người bán nào rồi (chốt chặn tạo trùng).
+    const existing = await this.shipmentRepository.find({
+      where: { order: { id: order.id } },
+      relations: ['seller'],
+    });
+    const shippedSellerIds = new Set(existing.map((s) => s.seller?.id));
+
+    // Địa chỉ lấy hàng của các người bán, tra một lần.
+    const shops = await this.shopRepository.find({
+      where: { user: { id: In(sellerIds) } },
+      relations: ['user'],
+    });
+    const shopByUser = new Map(shops.map((s) => [s.user.id, s]));
+
+    const isCod = order.payment_method === PaymentMethod.COD;
+
+    for (const [sellerId, { seller, items }] of bySeller) {
+      if (shippedSellerIds.has(sellerId)) continue;
+
+      const shop = shopByUser.get(sellerId);
+      const from =
+        shop &&
+        shop.pickup_district_name &&
+        shop.pickup_ward_name &&
+        shop.pickup_province_name &&
+        shop.pickup_address &&
+        shop.pickup_name &&
+        shop.pickup_phone
+          ? {
+              name: shop.pickup_name,
+              phone: shop.pickup_phone,
+              address: shop.pickup_address,
+              ward_name: shop.pickup_ward_name,
+              district_name: shop.pickup_district_name,
+              province_name: shop.pickup_province_name,
+            }
+          : undefined;
+
+      const codAmount = isCod
+        ? items.reduce((sum, i) => sum + Number(i.subtotal), 0)
+        : 0;
+
+      try {
+        const ghnOrder = await this.ghnService.createOrder({
+          to_name: order.receiver_name,
+          to_phone: order.receiver_phone,
+          to_address: order.shipping_address,
+          to_ward_code: order.ghn_ward_code,
+          to_district_id: order.ghn_district_id,
+          weight: items.reduce((s, i) => s + 200 * i.quantity, 0),
+          cod_amount: codAmount,
+          items: items.map((item) => ({
+            name: item.product_name,
+            quantity: item.quantity,
+            weight: 200,
+            price: item.price,
+          })),
+          from,
+        });
+
+        await this.shipmentRepository.save(
+          this.shipmentRepository.create({
+            order: { id: order.id } as Order,
+            seller: { id: sellerId } as User,
+            tracking_code: ghnOrder.order_code,
+            cod_amount: codAmount,
+            status: ShipmentStatus.CREATED,
+          }),
+        );
+
+        // Giữ tương thích: UI cũ đọc order.tracking_code. Đơn một người bán vẫn
+        // thấy mã như trước; đơn nhiều người bán lấy mã đầu tiên làm đại diện.
+        if (!order.tracking_code) order.tracking_code = ghnOrder.order_code;
+      } catch (err) {
+        const message = (err as Error).message;
+        this.logger.error(
+          `Tạo vận đơn GHN thất bại cho người bán ${sellerId} (đơn ${order.id}): ${message}`,
+        );
+        await this.shipmentRepository.save(
+          this.shipmentRepository.create({
+            order: { id: order.id } as Order,
+            seller: { id: sellerId } as User,
+            cod_amount: codAmount,
+            status: ShipmentStatus.FAILED,
+            error: message,
+          }),
+        );
+      }
     }
   }
 

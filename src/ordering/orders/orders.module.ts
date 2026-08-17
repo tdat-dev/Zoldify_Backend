@@ -4,9 +4,11 @@ import { OrdersController } from './orders.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { OrderShipment } from './entities/order-shipment.entity';
 import { CartModule } from '@ordering/carts/cart.module';
 import { Cart } from '@ordering/carts/entities/cart.entity';
 import { Product } from '@catalog/products/entities/product.entity';
+import { Shop } from '@catalog/shop/entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { UsersModule } from '@identity/users/users.module';
 import { ProductsModule } from '@catalog/products/products.module';
@@ -17,7 +19,15 @@ import { PayosModule } from '@money/payos/payos.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, OrderItem, Cart, Product, User]),
+    TypeOrmModule.forFeature([
+      Order,
+      OrderItem,
+      OrderShipment,
+      Cart,
+      Product,
+      Shop,
+      User,
+    ]),
     UsersModule,
     ProductsModule,
     CartModule,

@@ -28,10 +28,14 @@ export class GhnService {
     this.fromDistrictId = parseInt(process.env.GHN_FROM_DISTRICT_ID || '0');
   }
 
-  private getHeaders() {
+  // Header ShopId luôn là một shop GHN đã đăng ký dưới tài khoản của sàn (ngữ
+  // cảnh tài khoản/đối soát của GHN). Địa chỉ NGƯỜI GỬI thật của từng người bán
+  // đi qua các trường from_* trong body createOrder, không qua header — nên
+  // shopId mặc định là shop nền tảng trong env.
+  private getHeaders(shopId?: number) {
     return {
       Token: this.token,
-      ShopId: this.shopId,
+      ShopId: shopId ?? this.shopId,
       'Content-Type': 'application/json',
     };
   }
@@ -84,13 +88,13 @@ export class GhnService {
     });
   }
 
-  async getAvailableServices(toDistrictId: number) {
+  async getAvailableServices(toDistrictId: number, fromDistrictId?: number) {
     const res = await firstValueFrom(
       this.httpService.post(
         `${this.baseUrl}/shipping-order/available-services`,
         {
           shop_id: this.shopId,
-          from_district: this.fromDistrictId,
+          from_district: fromDistrictId ?? this.fromDistrictId,
           to_district: toDistrictId,
         },
         { headers: this.getHeaders() },
@@ -107,8 +111,15 @@ export class GhnService {
     width?: number;
     height?: number;
     insurance_value?: number;
+    // Quận người GỬI. Mặc định là điểm gửi của sàn trong env; truyền vào để
+    // tính phí theo địa chỉ lấy hàng của từng người bán (C2C).
+    from_district_id?: number;
   }) {
-    const services = await this.getAvailableServices(dto.to_district_id);
+    const fromDistrictId = dto.from_district_id ?? this.fromDistrictId;
+    const services = await this.getAvailableServices(
+      dto.to_district_id,
+      fromDistrictId,
+    );
     const defaultService = services.find((s) => s.service_type_id === 2);
     if (!defaultService) throw new Error('Không tìm thấy dịch vụ vận chuyển');
 
@@ -116,7 +127,7 @@ export class GhnService {
       this.httpService.post(
         `${this.baseUrl}/shipping-order/fee`,
         {
-          from_district_id: this.fromDistrictId,
+          from_district_id: fromDistrictId,
           to_district_id: dto.to_district_id,
           to_ward_code: dto.to_ward_code,
           service_id: defaultService.service_id,
@@ -146,6 +157,18 @@ export class GhnService {
       weight: number;
       price: number;
     }>;
+    // Địa chỉ NGƯỜI GỬI (pickup của người bán). GHN nhận theo TÊN tỉnh/quận/
+    // phường. Thiếu thì GHN tự lấy địa chỉ của shop nền tảng (header ShopId) —
+    // đúng hành vi fallback ta muốn khi người bán chưa khai pickup.
+    from?: {
+      shop_id?: number;
+      name: string;
+      phone: string;
+      address: string;
+      ward_name: string;
+      district_name: string;
+      province_name: string;
+    };
   }) {
     const totalWeight =
       dto.weight || dto.items.reduce((s, i) => s + i.weight * i.quantity, 0);
@@ -158,6 +181,16 @@ export class GhnService {
           to_address: dto.to_address,
           to_ward_code: dto.to_ward_code,
           to_district_id: dto.to_district_id,
+          ...(dto.from
+            ? {
+                from_name: dto.from.name,
+                from_phone: dto.from.phone,
+                from_address: dto.from.address,
+                from_ward_name: dto.from.ward_name,
+                from_district_name: dto.from.district_name,
+                from_province_name: dto.from.province_name,
+              }
+            : {}),
           weight: totalWeight,
           length: 20,
           width: 20,
@@ -168,7 +201,7 @@ export class GhnService {
           required_note: 'KHONGCHOXEMHANG',
           items: dto.items,
         },
-        { headers: this.getHeaders() },
+        { headers: this.getHeaders(dto.from?.shop_id) },
       ),
     );
     return res.data.data;
