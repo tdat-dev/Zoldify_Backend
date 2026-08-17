@@ -11,7 +11,7 @@ import { UpdateStockDto } from './dto/update-stock.dto';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(private readonly productsService: ProductsService) { }
 
   @UseGuards(JwtAuthGuard)// Chỉ những ai đăng nhập (có token) mới được thêm
   @ResponseMessage('Thêm mới sản phẩm thành công')

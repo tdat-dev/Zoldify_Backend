@@ -19,12 +19,12 @@ export class ProductsService {
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
     private readonly notificationsService: NotificationsService,
-    @Inject(CACHE_MANAGER) 
+    @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
-  ) {}
+  ) { }
 
   async create(createProductDto: CreateProductDto, user: IUser) {
-    const {name, price, image, images, description, slug, category_id, brand, spec, stock, condition, is_freeship} = createProductDto;
+    const { name, price, image, images, description, slug, category_id, brand, spec, stock, condition, is_freeship } = createProductDto;
     const firstImage = image || (images?.length ? images[0] : undefined);
     const newProduct = this.productRepository.create({
       condition,
@@ -210,7 +210,7 @@ export class ProductsService {
   async remove(id: number, user: IUser) {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations:  ['seller'],
+      relations: ['seller'],
     });
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm! `);
@@ -223,19 +223,19 @@ export class ProductsService {
   }
 
   async updateStock(productId: number, stock: number, userId: number, isAdmin: boolean) {
-  const product = await this.productRepository.findOne({
-    where: { id: productId },
-    relations: ['seller'],
-  });
-  if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
-  
-  // Auth check: chỉ owner hoặc admin
-  if (!isAdmin && product.seller.id !== userId) {
-    throw new ForbiddenException('Bạn không có quyền sửa sản phẩm này');
+    const product = await this.productRepository.findOne({
+      where: { id: productId },
+      relations: ['seller'],
+    });
+    if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
+
+    // Auth check: chỉ owner hoặc admin
+    if (!isAdmin && product.seller.id !== userId) {
+      throw new ForbiddenException('Bạn không có quyền sửa sản phẩm này');
+    }
+
+    product.stock = stock;
+    await this.productRepository.save(product);
+    return product;
   }
-  
-  product.stock = stock;
-  await this.productRepository.save(product);
-  return product;
-}
 }
