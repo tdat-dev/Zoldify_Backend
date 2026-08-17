@@ -21,6 +21,12 @@ export class CartService {
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm')
     }
+    if (product.status !== 'active') {
+      throw new BadRequestException('Sản phẩm này hiện không khả dụng');
+    }
+    if (product.stock < (quantity || 1)) {
+      throw new BadRequestException('Sản phẩm đã hết hàng hoặc không đủ số lượng');
+    }
     if (product.seller?.id === user.id) {
       throw new BadRequestException('Bạn không thể mua sản phẩm của chính mình');
     }
