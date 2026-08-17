@@ -700,8 +700,11 @@ export class OrdersService {
             }
           : undefined;
 
+      // GHN yêu cầu price/cod_amount là SỐ NGUYÊN. TypeORM trả cột decimal dạng
+      // chuỗi ("100000.00"), truyền thẳng vào GHN sẽ bị từ chối — ép Number +
+      // làm tròn ở mọi con số gửi đi.
       const codAmount = isCod
-        ? items.reduce((sum, i) => sum + Number(i.subtotal), 0)
+        ? Math.round(items.reduce((sum, i) => sum + Number(i.subtotal), 0))
         : 0;
 
       try {
@@ -717,7 +720,7 @@ export class OrdersService {
             name: item.product_name,
             quantity: item.quantity,
             weight: 200,
-            price: item.price,
+            price: Math.round(Number(item.price)),
           })),
           from,
         });
