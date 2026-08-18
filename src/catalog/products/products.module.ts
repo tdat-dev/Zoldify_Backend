@@ -7,10 +7,11 @@ import { CategoriesModule } from '@catalog/categories/categories.module';
 import { FollowsModule } from '@catalog/follows/follows.module';
 import { NotificationsModule } from '@messaging/notifications/notifications.module';
 import { Follow } from '@catalog/follows/entities/follow.entity';
+import { Shop } from '@catalog/shop/entities/shop.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Product, Follow]),
+    TypeOrmModule.forFeature([Product, Follow, Shop]),
     CategoriesModule,
     FollowsModule,
     NotificationsModule,
@@ -20,4 +21,3 @@ import { Follow } from '@catalog/follows/entities/follow.entity';
   exports: [ProductsService],
 })
 export class ProductsModule {}
-
