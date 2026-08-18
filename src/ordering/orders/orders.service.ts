@@ -355,12 +355,21 @@ export class OrdersService {
 
     const order = await this.orderRepository.findOne({
       where,
-      relations: ['user', 'items', 'items.product'],
+      relations: ['user', 'items', 'items.product', 'items.product.seller'],
     });
 
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
+
+    // Đính kèm vận đơn theo từng người bán để giao diện hiện trạng thái giao và
+    // nút "Đã nhận hàng" cho đúng người bán. OrderShipment là bảng riêng (mirror
+    // (order, seller)), không phải quan hệ trên Order — nên tra riêng rồi gắn.
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id } },
+      relations: ['seller'],
+    });
+    (order as any).shipments = shipments;
 
     return order;
   }
