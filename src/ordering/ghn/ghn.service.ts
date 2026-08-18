@@ -143,6 +143,27 @@ export class GhnService {
     return res.data.data;
   }
 
+  /**
+   * Trạng thái hiện tại của một vận đơn GHN theo mã (order_code).
+   *
+   * Dùng cho đồng bộ tự động: job đọc trạng thái để biết lô hàng đã 'delivered'
+   * chưa mà bật cửa sổ tự-xác-nhận. GHN trả các mốc như ready_to_pick, picking,
+   * delivering, delivered, return... — ta chỉ quan tâm chuỗi `status`.
+   *
+   * ShopId ở header là shop nền tảng (mọi vận đơn tạo dưới tài khoản này), nên
+   * không cần truyền shop của người bán.
+   */
+  async getOrderStatus(orderCode: string): Promise<string | null> {
+    const res = await firstValueFrom(
+      this.httpService.post(
+        `${this.baseUrl}/shipping-order/detail`,
+        { order_code: orderCode },
+        { headers: this.getHeaders() },
+      ),
+    );
+    return res.data?.data?.status ?? null;
+  }
+
   async createOrder(dto: {
     to_name: string;
     to_phone: string;

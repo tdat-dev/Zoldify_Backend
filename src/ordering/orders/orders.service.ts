@@ -19,7 +19,15 @@ import { Cart } from '@ordering/carts/entities/cart.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
-import { DataSource, EntityManager, Repository, In } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  In,
+  Not,
+  IsNull,
+  LessThan,
+} from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { GhnService } from '@ordering/ghn/ghn.service';
@@ -529,9 +537,20 @@ export class OrdersService {
     if (!shipment.delivered_at) shipment.delivered_at = now;
     await this.shipmentRepository.save(shipment);
 
-    // Mọi lô (trừ lô FAILED) đã nhận → đơn coi như giao trọn. Đặt trạng thái
-    // thẳng, KHÔNG qua updateStatus: đường đó gọi giải ngân cấp-đơn lần nữa và
-    // sẽ ném lỗi vì không còn khoản HOLDING nào.
+    await this.reconcileOrderDelivered(orderId);
+
+    return this.shipmentRepository.findOne({
+      where: { id: shipment.id },
+      relations: ['seller'],
+    });
+  }
+
+  /**
+   * Mọi lô (trừ lô FAILED) đã nhận → đơn coi như giao trọn. Đặt trạng thái
+   * THẲNG, KHÔNG qua updateStatus: đường đó gọi giải ngân cấp-đơn lần nữa và
+   * sẽ ném lỗi vì không còn khoản HOLDING nào.
+   */
+  private async reconcileOrderDelivered(orderId: number): Promise<void> {
     const shipments = await this.shipmentRepository.find({
       where: { order: { id: orderId } },
     });
@@ -539,15 +558,112 @@ export class OrdersService {
     const allReceived =
       active.length > 0 &&
       active.every((s) => s.status === ShipmentStatus.RECEIVED);
-    if (allReceived && order.status !== OrderStatus.DELIVERED) {
+    if (!allReceived) return;
+
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+    if (order && order.status !== OrderStatus.DELIVERED) {
       order.status = OrderStatus.DELIVERED;
       await this.orderRepository.save(order);
     }
+  }
 
-    return this.shipmentRepository.findOne({
-      where: { id: shipment.id },
-      relations: ['seller'],
+  /**
+   * Chạy tay lượt chốt vận đơn (đồng bộ GHN + tự xác nhận) — cho admin/ops khi
+   * cần chốt ngay thay vì chờ cron hàng giờ. Cùng logic với job định kỳ.
+   */
+  async settleShipments(user: IUser) {
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Chỉ admin mới được chạy chốt vận đơn');
+    }
+    const sync = await this.syncGhnShipmentStatuses();
+    const auto = await this.autoConfirmDueShipments();
+    return { sync, auto };
+  }
+
+  /**
+   * Đồng bộ trạng thái vận đơn từ GHN (chạy định kỳ). Lô đang 'created' mà GHN
+   * báo 'delivered' thì chuyển sang DELIVERED và ghi mốc `delivered_at` — mốc
+   * này là gốc để đếm cửa sổ tự-xác-nhận.
+   *
+   * KHÔNG giải ngân ở đây: 'đã giao tới cửa' chưa phải 'người mua đã nhận và
+   * ưng'. Việc chốt tiền để cho `autoConfirmDueShipments` (sau N ngày) hoặc
+   * người mua bấm tay.
+   */
+  async syncGhnShipmentStatuses(): Promise<{
+    checked: number;
+    delivered: number;
+  }> {
+    const shipments = await this.shipmentRepository.find({
+      where: { status: ShipmentStatus.CREATED, tracking_code: Not(IsNull()) },
     });
+
+    let delivered = 0;
+    for (const s of shipments) {
+      if (!s.tracking_code) continue;
+      try {
+        const status = await this.ghnService.getOrderStatus(s.tracking_code);
+        if (status === 'delivered') {
+          s.status = ShipmentStatus.DELIVERED;
+          s.delivered_at = new Date();
+          await this.shipmentRepository.save(s);
+          delivered += 1;
+        }
+      } catch (err) {
+        this.logger.error(
+          `Đồng bộ trạng thái GHN lỗi (vận đơn ${s.tracking_code}): ${(err as Error).message}`,
+        );
+      }
+    }
+    return { checked: shipments.length, delivered };
+  }
+
+  /**
+   * Tự xác nhận nhận hàng cho lô đã giao mà người mua quên bấm (giống Shopee/
+   * Lazada). Lô ở DELIVERED, chưa nhận, và đã qua cửa sổ N ngày kể từ
+   * `delivered_at` → giải ngân escrow người bán, đánh dấu RECEIVED với cờ
+   * `auto_received`.
+   *
+   * Cùng thứ tự an toàn với bản bấm tay: tiền trước (idempotent), đánh dấu sau.
+   * Một lô hỏng không làm chết cả lượt.
+   */
+  async autoConfirmDueShipments(): Promise<{ due: number; released: number }> {
+    const days = Number(process.env.AUTO_CONFIRM_RECEIPT_DAYS ?? 3);
+    const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+    const due = await this.shipmentRepository.find({
+      where: {
+        status: ShipmentStatus.DELIVERED,
+        received_at: IsNull(),
+        delivered_at: LessThan(cutoff),
+      },
+      relations: ['seller', 'order'],
+    });
+
+    let released = 0;
+    for (const s of due) {
+      const orderId = s.order?.id;
+      const sellerId = s.seller?.id;
+      if (!orderId || !sellerId) continue;
+      try {
+        await this.escrowsService.release(orderId, sellerId);
+        s.status = ShipmentStatus.RECEIVED;
+        s.received_at = new Date();
+        s.auto_received = true;
+        await this.shipmentRepository.save(s);
+        await this.reconcileOrderDelivered(orderId);
+        released += 1;
+        this.logger.log(
+          `Tự xác nhận nhận hàng sau ${days} ngày: đơn ${orderId}, người bán ${sellerId}`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Tự xác nhận lỗi (đơn ${orderId}, người bán ${sellerId}): ${(err as Error).message}`,
+        );
+      }
+    }
+    return { due: due.length, released };
   }
 
   /**

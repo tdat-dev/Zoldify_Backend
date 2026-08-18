@@ -82,4 +82,34 @@ export class TasksService {
 
     this.logger.log(`Hoàn tất: huỷ ${done}/${staleOrders.length} đơn quá hạn.`);
   }
+
+  /**
+   * Chốt vận đơn theo hai bước, giống Shopee/Lazada:
+   *  1. Đồng bộ trạng thái GHN — lô GHN báo 'đã giao' thì ghi mốc delivered_at.
+   *  2. Tự xác nhận — lô đã giao quá cửa sổ N ngày mà người mua chưa bấm thì tự
+   *     chốt và giải ngân cho người bán.
+   *
+   * Cả hai việc nặng (đọc GHN, đụng tiền) đều nằm trong OrdersService; job này
+   * chỉ hẹn giờ và ghi log — cùng nguyên tắc "đừng có bản sao thứ hai" như
+   * autoCancelOrders.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async settleDeliveredShipments() {
+    try {
+      const sync = await this.ordersService.syncGhnShipmentStatuses();
+      if (sync.delivered > 0) {
+        this.logger.log(
+          `Đồng bộ GHN: ${sync.delivered}/${sync.checked} lô chuyển 'đã giao'.`,
+        );
+      }
+      const auto = await this.ordersService.autoConfirmDueShipments();
+      if (auto.released > 0) {
+        this.logger.log(
+          `Tự xác nhận nhận hàng: giải ngân ${auto.released}/${auto.due} lô quá cửa sổ.`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(`Lượt chốt vận đơn lỗi: ${(err as Error).message}`);
+    }
+  }
 }
