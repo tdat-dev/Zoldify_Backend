@@ -89,6 +89,17 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Xác nhận đã nhận hàng thành công')
+  @Patch(':id/shipments/:sellerId/received')
+  confirmReceived(
+    @Param('id') id: string,
+    @Param('sellerId') sellerId: string,
+    @User() user: IUser,
+  ) {
+    return this.ordersService.confirmShipmentReceived(+id, +sellerId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @ResponseMessage('Hủy đơn hàng thành công')
   @Patch(':id/cancel')
   cancel(@Param('id') id: string, @User() user: IUser) {

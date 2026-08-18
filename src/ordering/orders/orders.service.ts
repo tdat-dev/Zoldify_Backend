@@ -478,6 +478,79 @@ export class OrdersService {
   }
 
   /**
+   * Người mua xác nhận ĐÃ NHẬN HÀNG của MỘT người bán trong đơn → giải ngân
+   * escrow của đúng người bán đó.
+   *
+   * Vì sao theo từng người bán: đơn C2C có thể gồm hàng nhiều người bán, mỗi
+   * người một vận đơn GHN riêng, giao xong ở những thời điểm khác nhau. Bắt
+   * người mua chờ tất cả rồi mới nhả tiền cho ai là giữ tiền của người bán đã
+   * giao xong một cách vô cớ — đúng khuôn Shopee/Lazada: nhận của ai, chốt của
+   * người đó.
+   *
+   * Tiền trước, đánh dấu sau: `release` khoá idempotent theo từng khoản ký quỹ,
+   * nên nếu bước đánh dấu shipment hỏng, gọi lại chỉ no-op ở release rồi đánh
+   * dấu tiếp — không bao giờ nhả tiền hai lần, cũng không để tiền kẹt.
+   */
+  async confirmShipmentReceived(
+    orderId: number,
+    sellerId: number,
+    user: IUser,
+  ) {
+    const { order, actors } = await this.findOneForActor(orderId, user);
+    const isAdmin = actors.includes(OrderActor.ADMIN);
+    const isBuyer = actors.includes(OrderActor.BUYER);
+    if (!isBuyer && !isAdmin) {
+      throw new ForbiddenException('Chỉ người mua mới xác nhận đã nhận hàng');
+    }
+
+    const shipment = await this.shipmentRepository.findOne({
+      where: { order: { id: orderId }, seller: { id: sellerId } },
+      relations: ['seller'],
+    });
+    if (!shipment) {
+      throw new NotFoundException(
+        'Không tìm thấy lô hàng của người bán này trong đơn',
+      );
+    }
+    if (shipment.status === ShipmentStatus.RECEIVED) {
+      return shipment; // đã xác nhận trước đó — idempotent
+    }
+    if (shipment.status === ShipmentStatus.FAILED) {
+      throw new BadRequestException(
+        'Lô hàng này chưa gửi được, chưa thể xác nhận đã nhận',
+      );
+    }
+
+    await this.escrowsService.release(orderId, sellerId);
+
+    const now = new Date();
+    shipment.status = ShipmentStatus.RECEIVED;
+    shipment.received_at = now;
+    if (!shipment.delivered_at) shipment.delivered_at = now;
+    await this.shipmentRepository.save(shipment);
+
+    // Mọi lô (trừ lô FAILED) đã nhận → đơn coi như giao trọn. Đặt trạng thái
+    // thẳng, KHÔNG qua updateStatus: đường đó gọi giải ngân cấp-đơn lần nữa và
+    // sẽ ném lỗi vì không còn khoản HOLDING nào.
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id: orderId } },
+    });
+    const active = shipments.filter((s) => s.status !== ShipmentStatus.FAILED);
+    const allReceived =
+      active.length > 0 &&
+      active.every((s) => s.status === ShipmentStatus.RECEIVED);
+    if (allReceived && order.status !== OrderStatus.DELIVERED) {
+      order.status = OrderStatus.DELIVERED;
+      await this.orderRepository.save(order);
+    }
+
+    return this.shipmentRepository.findOne({
+      where: { id: shipment.id },
+      relations: ['seller'],
+    });
+  }
+
+  /**
    * Các trường địa chỉ giao hàng. Trước đây DTO nhận chúng rồi bỏ đi im lặng —
    * client sửa địa chỉ, API trả 200, không có gì thay đổi.
    */
