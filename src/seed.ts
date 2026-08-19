@@ -289,7 +289,17 @@ async function seed() {
       },
     ];
 
-    for (const p of products) {
+    const allProducts = [...products];
+    for (let i = 1; i <= 1000; i++) {
+      const base = products[i % products.length];
+      allProducts.push({
+        ...base,
+        name: `${base.name} - Demo ${i}`,
+        slug: `${base.slug}-demo-${i}`,
+      });
+    }
+
+    for (const p of allProducts) {
       const catIdx = categories.findIndex((c) => c.slug === p.category);
       await queryRunner.query(
         `INSERT IGNORE INTO products (name, slug, price, stock, image, description, brand, category_id, seller_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
