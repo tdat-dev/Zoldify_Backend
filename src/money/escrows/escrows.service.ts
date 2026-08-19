@@ -99,14 +99,26 @@ export class EscrowsService {
    * Bản cũ cộng thẳng vào `users.balance` bằng `increment()`, không transaction
    * và không để lại dấu vết nào — không trả lời được câu "vì sao ví có số này".
    */
-  async release(orderId: number) {
+  async release(orderId: number, sellerId?: number) {
     return this.dataSource.transaction(async (em) => {
+      const where: any = {
+        order: { id: orderId },
+        status: EscrowStatus.HOLDING,
+      };
+      // Giải ngân theo TỪNG người bán (sàn C2C nhiều người bán): người mua xác
+      // nhận nhận hàng của một người bán thì chỉ khoản của người đó được chuyển.
+      if (sellerId !== undefined) where.seller = { id: sellerId };
+
       const escrows = await em.find(Escrow, {
-        where: { order: { id: orderId }, status: EscrowStatus.HOLDING },
+        where,
         relations: ['seller'],
       });
 
       if (!escrows.length) {
+        // Giải ngân theo người bán mà không còn khoản HOLDING nào = đã giải ngân
+        // trước đó. Idempotent no-op thay vì báo lỗi — người mua bấm lại, hoặc
+        // job tự-chốt chạy trùng, không được ném lỗi.
+        if (sellerId !== undefined) return [];
         throw new NotFoundException('Không tìm thấy escrow nào để giải ngân');
       }
 

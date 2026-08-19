@@ -19,7 +19,15 @@ import { Cart } from '@ordering/carts/entities/cart.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
-import { DataSource, EntityManager, Repository, In } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  In,
+  Not,
+  IsNull,
+  LessThan,
+} from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { GhnService } from '@ordering/ghn/ghn.service';
@@ -347,12 +355,21 @@ export class OrdersService {
 
     const order = await this.orderRepository.findOne({
       where,
-      relations: ['user', 'items', 'items.product'],
+      relations: ['user', 'items', 'items.product', 'items.product.seller'],
     });
 
     if (!order) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
+
+    // Đính kèm vận đơn theo từng người bán để giao diện hiện trạng thái giao và
+    // nút "Đã nhận hàng" cho đúng người bán. OrderShipment là bảng riêng (mirror
+    // (order, seller)), không phải quan hệ trên Order — nên tra riêng rồi gắn.
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id } },
+      relations: ['seller'],
+    });
+    (order as any).shipments = shipments;
 
     return order;
   }
@@ -475,6 +492,187 @@ export class OrdersService {
       where: { id: order.id },
       relations: ['user', 'items', 'items.product'],
     });
+  }
+
+  /**
+   * Người mua xác nhận ĐÃ NHẬN HÀNG của MỘT người bán trong đơn → giải ngân
+   * escrow của đúng người bán đó.
+   *
+   * Vì sao theo từng người bán: đơn C2C có thể gồm hàng nhiều người bán, mỗi
+   * người một vận đơn GHN riêng, giao xong ở những thời điểm khác nhau. Bắt
+   * người mua chờ tất cả rồi mới nhả tiền cho ai là giữ tiền của người bán đã
+   * giao xong một cách vô cớ — đúng khuôn Shopee/Lazada: nhận của ai, chốt của
+   * người đó.
+   *
+   * Tiền trước, đánh dấu sau: `release` khoá idempotent theo từng khoản ký quỹ,
+   * nên nếu bước đánh dấu shipment hỏng, gọi lại chỉ no-op ở release rồi đánh
+   * dấu tiếp — không bao giờ nhả tiền hai lần, cũng không để tiền kẹt.
+   */
+  async confirmShipmentReceived(
+    orderId: number,
+    sellerId: number,
+    user: IUser,
+  ) {
+    const { order, actors } = await this.findOneForActor(orderId, user);
+    const isAdmin = actors.includes(OrderActor.ADMIN);
+    const isBuyer = actors.includes(OrderActor.BUYER);
+    if (!isBuyer && !isAdmin) {
+      throw new ForbiddenException('Chỉ người mua mới xác nhận đã nhận hàng');
+    }
+
+    const shipment = await this.shipmentRepository.findOne({
+      where: { order: { id: orderId }, seller: { id: sellerId } },
+      relations: ['seller'],
+    });
+    if (!shipment) {
+      throw new NotFoundException(
+        'Không tìm thấy lô hàng của người bán này trong đơn',
+      );
+    }
+    if (shipment.status === ShipmentStatus.RECEIVED) {
+      return shipment; // đã xác nhận trước đó — idempotent
+    }
+    if (shipment.status === ShipmentStatus.FAILED) {
+      throw new BadRequestException(
+        'Lô hàng này chưa gửi được, chưa thể xác nhận đã nhận',
+      );
+    }
+
+    await this.escrowsService.release(orderId, sellerId);
+
+    const now = new Date();
+    shipment.status = ShipmentStatus.RECEIVED;
+    shipment.received_at = now;
+    if (!shipment.delivered_at) shipment.delivered_at = now;
+    await this.shipmentRepository.save(shipment);
+
+    await this.reconcileOrderDelivered(orderId);
+
+    return this.shipmentRepository.findOne({
+      where: { id: shipment.id },
+      relations: ['seller'],
+    });
+  }
+
+  /**
+   * Mọi lô (trừ lô FAILED) đã nhận → đơn coi như giao trọn. Đặt trạng thái
+   * THẲNG, KHÔNG qua updateStatus: đường đó gọi giải ngân cấp-đơn lần nữa và
+   * sẽ ném lỗi vì không còn khoản HOLDING nào.
+   */
+  private async reconcileOrderDelivered(orderId: number): Promise<void> {
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id: orderId } },
+    });
+    const active = shipments.filter((s) => s.status !== ShipmentStatus.FAILED);
+    const allReceived =
+      active.length > 0 &&
+      active.every((s) => s.status === ShipmentStatus.RECEIVED);
+    if (!allReceived) return;
+
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+    if (order && order.status !== OrderStatus.DELIVERED) {
+      order.status = OrderStatus.DELIVERED;
+      await this.orderRepository.save(order);
+    }
+  }
+
+  /**
+   * Chạy tay lượt chốt vận đơn (đồng bộ GHN + tự xác nhận) — cho admin/ops khi
+   * cần chốt ngay thay vì chờ cron hàng giờ. Cùng logic với job định kỳ.
+   */
+  async settleShipments(user: IUser) {
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Chỉ admin mới được chạy chốt vận đơn');
+    }
+    const sync = await this.syncGhnShipmentStatuses();
+    const auto = await this.autoConfirmDueShipments();
+    return { sync, auto };
+  }
+
+  /**
+   * Đồng bộ trạng thái vận đơn từ GHN (chạy định kỳ). Lô đang 'created' mà GHN
+   * báo 'delivered' thì chuyển sang DELIVERED và ghi mốc `delivered_at` — mốc
+   * này là gốc để đếm cửa sổ tự-xác-nhận.
+   *
+   * KHÔNG giải ngân ở đây: 'đã giao tới cửa' chưa phải 'người mua đã nhận và
+   * ưng'. Việc chốt tiền để cho `autoConfirmDueShipments` (sau N ngày) hoặc
+   * người mua bấm tay.
+   */
+  async syncGhnShipmentStatuses(): Promise<{
+    checked: number;
+    delivered: number;
+  }> {
+    const shipments = await this.shipmentRepository.find({
+      where: { status: ShipmentStatus.CREATED, tracking_code: Not(IsNull()) },
+    });
+
+    let delivered = 0;
+    for (const s of shipments) {
+      if (!s.tracking_code) continue;
+      try {
+        const status = await this.ghnService.getOrderStatus(s.tracking_code);
+        if (status === 'delivered') {
+          s.status = ShipmentStatus.DELIVERED;
+          s.delivered_at = new Date();
+          await this.shipmentRepository.save(s);
+          delivered += 1;
+        }
+      } catch (err) {
+        this.logger.error(
+          `Đồng bộ trạng thái GHN lỗi (vận đơn ${s.tracking_code}): ${(err as Error).message}`,
+        );
+      }
+    }
+    return { checked: shipments.length, delivered };
+  }
+
+  /**
+   * Tự xác nhận nhận hàng cho lô đã giao mà người mua quên bấm (giống Shopee/
+   * Lazada). Lô ở DELIVERED, chưa nhận, và đã qua cửa sổ N ngày kể từ
+   * `delivered_at` → giải ngân escrow người bán, đánh dấu RECEIVED với cờ
+   * `auto_received`.
+   *
+   * Cùng thứ tự an toàn với bản bấm tay: tiền trước (idempotent), đánh dấu sau.
+   * Một lô hỏng không làm chết cả lượt.
+   */
+  async autoConfirmDueShipments(): Promise<{ due: number; released: number }> {
+    const days = Number(process.env.AUTO_CONFIRM_RECEIPT_DAYS ?? 3);
+    const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+
+    const due = await this.shipmentRepository.find({
+      where: {
+        status: ShipmentStatus.DELIVERED,
+        received_at: IsNull(),
+        delivered_at: LessThan(cutoff),
+      },
+      relations: ['seller', 'order'],
+    });
+
+    let released = 0;
+    for (const s of due) {
+      const orderId = s.order?.id;
+      const sellerId = s.seller?.id;
+      if (!orderId || !sellerId) continue;
+      try {
+        await this.escrowsService.release(orderId, sellerId);
+        s.status = ShipmentStatus.RECEIVED;
+        s.received_at = new Date();
+        s.auto_received = true;
+        await this.shipmentRepository.save(s);
+        await this.reconcileOrderDelivered(orderId);
+        released += 1;
+        this.logger.log(
+          `Tự xác nhận nhận hàng sau ${days} ngày: đơn ${orderId}, người bán ${sellerId}`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Tự xác nhận lỗi (đơn ${orderId}, người bán ${sellerId}): ${(err as Error).message}`,
+        );
+      }
+    }
+    return { due: due.length, released };
   }
 
   /**

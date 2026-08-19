@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -11,6 +12,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Product } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
+import { Shop } from '@catalog/shop/entities/shop.entity';
 import { Repository, ILike, Between } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
@@ -23,12 +25,43 @@ export class ProductsService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
+    @InjectRepository(Shop)
+    private readonly shopRepository: Repository<Shop>,
     private readonly notificationsService: NotificationsService,
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
   ) {}
 
+  /**
+   * Chặn đăng bán khi người bán CHƯA khai địa chỉ lấy hàng.
+   *
+   * Sàn C2C: mỗi người bán tự gửi từ địa chỉ của mình. Thiếu pickup thì vận đơn
+   * GHN buộc phải fallback về shop nền tảng — hàng bị coi như gửi từ chỗ khác,
+   * người bán không giao được đúng. Chặn ngay từ lúc đăng, giống Shopee bắt khai
+   * địa chỉ lấy hàng trước khi mở bán. Kiểm ĐÚNG 6 trường mà createOrder GHN cần.
+   */
+  private async assertSellerHasPickup(userId: number): Promise<void> {
+    const shop = await this.shopRepository.findOne({
+      where: { user: { id: userId } },
+    });
+    const ok =
+      shop &&
+      shop.pickup_name &&
+      shop.pickup_phone &&
+      shop.pickup_address &&
+      shop.pickup_ward_name &&
+      shop.pickup_district_name &&
+      shop.pickup_province_name;
+    if (!ok) {
+      throw new BadRequestException(
+        'Bạn cần khai địa chỉ lấy hàng ở Cài đặt shop trước khi đăng bán.',
+      );
+    }
+  }
+
   async create(createProductDto: CreateProductDto, user: IUser) {
+    await this.assertSellerHasPickup(user.id);
+
     // DANH SÁCH TRẮNG: trường nào không có tên ở đây thì KHÔNG được lưu, dù DTO
     // đã nhận và đã kiểm hợp lệ. `currency` vừa thêm dính đúng bẫy này — gửi
     // "USD" lên, API trả 201 như bình thường, mà bản ghi lưu xuống là "VND".

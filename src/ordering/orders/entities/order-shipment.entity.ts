@@ -16,6 +16,12 @@ export enum ShipmentStatus {
   CREATED = 'created',
   /** Gọi GHN lỗi — giữ lại để hiện cho người bán và cho phép tạo lại. */
   FAILED = 'failed',
+  /** GHN báo đã giao tới người mua (đồng bộ tự động ở GĐ2). Chưa giải ngân —
+   *  còn chờ người mua xác nhận hoặc hết cửa sổ tự-xác-nhận. */
+  DELIVERED = 'delivered',
+  /** Người mua đã xác nhận nhận hàng (hoặc hệ thống tự xác nhận sau N ngày) —
+   *  escrow của người bán này đã được giải ngân. Trạng thái CUỐI. */
+  RECEIVED = 'received',
 }
 
 /**
@@ -68,6 +74,21 @@ export class OrderShipment {
   // Thông điệp lỗi GHN gần nhất (nếu FAILED) — để người bán/admin biết vì sao.
   @Column({ type: 'text', nullable: true })
   error: string;
+
+  // Mốc GHN báo đã giao (điền khi đồng bộ trạng thái GHN ở GĐ2). Là gốc để đếm
+  // cửa sổ tự-xác-nhận: quá N ngày kể từ đây mà người mua chưa bấm thì tự chốt.
+  @Column({ type: 'timestamp', nullable: true })
+  delivered_at: Date;
+
+  // Mốc người mua xác nhận nhận hàng (hoặc hệ thống tự xác nhận) — cũng là lúc
+  // escrow của người bán này được giải ngân.
+  @Column({ type: 'timestamp', nullable: true })
+  received_at: Date;
+
+  // true nếu chuyển sang RECEIVED do hệ thống tự chốt (hết cửa sổ), không phải
+  // người mua bấm tay — để đối soát và hiển thị khác nhau.
+  @Column({ type: 'boolean', default: false })
+  auto_received: boolean;
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
