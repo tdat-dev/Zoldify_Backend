@@ -112,6 +112,34 @@ services:
       # POST /api/auth/firebase trả 401 "Firebase chưa được cấu hình".
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Seed hàng DEMO cho STAGING — KHÔNG chạy khi `up` thường (nằm trong profile
+  # 'seed'). Chỉ gọi CÓ CHỦ ĐÍCH, sau khi stack đã deploy (schema đã có):
+  #   docker compose -p zoldify-staging --profile seed run --rm seed-demo
+  # Dọn lại hàng demo (đảo ngược, chỉ đụng slug có DEMO_PREFIX):
+  #   docker compose -p zoldify-staging --profile seed run --rm seed-demo \
+  #     npm run seed:demo -- --clear --write
+  #
+  # Dùng ảnh tầng `build` (không phải `runtime`): seeder là script ts-node trong
+  # scripts/ và cần devDependencies — runtime đã lược bỏ cả hai. TUYỆT ĐỐI không
+  # thêm service này vào luồng deploy tự động, và không chạy trên prod.
+  seed-demo:
+    profiles: [seed]
+    build:
+      context: .
+      target: build
+    restart: 'no'
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_USERNAME: root
+    command: ['npm', 'run', 'seed:demo', '--', '--write']
+
 volumes:
   mysql-data:
   product-images:

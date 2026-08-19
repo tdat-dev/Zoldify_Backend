@@ -58,6 +58,10 @@ FROM toolchain AS build
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
+# scripts/ (vd seed-demo-catalog.ts) chỉ cần cho service `seed-demo` opt-in chạy
+# bằng ts-node trên ẢNH TẦNG NÀY. `nest build` bỏ qua scripts/ (ngoài src) nên
+# không ảnh hưởng dist; runtime KHÔNG copy scripts nên vẫn gọn.
+COPY scripts ./scripts
 RUN npm run build
 
 # ---------------------------------------------------------------------------
