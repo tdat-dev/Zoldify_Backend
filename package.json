@@ -41,7 +41,9 @@
     "drawio:check": "node scripts/check-drawio.mjs",
     "drawio:shoot": "node scripts/shoot-drawio.mjs",
     "categories:relink": "node -r ts-node/register -r tsconfig-paths/register scripts/relink-category-images.ts",
-    "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-catalog.ts"
+    "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-catalog.ts",
+    "seed:orders": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-orders.ts",
+    "seed:products": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-products.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
