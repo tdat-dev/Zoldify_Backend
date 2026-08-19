@@ -14,6 +14,17 @@ const U = 'https://images.unsplash.com/';
 const O = '?w=400&h=300&fit=crop';
 
 async function seed() {
+  // seed.ts là FIXTURE DEV: tạo hàng giả, và có bước `DELETE FROM products WHERE
+  // image IS NULL` — cả hai đều KHÔNG được phép đụng vào dữ liệu thật. Chặn cứng
+  // ở prod. Dữ liệu nền (admin/danh mục) đã có migration idempotent; hàng mẫu
+  // cho staging dùng `npm run seed:demo` (đánh dấu DEMO_PREFIX, đảo ngược được).
+  if (process.env.NODE_ENV === 'production') {
+    console.error(
+      '✋ Từ chối: seed.ts là fixture DEV, không chạy khi NODE_ENV=production.',
+    );
+    process.exit(1);
+  }
+
   const ds = new DataSource({
     type: 'mysql',
     host: process.env.DB_HOST || 'localhost',
