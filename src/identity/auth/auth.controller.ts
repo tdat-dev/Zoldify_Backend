@@ -181,8 +181,9 @@ export class AuthController {
   @ResponseMessage('Cập nhật thông tin thành công')
   async updateProfile(
     @User() user: IUser,
-    @Body('full_name') full_name: string,
+    @Body('full_name') full_name?: string,
+    @Body('avatar') avatar?: string,
   ) {
-    return this.authService.updateProfile(user.id, full_name);
+    return this.authService.updateProfile(user.id, full_name, avatar);
   }
 }
