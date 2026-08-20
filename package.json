@@ -43,7 +43,9 @@
     "categories:relink": "node -r ts-node/register -r tsconfig-paths/register scripts/relink-category-images.ts",
     "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-catalog.ts",
     "seed:orders": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-orders.ts",
-    "seed:products": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-products.ts"
+    "seed:products": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-products.ts",
+    "seed:bulk": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-bulk.ts",
+    "loadtest": "k6 run load-test/baseline.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
