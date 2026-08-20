@@ -56,13 +56,15 @@ export interface NormalizedPagination {
 export function normalizePagination(
   currentPage?: string | number | null,
   limit?: string | number | null,
+  // Kích thước trang mặc định khi client KHÔNG gửi `limit`. Đa số endpoint dùng
+  // 10; vài chỗ (vd chat) mặc định 20 — truyền vào đây để giữ nguyên hành vi cũ.
+  defaultSize: number = DEFAULT_PAGE_SIZE,
 ): NormalizedPagination {
   const rawPage = Math.floor(Number(currentPage));
   const rawSize = Math.floor(Number(limit));
 
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
-  let size =
-    Number.isFinite(rawSize) && rawSize >= 1 ? rawSize : DEFAULT_PAGE_SIZE;
+  let size = Number.isFinite(rawSize) && rawSize >= 1 ? rawSize : defaultSize;
   if (size > MAX_PAGE_SIZE) size = MAX_PAGE_SIZE;
 
   return { page, size, offset: (page - 1) * size };

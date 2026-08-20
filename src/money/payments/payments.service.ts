@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -146,9 +147,11 @@ export class PaymentsService {
   }
 
   async findAll(currentPage: string, limit: string, type: string, user: IUser) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
     const where: any = {};
     if (user.role !== 'admin') {

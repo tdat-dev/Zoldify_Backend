@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { normalizePagination } from '@common/dto/pagination.dto';
 import { User } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Review } from './entities/review.entity';
@@ -59,9 +60,11 @@ export class InteractionsService {
   }
 
   async findByProduct(productId: number, currentPage: string, limit: string) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
     const [result, totalItems] = await this.reviewRepository.findAndCount({
       where: { product: { id: productId } },
@@ -90,9 +93,11 @@ export class InteractionsService {
   }
 
   async findAll(currentPage: string, limit: string, user: IUser) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
     const where: any = {};
 

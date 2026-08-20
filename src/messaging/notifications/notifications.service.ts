@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -28,9 +29,11 @@ export class NotificationsService {
   }
 
   async findAll(currentPage: string, limit: string, user: IUser) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
     const [result, totalItems] = await this.notiRepository.findAndCount({
       where: { user: { id: user.id } },
