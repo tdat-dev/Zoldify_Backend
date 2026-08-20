@@ -16,6 +16,7 @@ import { Shop } from '@catalog/shop/entities/shop.entity';
 import { Repository, ILike, Between } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
+import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 
 @Injectable()
@@ -126,9 +127,13 @@ export class ProductsService {
   }
 
   async findAll(currentPage: string, limit: string, qs: any) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    // Chặn tham số phân trang: ?pageSize=1000000 sẽ take(1000000) nạp cả kho vào
+    // RAM. Ép về [1, MAX_PAGE_SIZE], page ≥ 1, loại NaN/âm (dùng chung với orders).
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
     let order: any = { created_at: 'DESC' };
     if (qs.sort === 'price_asc') {

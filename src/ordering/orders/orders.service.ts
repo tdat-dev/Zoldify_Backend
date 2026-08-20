@@ -34,6 +34,7 @@ import { GhnService } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { PayosService } from '@money/payos/payos.service';
 import { assertTransitionAllowed, OrderActor } from './order-status.policy';
+import { normalizePagination } from '@common/dto/pagination.dto';
 
 @Injectable()
 export class OrdersService {
@@ -270,9 +271,14 @@ export class OrdersService {
     user: IUser,
     viewAs?: string,
   ) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    // Chuẩn hoá + CHẶN tham số: ép limit ≤ MAX_PAGE_SIZE, page ≥ 1, loại NaN/âm.
+    // Không có bước này thì ?limit=1000000 nạp cả triệu đơn vào RAM (đúng bug
+    // findAll vừa sửa, chỉ khác đường vào).
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
     const isSeller = viewAs === 'seller';
 
@@ -318,7 +324,10 @@ export class OrdersService {
      */
     const idQb = buildBase()
       .select('order.id', 'id')
+      // Tiebreaker theo id: created_at có thể trùng (seed rải theo giây), thiếu
+      // khoá phụ thì thứ tự ở ranh giới trang không ổn định giữa các lần gọi.
       .orderBy('order.created_at', 'DESC')
+      .addOrderBy('order.id', 'DESC')
       .limit(numLimit)
       .offset(offset);
     if (isSeller) {
@@ -335,7 +344,7 @@ export class OrdersService {
       result = await this.orderRepository.find({
         where: { id: In(pageIds) },
         relations: ['user', 'items', 'items.product'],
-        order: { created_at: 'DESC' },
+        order: { created_at: 'DESC', id: 'DESC' },
       });
     }
 
