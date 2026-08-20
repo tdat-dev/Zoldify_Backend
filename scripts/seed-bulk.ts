@@ -150,6 +150,77 @@ async function maxId(qr: QueryRunner, table: string): Promise<number> {
   return Number(row.m);
 }
 
+/**
+ * Id THỰC TẾ của bản ghi ĐẦU TIÊN vừa chèn vào `table` (dòng có id lớn hơn
+ * `prevMax` — mốc chụp NGAY TRƯỚC khi chèn).
+ *
+ * Vì sao không đoán `MAX(id)+1`: sau mỗi lần DELETE (kể cả `--reset`), MySQL
+ * KHÔNG hạ AUTO_INCREMENT. Nên id thật của bản ghi mới có thể bắt đầu cao hơn
+ * hẳn `MAX(id)+1`. Nếu bảng con cứ trỏ theo công thức `MAX(id)+1 + k` thì lệch
+ * đúng bằng khoảng trống đó → sinh hàng loạt bản ghi MỒ CÔI. Đọc id đầu thực tế
+ * rồi cộng chỉ số (các dòng chèn liên tiếp trên một kết nối là liền mạch) mới
+ * đúng bất kể lịch sử xoá.
+ */
+async function firstInsertedId(
+  qr: QueryRunner,
+  table: string,
+  prevMax: number,
+): Promise<number> {
+  const [row] = await qr.query(
+    `SELECT MIN(id) AS m FROM \`${table}\` WHERE id > ?`,
+    [prevMax],
+  );
+  const m = Number(row?.m);
+  if (!m) {
+    throw new Error(`Khong xac dinh duoc id dau tien vua chen vao \`${table}\``);
+  }
+  return m;
+}
+
+/**
+ * GUARD TOÀN VẸN THAM CHIẾU — chạy sau khi seed xong. Vì lúc nạp có tắt
+ * foreign_key_checks (để nhanh), không có gì tự chặn khoá ngoại hỏng. Hàm này
+ * kiểm mọi quan hệ con→cha: còn dù MỘT dòng mồ côi là NÉM LỖI để seed thất bại
+ * rõ ràng, không bao giờ âm thầm giao dữ liệu bẩn nữa.
+ */
+async function assertNoOrphans(qr: QueryRunner) {
+  // [bảng con, cột khoá ngoại, bảng cha]
+  const rels: [string, string, string][] = [
+    ['products', 'seller_id', 'users'],
+    ['orders', 'user_id', 'users'],
+    ['order_items', 'order_id', 'orders'],
+    ['order_items', 'product_id', 'products'],
+    ['reviews', 'user_id', 'users'],
+    ['reviews', 'product_id', 'products'],
+    ['carts', 'user_id', 'users'],
+    ['carts', 'product_id', 'products'],
+    ['follows', 'follower_id', 'users'],
+    ['follows', 'following_id', 'users'],
+    ['conversations', 'buyer_id', 'users'],
+    ['conversations', 'seller_id', 'users'],
+    ['conversations', 'product_id', 'products'],
+    ['messages', 'conversation_id', 'conversations'],
+    ['messages', 'sender_id', 'users'],
+    ['notifications', 'user_id', 'users'],
+  ];
+  console.log('🔎 Kiểm toàn vẹn tham chiếu (không được có dòng mồ côi)...');
+  for (const [child, fk, parent] of rels) {
+    const [row] = await qr.query(
+      `SELECT COUNT(*) AS c FROM \`${child}\` ch
+       LEFT JOIN \`${parent}\` p ON p.id = ch.\`${fk}\`
+       WHERE ch.\`${fk}\` IS NOT NULL AND p.id IS NULL`,
+    );
+    const c = Number(row.c);
+    if (c > 0) {
+      throw new Error(
+        `Toan ven tham chieu HONG: ${child}.${fk} -> ${parent} co ${c} dong mo coi. ` +
+          `Seed DUNG lai de khong giao du lieu ban.`,
+      );
+    }
+    console.log(`   ✓ ${child}.${fk} → ${parent}`);
+  }
+}
+
 // ─────────────────────────── Xoá dữ liệu bulk (--reset) ───────────────────────────
 async function doReset(qr: QueryRunner) {
   console.log('↺ --reset: xoá dữ liệu bulk cũ (không đụng seed nền)...');
@@ -229,9 +300,7 @@ async function main() {
     await qr.startTransaction();
 
     // 1) SELLERS
-    const sellerBase = await maxId(qr, 'users');
-    const firstSeller = sellerBase + 1;
-    const sellerId = (k: number) => firstSeller + (k % SELLERS);
+    const usersBeforeSellers = await maxId(qr, 'users');
     console.log(`① users (sellers) x${fmt(SELLERS)}`);
     await insertFromGenerator(
       qr,
@@ -244,11 +313,11 @@ async function main() {
         }
       })(),
     );
+    const firstSeller = await firstInsertedId(qr, 'users', usersBeforeSellers);
+    const sellerId = (k: number) => firstSeller + (k % SELLERS);
 
     // 2) BUYERS
-    const buyerBase = await maxId(qr, 'users');
-    const firstBuyer = buyerBase + 1;
-    const buyerId = (k: number) => firstBuyer + (k % BUYERS);
+    const usersBeforeBuyers = await maxId(qr, 'users');
     console.log(`② users (buyers) x${fmt(BUYERS)}`);
     await insertFromGenerator(
       qr,
@@ -261,11 +330,11 @@ async function main() {
         }
       })(),
     );
+    const firstBuyer = await firstInsertedId(qr, 'users', usersBeforeBuyers);
+    const buyerId = (k: number) => firstBuyer + (k % BUYERS);
 
     // 3) PRODUCTS
-    const prodBase = await maxId(qr, 'products');
-    const firstProduct = prodBase + 1;
-    const productId = (k: number) => firstProduct + (k % PRODUCTS);
+    const productsBefore = await maxId(qr, 'products');
     console.log(`③ products x${fmt(PRODUCTS)}`);
     await insertFromGenerator(
       qr,
@@ -290,6 +359,7 @@ async function main() {
         }
       })(),
     );
+    const firstProduct = await firstInsertedId(qr, 'products', productsBefore);
 
     // 4) ORDERS + ORDER_ITEMS (sinh xác định theo chỉ số đơn)
     const statuses = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
@@ -315,8 +385,7 @@ async function main() {
       return 'cancelled';
     };
 
-    const orderBase = await maxId(qr, 'orders');
-    const firstOrder = orderBase + 1;
+    const ordersBefore = await maxId(qr, 'orders');
     console.log(`④ orders x${fmt(ORDERS)}`);
     await insertFromGenerator(
       qr,
@@ -353,6 +422,7 @@ async function main() {
       })(),
     );
 
+    const firstOrder = await firstInsertedId(qr, 'orders', ordersBefore);
     console.log(`⑤ order_items (1-3 mỗi đơn)`);
     await insertFromGenerator(
       qr,
@@ -428,8 +498,7 @@ async function main() {
     );
 
     // 9) CONVERSATIONS — bộ ba (buyer, seller, product) không trùng
-    const convBase = await maxId(qr, 'conversations');
-    const firstConv = convBase + 1;
+    const convBefore = await maxId(qr, 'conversations');
     console.log(`⑨ conversations x${fmt(CONVERSATIONS)}`);
     await insertFromGenerator(
       qr,
@@ -446,6 +515,7 @@ async function main() {
         }
       })(),
     );
+    const firstConv = await firstInsertedId(qr, 'conversations', convBefore);
 
     // 10) MESSAGES — mỗi tin thuộc 1 conversation, người gửi là buyer của conv đó
     console.log(`⑩ messages x${fmt(MESSAGES)}`);
@@ -489,6 +559,9 @@ async function main() {
     );
 
     if (qr.isTransactionActive) await qr.commitTransaction();
+
+    // Chốt chặn: dữ liệu đã commit, kiểm toàn vẹn tham chiếu trước khi báo xong.
+    await assertNoOrphans(qr);
   } catch (err) {
     if (qr.isTransactionActive) await qr.rollbackTransaction();
     throw err;
