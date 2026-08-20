@@ -50,8 +50,18 @@ export class OrdersController {
     @Query('status') status: string,
     @Query('as') as: string,
     @User() user: IUser,
+    // Tuỳ chọn: con trỏ keyset cho trang sâu / "tải thêm". Không gửi thì phân
+    // trang theo currentPage như cũ (tương thích ngược hoàn toàn).
+    @Query('cursor') cursor: string,
   ) {
-    return this.ordersService.findAll(currentPage, limit, status, user, as);
+    return this.ordersService.findAll(
+      currentPage,
+      limit,
+      status,
+      user,
+      as,
+      cursor,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
