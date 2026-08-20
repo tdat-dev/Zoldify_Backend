@@ -34,6 +34,7 @@ import { GhnService } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { PayosService } from '@money/payos/payos.service';
 import { assertTransitionAllowed, OrderActor } from './order-status.policy';
+import { normalizePagination } from '@common/dto/pagination.dto';
 
 @Injectable()
 export class OrdersService {
@@ -270,78 +271,89 @@ export class OrdersService {
     user: IUser,
     viewAs?: string,
   ) {
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 10;
-    const offset = (numPage - 1) * numLimit;
+    // Chuẩn hoá + CHẶN tham số: ép limit ≤ MAX_PAGE_SIZE, page ≥ 1, loại NaN/âm.
+    // Không có bước này thì ?limit=1000000 nạp cả triệu đơn vào RAM (đúng bug
+    // findAll vừa sửa, chỉ khác đường vào).
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+    } = normalizePagination(currentPage, limit);
 
-    const filterQb = this.orderRepository
-      .createQueryBuilder('order')
-      .leftJoin('order.items', 'item')
-      .leftJoin('item.product', 'product')
-      .leftJoin('product.seller', 'seller')
-      .select('order.id', 'order_id');
-
-    if (viewAs === 'seller') {
-      filterQb.where('seller.id = :sellerId', { sellerId: user.id });
-    } else if (user.role !== 'admin') {
-      filterQb.where('order.user_id = :userId', { userId: user.id });
-    }
-    if (status) {
-      filterQb.andWhere('order.status = :status', { status });
-    }
-
-    const idsRaw = await filterQb
-      .orderBy('order.created_at', 'DESC')
-      .getRawMany();
+    const isSeller = viewAs === 'seller';
 
     /**
-     * Câu trên JOIN sang order.items, nên mỗi ĐƠN trả về một dòng CHO MỖI MÓN.
-     * Hai lỗi từ đó:
+     * Câu lọc DÙNG CHUNG cho cả đếm total lẫn lấy ID của trang.
      *
-     * 1. `ids.length` đếm dòng đã join chứ không phải số đơn. Đo được với dữ
-     *    liệu thật: 3 đơn có 1 + 2 + 1 = 4 món, API trả về meta.total = 4 trong
-     *    khi result chỉ có 3 phần tử — vì `In(ids)` tự khử trùng. Giao diện
-     *    người bán hiện "4 đơn hàng" rồi liệt kê 3.
+     * Vì sao dựng lại query mỗi lần (buildBase) thay vì clone: getCount() và
+     * getRawMany() thêm SELECT/LIMIT khác nhau lên cùng một builder — tách hẳn
+     * cho sạch, không dính trạng thái của nhau.
      *
-     * 2. `offset` và `numLimit` được tính ở đầu hàm rồi KHÔNG BAO GIỜ dùng.
-     *    Không có skip/take ở đâu cả, nên mọi lần gọi đều trả về TOÀN BỘ đơn
-     *    khớp điều kiện, bất kể currentPage và limit. Người bán có 500 đơn thì
-     *    tải cả 500 về mỗi lần mở trang.
-     *
-     * Khử trùng bằng Set thay vì DISTINCT của SQL: thứ tự đã do ORDER BY quyết
-     * định, còn DISTINCT kèm ORDER BY trên cột không nằm trong SELECT là chỗ
-     * MySQL hay từ chối tuỳ chế độ.
+     * Chỉ JOIN sang items→product khi lọc theo NGƯỜI BÁN. Buyer/admin KHÔNG join
+     * gì cả: chỉ quét bảng orders (dùng idx_user_created / idx_created_at) rồi
+     * LIMIT ở SQL — không đụng tới order_items khổng lồ, không nhân dòng.
      */
-    const seen = new Set<number>();
-    const allIds: number[] = [];
-    for (const row of idsRaw) {
-      const n = Number(row.order_id);
-      if (!isNaN(n) && !seen.has(n)) {
-        seen.add(n);
-        allIds.push(n);
+    const buildBase = () => {
+      const qb = this.orderRepository.createQueryBuilder('order');
+      if (isSeller) {
+        // Lọc trực tiếp qua product.seller_id, khỏi join thêm bảng users.
+        qb.innerJoin('order.items', 'item')
+          .innerJoin('item.product', 'product')
+          .where('product.seller_id = :sellerId', { sellerId: user.id });
+      } else if (user.role !== 'admin') {
+        qb.where('order.user_id = :userId', { userId: user.id });
       }
+      if (status) {
+        qb.andWhere('order.status = :status', { status });
+      }
+      return qb;
+    };
+
+    /**
+     * 1) Tổng số ĐƠN (không phải số dòng join). getCount() của TypeORM đếm
+     *    DISTINCT khoá chính gốc, nên seller-view có nhiều item trên một đơn
+     *    vẫn ra đúng số đơn — sửa luôn bug meta.total đếm theo món trước đây.
+     */
+    const total = await buildBase().getCount();
+
+    /**
+     * 2) Lấy đúng ID của TRANG hiện tại bằng LIMIT/OFFSET Ở SQL — đây là điểm
+     *    mấu chốt: trước đây nạp TOÀN BỘ đơn khớp điều kiện về app rồi mới cắt
+     *    trang (admin = cả triệu dòng vào RAM, treo request). Giờ DB chỉ trả về
+     *    tối đa `numLimit` id.
+     */
+    const idQb = buildBase()
+      .select('order.id', 'id')
+      // Tiebreaker theo id: created_at có thể trùng (seed rải theo giây), thiếu
+      // khoá phụ thì thứ tự ở ranh giới trang không ổn định giữa các lần gọi.
+      .orderBy('order.created_at', 'DESC')
+      .addOrderBy('order.id', 'DESC')
+      .limit(numLimit)
+      .offset(offset);
+    if (isSeller) {
+      // JOIN sinh nhiều dòng/đơn → cần DISTINCT. Thêm created_at vào SELECT để
+      // hợp lệ với ORDER BY khi có DISTINCT (MySQL ONLY_FULL_GROUP_BY).
+      idQb.distinct(true).addSelect('order.created_at', 'created_at');
     }
+    const idRows = await idQb.getRawMany();
+    const pageIds = idRows.map((r) => Number(r.id));
 
-    const totalItems = allIds.length;
-    const pageIds = allIds.slice(offset, offset + numLimit);
-
-    let result: any[] = [];
+    // 3) Nạp đầy đủ CHỈ các đơn của trang này (tối đa numLimit bản ghi).
+    let result: Order[] = [];
     if (pageIds.length > 0) {
       result = await this.orderRepository.find({
         where: { id: In(pageIds) },
         relations: ['user', 'items', 'items.product'],
-        order: { created_at: 'DESC' },
+        order: { created_at: 'DESC', id: 'DESC' },
       });
     }
-
-    const totalPages = Math.ceil(totalItems / numLimit);
 
     return {
       meta: {
         current: numPage,
         pageSize: numLimit,
-        pages: totalPages,
-        total: totalItems,
+        pages: Math.ceil(total / numLimit),
+        total,
       },
       result,
     };
