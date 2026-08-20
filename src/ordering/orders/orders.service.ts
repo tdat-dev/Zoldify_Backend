@@ -34,7 +34,11 @@ import { GhnService } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { PayosService } from '@money/payos/payos.service';
 import { assertTransitionAllowed, OrderActor } from './order-status.policy';
-import { normalizePagination } from '@common/dto/pagination.dto';
+import {
+  normalizePagination,
+  decodeCursor,
+  encodeCursor,
+} from '@common/dto/pagination.dto';
 
 @Injectable()
 export class OrdersService {
@@ -270,6 +274,7 @@ export class OrdersService {
     status: string,
     user: IUser,
     viewAs?: string,
+    cursor?: string,
   ) {
     // Chuẩn hoá + CHẶN tham số: ép limit ≤ MAX_PAGE_SIZE, page ≥ 1, loại NaN/âm.
     // Không có bước này thì ?limit=1000000 nạp cả triệu đơn vào RAM (đúng bug
@@ -317,23 +322,33 @@ export class OrdersService {
     const total = await buildBase().getCount();
 
     /**
-     * 2) Lấy đúng ID của TRANG hiện tại bằng LIMIT/OFFSET Ở SQL — đây là điểm
-     *    mấu chốt: trước đây nạp TOÀN BỘ đơn khớp điều kiện về app rồi mới cắt
-     *    trang (admin = cả triệu dòng vào RAM, treo request). Giờ DB chỉ trả về
-     *    tối đa `numLimit` id.
+     * 2) Lấy đúng ID của TRANG hiện tại. Hai chế độ, TƯƠNG THÍCH NGƯỢC:
+     *    - Không có `cursor` → OFFSET như cũ (frontend đang gửi `currentPage`
+     *      vẫn chạy y nguyên).
+     *    - Có `cursor` → KEYSET: thêm điều kiện `(created_at,id) < con_trỏ` rồi
+     *      LIMIT, đi thẳng vào index thay vì quét bỏ OFFSET dòng. Trang sâu nhanh
+     *      như trang đầu (OFFSET 500k ~2.8s → keyset ~vài chục ms).
      */
+    const cursorPos = cursor ? decodeCursor(cursor) : null;
     const idQb = buildBase()
       .select('order.id', 'id')
       // Tiebreaker theo id: created_at có thể trùng (seed rải theo giây), thiếu
       // khoá phụ thì thứ tự ở ranh giới trang không ổn định giữa các lần gọi.
       .orderBy('order.created_at', 'DESC')
       .addOrderBy('order.id', 'DESC')
-      .limit(numLimit)
-      .offset(offset);
+      .limit(numLimit);
     if (isSeller) {
       // JOIN sinh nhiều dòng/đơn → cần DISTINCT. Thêm created_at vào SELECT để
       // hợp lệ với ORDER BY khi có DISTINCT (MySQL ONLY_FULL_GROUP_BY).
       idQb.distinct(true).addSelect('order.created_at', 'created_at');
+    }
+    if (cursorPos) {
+      idQb.andWhere(
+        '(order.created_at < :cts OR (order.created_at = :cts AND order.id < :cid))',
+        { cts: cursorPos.createdAt, cid: cursorPos.id },
+      );
+    } else {
+      idQb.offset(offset);
     }
     const idRows = await idQb.getRawMany();
     const pageIds = idRows.map((r) => Number(r.id));
@@ -348,12 +363,22 @@ export class OrdersService {
       });
     }
 
+    // Con trỏ cho trang KẾ: chỉ cấp khi trang này đầy (còn khả năng có tiếp).
+    // Client cứ truyền lại `?cursor=<nextCursor>` để lấy trang sau — không cần
+    // biết offset, và không chậm dần theo độ sâu.
+    const lastRow = result[result.length - 1];
+    const nextCursor =
+      result.length === numLimit && lastRow
+        ? encodeCursor(lastRow.created_at, lastRow.id)
+        : null;
+
     return {
       meta: {
         current: numPage,
         pageSize: numLimit,
         pages: Math.ceil(total / numLimit),
         total,
+        nextCursor,
       },
       result,
     };
