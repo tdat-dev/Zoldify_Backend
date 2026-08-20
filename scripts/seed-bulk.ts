@@ -165,13 +165,19 @@ async function firstInsertedId(
   qr: QueryRunner,
   table: string,
   prevMax: number,
+  expectedCount: number,
 ): Promise<number> {
+  // Không yêu cầu chèn gì (vd `--messages=0` để bỏ qua một nhóm): trả giá trị vô
+  // hại — các section phụ thuộc cũng chạy 0 vòng nên sẽ không dùng tới nó.
+  if (expectedCount === 0) return prevMax + 1;
   const [row] = await qr.query(
     `SELECT MIN(id) AS m FROM \`${table}\` WHERE id > ?`,
     [prevMax],
   );
   const m = Number(row?.m);
   if (!m) {
+    // Có yêu cầu chèn nhưng KHÔNG thấy dòng nào → chèn hỏng, dừng loud thay vì
+    // âm thầm sinh mồ côi.
     throw new Error(`Khong xac dinh duoc id dau tien vua chen vao \`${table}\``);
   }
   return m;
@@ -313,7 +319,7 @@ async function main() {
         }
       })(),
     );
-    const firstSeller = await firstInsertedId(qr, 'users', usersBeforeSellers);
+    const firstSeller = await firstInsertedId(qr, 'users', usersBeforeSellers, SELLERS);
     const sellerId = (k: number) => firstSeller + (k % SELLERS);
 
     // 2) BUYERS
@@ -330,7 +336,7 @@ async function main() {
         }
       })(),
     );
-    const firstBuyer = await firstInsertedId(qr, 'users', usersBeforeBuyers);
+    const firstBuyer = await firstInsertedId(qr, 'users', usersBeforeBuyers, BUYERS);
     const buyerId = (k: number) => firstBuyer + (k % BUYERS);
 
     // 3) PRODUCTS
@@ -359,7 +365,7 @@ async function main() {
         }
       })(),
     );
-    const firstProduct = await firstInsertedId(qr, 'products', productsBefore);
+    const firstProduct = await firstInsertedId(qr, 'products', productsBefore, PRODUCTS);
 
     // 4) ORDERS + ORDER_ITEMS (sinh xác định theo chỉ số đơn)
     const statuses = ['pending', 'processing', 'shipping', 'delivered', 'cancelled'];
@@ -422,7 +428,7 @@ async function main() {
       })(),
     );
 
-    const firstOrder = await firstInsertedId(qr, 'orders', ordersBefore);
+    const firstOrder = await firstInsertedId(qr, 'orders', ordersBefore, ORDERS);
     console.log(`⑤ order_items (1-3 mỗi đơn)`);
     await insertFromGenerator(
       qr,
@@ -515,7 +521,7 @@ async function main() {
         }
       })(),
     );
-    const firstConv = await firstInsertedId(qr, 'conversations', convBefore);
+    const firstConv = await firstInsertedId(qr, 'conversations', convBefore, CONVERSATIONS);
 
     // 10) MESSAGES — mỗi tin thuộc 1 conversation, người gửi là buyer của conv đó
     console.log(`⑩ messages x${fmt(MESSAGES)}`);
