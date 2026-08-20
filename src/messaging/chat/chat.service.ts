@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { normalizePagination } from '@common/dto/pagination.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
@@ -126,9 +127,12 @@ export class ChatService {
       throw new BadRequestException('Bạn không phải là thành viên của cuộc trò chuyện này');
     }
 
-    const numPage = currentPage ? parseInt(currentPage) : 1;
-    const numLimit = limit ? parseInt(limit) : 20;
-    const offset = (numPage - 1) * numLimit;
+    const {
+      page: numPage,
+      size: numLimit,
+      offset,
+      // Giữ mặc định 20 tin/trang như cũ (đa số endpoint khác mặc định 10).
+    } = normalizePagination(currentPage, limit, 20);
 
     const [result, totalItems] = await this.messageRepository.findAndCount({
       where: { conversation: { id: conversationId } },
