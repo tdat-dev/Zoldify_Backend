@@ -32,6 +32,15 @@ Sau Epic 1, `/orders` phân trang bằng `LIMIT/OFFSET`. Trang **rất sâu** v�
 | **EXPLAIN keyset** | `type=range` trên `idx_created_at`, key_len=11 (created_at+id) — **seek thẳng** |
 | Thời gian keyset @ depth 500k | ~0.4s = **bằng trang đầu** (độc lập độ sâu) |
 
+## 4b. Hotfix độ chính xác con trỏ (quan trọng)
+Rà lại sau khi merge phát hiện: cột `created_at` là **`timestamp(6)` (micro-giây)**,
+mặc định `CURRENT_TIMESTAMP(6)` → đơn tạo qua app CÓ µs thật. Nhưng con trỏ ban đầu mã
+hoá bằng JS `Date.getTime()` = **mili-giây** → mất µs → ở ranh giới trang sẽ **BỎ SÓT**
+các đơn nằm trong khe µs bị cắt. Dữ liệu seed bulk tình cờ chỉ có ms nên load test
+không lộ. **Sửa:** con trỏ mang chuỗi µs đầy đủ qua `DATE_FORMAT('%f')`, so sánh đúng
+tuyệt đối. **Kiểm:** tạo 30 đơn cùng giây khác µs → walk qua cursor thu đủ 30/30, đúng
+thứ tự, không sót/không lặp (code cũ sẽ nhảy qua gần hết). Index vẫn `range`.
+
 ## 5. Ghi chú
 - Ở chế độ keyset, chi phí còn lại chủ yếu là `getCount()` (đếm 1tr để trả `total`);
   nếu cần "tải thêm" cực nhẹ sau này có thể cho phép bỏ `total`.

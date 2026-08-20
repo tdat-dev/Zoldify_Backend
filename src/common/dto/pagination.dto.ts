@@ -70,25 +70,35 @@ export function normalizePagination(
 
 // ───────────────────────── Con trỏ keyset (phân trang trang sâu) ─────────────────────────
 
-/** Vị trí keyset: cặp (created_at, id) của bản ghi CUỐI trang trước. */
+/** Vị trí keyset: (created_at, id) của bản ghi CUỐI trang trước. */
 export interface KeysetCursor {
-  createdAt: Date;
+  /**
+   * Mốc thời gian dạng CHUỖI 'YYYY-MM-DD HH:MM:SS.ffffff' — GIỮ NGUYÊN micro-giây.
+   *
+   * KHÔNG dùng JS `Date`/`getTime()`: cột `created_at` là `timestamp(6)` (µs) còn
+   * `Date` chỉ có mili-giây → cắt mất 3 chữ số cuối. Đơn tạo qua app lấy default
+   * `CURRENT_TIMESTAMP(6)` nên CÓ µs thật; nếu con trỏ mất µs thì điều kiện
+   * `created_at < con_trỏ` sẽ BỎ SÓT các đơn nằm trong khe µs bị cắt. Truyền
+   * nguyên chuỗi µs (lấy từ DATE_FORMAT '%f') để so sánh đúng tuyệt đối.
+   */
+  createdAt: string;
   id: number;
 }
+
+/** Định dạng hợp lệ: 'YYYY-MM-DD HH:MM:SS' kèm phần lẻ tuỳ chọn tới µs. */
+const CURSOR_TS_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
 
 /**
  * Mã hoá con trỏ thành chuỗi mờ (opaque) để client truyền lại nguyên văn.
  *
  * Vì sao dùng keyset thay vì OFFSET ở trang sâu: `LIMIT 20 OFFSET 500000` bắt DB
  * quét bỏ 500k dòng mới lấy được 20 dòng (đo được ~2.8s). Keyset thêm điều kiện
- * `(created_at, id) < con_trỏ` nên đi thẳng vào index, không quét thừa — nhanh
- * như trang đầu ở mọi độ sâu. Cặp `(created_at, id)` phải khớp ĐÚNG khoá sắp xếp
- * `ORDER BY created_at DESC, id DESC` để không sót/không lặp.
+ * `(created_at, id) < con_trỏ` nên đi thẳng vào index. `createdAt` phải là chuỗi
+ * µs đầy đủ để không sót/không lặp ở ranh giới.
  */
-export function encodeCursor(createdAt: Date, id: number): string {
-  return Buffer.from(`${createdAt.getTime()}.${id}`, 'utf8').toString(
-    'base64url',
-  );
+export function encodeCursor(createdAt: string, id: number): string {
+  // Ngăn cách bằng '|' (chuỗi datetime không chứa ký tự này).
+  return Buffer.from(`${createdAt}|${id}`, 'utf8').toString('base64url');
 }
 
 /** Giải mã con trỏ; sai định dạng → 400 (không nuốt lỗi âm thầm). */
@@ -99,11 +109,11 @@ export function decodeCursor(cursor: string): KeysetCursor {
   } catch {
     throw new BadRequestException('Con trỏ phân trang (cursor) không hợp lệ');
   }
-  const dot = raw.indexOf('.');
-  const ms = Number(raw.slice(0, dot));
-  const id = Number(raw.slice(dot + 1));
-  if (dot < 0 || !Number.isFinite(ms) || !Number.isInteger(id) || id < 0) {
+  const bar = raw.lastIndexOf('|');
+  const createdAt = bar >= 0 ? raw.slice(0, bar) : '';
+  const id = Number(raw.slice(bar + 1));
+  if (bar < 0 || !CURSOR_TS_RE.test(createdAt) || !Number.isInteger(id) || id < 0) {
     throw new BadRequestException('Con trỏ phân trang (cursor) không hợp lệ');
   }
-  return { createdAt: new Date(ms), id };
+  return { createdAt, id };
 }

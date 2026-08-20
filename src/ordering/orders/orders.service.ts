@@ -332,6 +332,13 @@ export class OrdersService {
     const cursorPos = cursor ? decodeCursor(cursor) : null;
     const idQb = buildBase()
       .select('order.id', 'id')
+      // Lấy created_at dạng CHUỖI đủ micro-giây (%f) để dựng con trỏ chính xác —
+      // KHÔNG lấy qua entity Date (bị cắt còn mili-giây). ORDER BY vẫn trên cột
+      // thô nên index không bị ảnh hưởng.
+      .addSelect(
+        "DATE_FORMAT(order.created_at, '%Y-%m-%d %H:%i:%s.%f')",
+        'cts',
+      )
       // Tiebreaker theo id: created_at có thể trùng (seed rải theo giây), thiếu
       // khoá phụ thì thứ tự ở ranh giới trang không ổn định giữa các lần gọi.
       .orderBy('order.created_at', 'DESC')
@@ -364,12 +371,13 @@ export class OrdersService {
     }
 
     // Con trỏ cho trang KẾ: chỉ cấp khi trang này đầy (còn khả năng có tiếp).
+    // Lấy từ idRows (có 'cts' đủ µs) chứ KHÔNG từ entity result (Date bị cắt ms).
     // Client cứ truyền lại `?cursor=<nextCursor>` để lấy trang sau — không cần
     // biết offset, và không chậm dần theo độ sâu.
-    const lastRow = result[result.length - 1];
+    const lastRaw = idRows[idRows.length - 1];
     const nextCursor =
-      result.length === numLimit && lastRow
-        ? encodeCursor(lastRow.created_at, lastRow.id)
+      idRows.length === numLimit && lastRaw
+        ? encodeCursor(lastRaw.cts, Number(lastRaw.id))
         : null;
 
     return {
