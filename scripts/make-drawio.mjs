@@ -1705,12 +1705,12 @@ function containerDiagram() {
     x: 760, y: 210, w: 240, h: 80,
   });
   const mysql = store('MySQL 8\nsource of truth', 440, 340);
-  // Cùng hình hộp 3D như MySQL để so sánh được, chỉ khác màu.
+  // Cùng hình hộp 3D như MySQL. Đã BỎ màu đỏ "planned": từ Epic 4 Redis là thật
+  // cho phần CACHE (app.module đọc REDIS_URL, @keyv/redis trong deps). Nhãn nói rõ
+  // phần nào đã dùng, phần nào chưa — throttle/socket vẫn nằm trong tiến trình.
   const redis = vertex(s, {
-    value: 'Redis 7  (planned)\ncache · throttle\nsocket adapter · queue',
-    style:
-      S.node3d +
-      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+    value: 'Redis 7\ncache: CÓ (Epic 4, opt-in REDIS_URL)\nthrottle · socket · queue: CHƯA',
+    style: S.node3d + 'verticalAlign=middle;align=center;spacingLeft=0;',
     x: 760, y: 340, w: 220, h: 90,
   });
 
@@ -1762,9 +1762,11 @@ function containerDiagram() {
       'Four things this diagram states:\n' +
       '1. The API keeps NO state, so it can be replicated. Everything that used to\n' +
       '   live in process memory — cache, rate-limit counters, socket lists — is in Redis.\n' +
-      '   NOT TRUE YET: there is no Redis client in src/. CacheModule.register() and\n' +
-      '   ThrottlerModule both keep their state inside the Node process, so today the\n' +
-      '   API is stateful and the x3 above is a target, not a fact.\n' +
+      '   PARTLY TRUE NOW (Epic 4): the catalog cache IS externalisable to Redis via\n' +
+      '   REDIS_URL (single-flight + fail-open) and @keyv/redis is a dependency, so a\n' +
+      '   shared cache across replicas works. STILL IN-PROCESS: ThrottlerModule rate-\n' +
+      '   limit counters and the websocket socket lists — so the API is not yet fully\n' +
+      '   stateless and the x3 above remains a target for those two pieces.\n' +
       '2. Exactly ONE worker. Cron inside the API would run the reconciliation job\n' +
       '   three times; for a job that touches money that is a serious bug.\n' +
       '   NOT TRUE YET: TasksModule is imported by AppModule, so the cron runs inside\n' +
@@ -1779,9 +1781,12 @@ function containerDiagram() {
       '   also sells signs in twice.\n\n' +
       'Checked against the code on 14/08/2026. Red = decided, not built.\n\n' +
       'The box is now buildable. Dockerfile and docker-compose.yml exist in\n' +
-      'Zoldify_Backend, and the stack has been brought up from an empty volume and\n' +
-      'answered on /api/v1/products. Compose starts exactly what the code needs:\n' +
-      'mysql, a one-shot migrate step, and one api. No Redis, no worker.\n\n' +
+      'Zoldify_Backend; an earlier mysql+migrate+api stack was brought up from an\n' +
+      'empty volume and answered on /api/v1/products. Compose now ALSO declares a\n' +
+      'redis service and passes REDIS_URL=redis://redis:6379 to the api, so Redis\n' +
+      'backs the catalog cache (Epic 4). Honest caveat: the redis-included compose\n' +
+      'is config-verified (YAML + wiring) but NOT yet brought up — the author box\n' +
+      'has no Docker. Still no worker.\n\n' +
       'The uploads question has an answer now: compose mounts a NAMED volume at\n' +
       '/app/public/images, and a file written there survives docker compose down and\n' +
       'up — measured, not assumed. That keeps uploads across a redeploy but does not\n' +

@@ -51,11 +51,21 @@ import { LedgerModule } from '@money/ledger/ledger.module';
         const ttl = 60000;
         const url = process.env.REDIS_URL;
         if (!url) return { ttl };
-        // Specifier qua biến: TS/nest build KHÔNG resolve tĩnh gói optional này,
-        // nên máy chưa cài @keyv/redis vẫn build được (chỉ prod có REDIS_URL cần).
-        const pkg = '@keyv/redis';
-        const { createKeyv } = await import(pkg);
-        return { stores: [createKeyv(url)], ttl };
+        try {
+          // Specifier qua biến: TS/nest build KHÔNG resolve tĩnh gói optional này,
+          // nên máy chưa cài @keyv/redis vẫn build được (chỉ prod có REDIS_URL cần).
+          const pkg = '@keyv/redis';
+          const { createKeyv } = await import(pkg);
+          return { stores: [createKeyv(url)], ttl };
+        } catch (e) {
+          // REDIS_URL có nhưng KHÔNG nạp được @keyv/redis (chưa cài) hoặc lỗi tạo
+          // store → KHÔNG chặn boot: rơi về in-memory + cảnh báo. Fail-open ngay từ
+          // lúc khởi động, đồng nhất tinh thần C3 (Redis chết không được làm sập app).
+          console.warn(
+            `[cache] REDIS_URL có nhưng chưa dùng được Redis (${(e as Error).message}) — tạm dùng in-memory. Cài: npm i @keyv/redis`,
+          );
+          return { ttl };
+        }
       },
     }),
     UsersModule,
