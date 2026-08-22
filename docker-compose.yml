@@ -4,13 +4,15 @@
 #   docker compose up -d --build
 #   docker compose logs -f api
 #
-# Ba dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
-#   mysql    →  migrate (chạy một lần rồi thoát)  →  api
+# Bốn dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
+#   mysql + redis  →  migrate (chạy một lần rồi thoát)  →  api
 #
-# KHÔNG có Redis trong đây, dù `r2-container` từng vẽ. Bộ nhớ đệm hiện là
-# `CacheModule.register()` — nằm trong chính tiến trình Node. Thêm Redis vào
-# compose lúc chưa có dòng code nào nói chuyện với nó chỉ tạo ra một container
-# chạy không, và một sơ đồ nói dối.
+# CÓ Redis từ Epic 4. Trước đây cố tình KHÔNG thêm vì cache là
+# `CacheModule.register()` in-process — thêm Redis lúc không có code nói chuyện
+# với nó chỉ tạo container chạy không và một sơ đồ nói dối. Nay app.module.ts đọc
+# REDIS_URL (env-bridge) và cache catalog products đi qua nó (single-flight +
+# fail-open); @keyv/redis đã nằm trong dependencies nên image có sẵn client. Vì
+# vậy Redis giờ là thật, không còn là container trang trí.
 #
 # KHÔNG đặt `name:` ở đây — tên project truyền lúc chạy bằng cờ `-p`
 # (prod: `-p zoldify`, staging: `-p zoldify-staging`) để CÙNG một file compose
@@ -44,6 +46,24 @@ services:
     # container trong cùng mạng nói chuyện được với database.
     # ports:
     #   - '3306:3306'
+
+  # Redis chỉ làm CACHE (Epic 4). Dữ liệu cache là bỏ đi được: mất thì cache
+  # fail-open đọc lại từ MySQL. Nên tắt cả hai kiểu ghi đĩa (--save '' +
+  # --appendonly no) để Redis chạy thuần RAM, không cần volume, không lo mất dữ
+  # liệu khi tạo lại container.
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    # Không mở cổng ra máy chủ: chỉ container trong mạng compose gọi được.
+    # ports:
+    #   - '6379:6379'
 
   # Chạy migration NHƯ MỘT BƯỚC RIÊNG, không nhét vào lúc api khởi động.
   #
@@ -82,16 +102,21 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     environment:
-      # Ghi đè bốn biến này SAU env_file. Trong .env chúng trỏ vào 127.0.0.1 cho
+      # Ghi đè năm biến này SAU env_file. Trong .env chúng trỏ vào 127.0.0.1 cho
       # lúc chạy trên máy cá nhân; trong mạng của compose, `127.0.0.1` là chính
-      # container api chứ không phải MySQL.
+      # container api chứ không phải MySQL/Redis.
       DB_HOST: mysql
       DB_PORT: '3306'
       DB_USERNAME: root
       PORT: '3000'
+      # Trỏ cache vào service `redis` trong mạng nội bộ. Trong .env dev biến này
+      # để trống (in-memory); ở đây bật Redis thật cho cụm nhiều-instance.
+      REDIS_URL: redis://redis:6379
     ports:
       - '${API_PORT:-3000}:3000'
     volumes:
