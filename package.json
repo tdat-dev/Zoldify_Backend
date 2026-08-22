@@ -45,6 +45,10 @@
     "seed:orders": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-orders.ts",
     "seed:products": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-products.ts",
     "seed:bulk": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-bulk.ts",
+    "check": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-all.ts",
+    "check:core": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck.ts",
+    "check:index": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-indexes.ts",
+    "check:cache": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-cache.ts",
     "loadtest": "k6 run load-test/baseline.js"
   },
   "dependencies": {
