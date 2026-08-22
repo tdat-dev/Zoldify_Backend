@@ -40,9 +40,23 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    CacheModule.register({
+    // Cache env-bridge (12-factor: khác biệt dev/prod nằm ở CONFIG, không ở CODE).
+    //   - Có REDIS_URL  → dùng Redis qua Keyv (production trên máy chủ Linux).
+    //   - Không có       → in-memory mặc định (dev/test local, không cần Redis).
+    // @keyv/redis được import ĐỘNG, chỉ khi thật sự có REDIS_URL — nên máy không
+    // cài gói đó vẫn chạy. Trên server chạy: `npm i @keyv/redis` + đặt REDIS_URL.
+    CacheModule.registerAsync({
       isGlobal: true,
-      ttl: 60000,
+      useFactory: async () => {
+        const ttl = 60000;
+        const url = process.env.REDIS_URL;
+        if (!url) return { ttl };
+        // Specifier qua biến: TS/nest build KHÔNG resolve tĩnh gói optional này,
+        // nên máy chưa cài @keyv/redis vẫn build được (chỉ prod có REDIS_URL cần).
+        const pkg = '@keyv/redis';
+        const { createKeyv } = await import(pkg);
+        return { stores: [createKeyv(url)], ttl };
+      },
     }),
     UsersModule,
     ThrottlerModule.forRoot([

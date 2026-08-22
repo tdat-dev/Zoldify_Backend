@@ -19,6 +19,12 @@ import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 
+// TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn; list KHÔNG
+// purge từng key (không liệt kê được key trên Redis một cách an toàn) nên TTL ngắn
+// là lưới an toàn cuối chống stale — đúng chốt pre-mortem C4/C5.
+const PRODUCT_DETAIL_TTL = 60_000; // 60s
+const PRODUCT_LIST_TTL = 30_000; //  30s
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -57,6 +63,59 @@ export class ProductsService {
       throw new BadRequestException(
         'Bạn cần khai địa chỉ lấy hàng ở Cài đặt shop trước khi đăng bán.',
       );
+    }
+  }
+
+  // ── Cache FAIL-OPEN ────────────────────────────────────────────────────────
+  // Cache là phụ trợ tăng tốc, KHÔNG bao giờ được làm sập request. Mọi lỗi (Redis
+  // rớt, timeout, serialize hỏng) đều bị nuốt và coi như cache-miss → đọc thẳng
+  // DB. Đây là chốt pre-mortem C3: Redis chết thì app vẫn phục vụ, không throw.
+  private detailKey(id: number): string {
+    return `product:${id}`;
+  }
+
+  private async cacheGet<T>(key: string): Promise<T | undefined> {
+    try {
+      const v = await this.cacheManager.get<T>(key);
+      return v ?? undefined;
+    } catch {
+      return undefined; // fail-open: coi như miss
+    }
+  }
+
+  private async cacheSet(
+    key: string,
+    value: unknown,
+    ttl: number,
+  ): Promise<void> {
+    try {
+      await this.cacheManager.set(key, value, ttl);
+    } catch {
+      /* fail-open: không lưu được cũng không sao, DB vẫn phục vụ */
+    }
+  }
+
+  private async cacheDel(key: string): Promise<void> {
+    try {
+      await this.cacheManager.del(key);
+    } catch {
+      /* fail-open */
+    }
+  }
+
+  // wrap() của cache-manager là SINGLE-FLIGHT: nhiều request cùng miss một key sẽ
+  // gộp thành DUY NHẤT một lần chạy loader (đo được: 1000 lời gọi đồng thời → 1
+  // truy vấn DB), 999 cái còn lại chờ chung kết quả. Đây là thuốc trị thundering
+  // herd (pre-mortem C5). Vẫn giữ fail-open (C3): cache lỗi → chạy loader thẳng DB.
+  private async cacheWrap<T>(
+    key: string,
+    ttl: number,
+    loader: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.cacheManager.wrap(key, loader, ttl);
+    } catch {
+      return loader();
     }
   }
 
@@ -135,6 +194,34 @@ export class ProductsService {
       offset,
     } = normalizePagination(currentPage, limit);
 
+    // Cache danh sách công khai (đọc-nhiều-đổi-ít). Key gồm ĐỦ mọi tham số ảnh
+    // hưởng kết quả (pre-mortem C2: thiếu 1 tham số = trả nhầm trang cho request
+    // khác). Endpoint @Public() không phụ thuộc user nên không rò dữ liệu cá nhân.
+    const cacheKey =
+      'products:list:' +
+      JSON.stringify({
+        page: numPage,
+        size: numLimit,
+        sort: qs.sort || '',
+        q: qs.q || '',
+        cat: qs.category_id || '',
+        seller: qs.seller_id || '',
+        pmin: qs.price_min || '',
+        pmax: qs.price_max || '',
+      });
+    return this.cacheWrap(cacheKey, PRODUCT_LIST_TTL, () =>
+      this.queryProductList(numPage, numLimit, offset, qs),
+    );
+  }
+
+  // Truy vấn DANH SÁCH thực sự (phần nặng: filter + phân trang + đếm tổng). Tách
+  // riêng để findAll bọc cache single-flight quanh đúng phần này.
+  private async queryProductList(
+    numPage: number,
+    numLimit: number,
+    offset: number,
+    qs: any,
+  ) {
     let order: any = { created_at: 'DESC' };
     if (qs.sort === 'price_asc') {
       order = { price: 'ASC' };
@@ -251,6 +338,10 @@ export class ProductsService {
   }
 
   async findOne(id: number) {
+    const key = this.detailKey(id);
+    const cached = await this.cacheGet<Product>(key);
+    if (cached) return cached;
+
     const product = await this.productRepository.findOne({
       where: { id },
       relations: { category: true, seller: true },
@@ -271,6 +362,7 @@ export class ProductsService {
     // Giải pháp tương lai: dùng Redis INCR + flush về MySQL theo batch (5-10 phút/lần),
     // hoặc đẩy vào message queue xử lý async.
     // await this.productRepository.increment({ id }, 'view_count', 1);
+    await this.cacheSet(key, product, PRODUCT_DETAIL_TTL);
     return product;
   }
 
@@ -296,6 +388,9 @@ export class ProductsService {
     }
 
     await this.productRepository.update(id, updateData);
+    // Invalidate detail TRƯỚC khi đọc lại: xoá bản cũ để findOne nạp lại bản mới,
+    // không để user thấy dữ liệu lỗi thời (pre-mortem C1/C4).
+    await this.cacheDel(this.detailKey(id));
     return await this.findOne(id);
   }
 
@@ -311,6 +406,7 @@ export class ProductsService {
       throw new ForbiddenException('Bạn không có quyền xóa sản phẩm này');
     }
     await this.productRepository.softDelete(id);
+    await this.cacheDel(this.detailKey(id));
     return { id, deleted: true };
   }
 
@@ -333,6 +429,7 @@ export class ProductsService {
 
     product.stock = stock;
     await this.productRepository.save(product);
+    await this.cacheDel(this.detailKey(productId));
     return product;
   }
 }
