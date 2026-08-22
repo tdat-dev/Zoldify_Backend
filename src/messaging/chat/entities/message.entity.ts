@@ -5,13 +5,14 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
-  Index,
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
 import { User } from '@identity/users/entities/user.entity';
 
 @Entity('messages')
-@Index('idx_conversation_id', ['conversation'])
+// idx_conversation_id (1 cột) ĐÃ BỎ: thừa vì idx_conversation_created
+// (conversation_id, created_at) phủ leftmost prefix + đỡ luôn FK conversation_id.
+// Xem migration 1787200000000.
 export class Message {
   @PrimaryGeneratedColumn()
   id: number;

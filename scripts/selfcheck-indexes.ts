@@ -151,6 +151,36 @@ async function main() {
     console.log('');
   }
 
+  // ─── Phần 2: index 1-CỘT THỪA (prefix con của composite) — nợ dọn Epic 3 ────
+  // Một index (col) là THỪA khi đã có composite (col, …): composite phủ mọi truy
+  // vấn dùng leftmost prefix VÀ đỡ luôn khoá ngoại trên col, nên index 1-cột chỉ
+  // tốn thêm ghi + dung lượng. Test ĐỎ khi index thừa còn đó, XANH sau khi drop.
+  // CHỐT AN TOÀN: chỉ drop khi CHẮC CHẮN có composite phủ (nếu không, drop = làm
+  // khoá ngoại mất index đỡ → chậm cascade/insert).
+  console.log('\x1b[1m── Index 1-cột thừa (prefix con của composite) ──\x1b[0m');
+  const redundants: Array<{ table: string; col: string }> = [
+    { table: 'reviews', col: 'product_id' },
+    { table: 'messages', col: 'conversation_id' },
+  ];
+  for (const r of redundants) {
+    const idxs = await indexPrefixes(ds, r.table);
+    const hasComposite = idxs.some((cols) => cols.length > 1 && cols[0] === r.col);
+    const hasSingle = idxs.some((cols) => cols.length === 1 && cols[0] === r.col);
+    console.log(`\x1b[1m${r.table}.(${r.col})\x1b[0m`);
+    if (!hasComposite) {
+      bad(
+        `${r.table}: KHÔNG có composite bắt đầu bằng ${r.col} — KHÔNG được drop index 1-cột (FK mất index đỡ)`,
+      );
+    } else if (hasSingle) {
+      bad(
+        `${r.table}: index 1-cột (${r.col}) THỪA — đã có composite phủ; nên drop`,
+      );
+    } else {
+      ok(`${r.table}: đã dọn index 1-cột (${r.col}); composite vẫn phủ FK + truy vấn`);
+    }
+    console.log('');
+  }
+
   await ds.destroy();
 
   if (missing.length > 0) {
