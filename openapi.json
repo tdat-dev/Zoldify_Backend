@@ -2367,6 +2367,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2402,6 +2410,51 @@
                         "result"
                       ]
                     }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/shipping-quote": {
+      "post": {
+        "operationId": "OrdersController_shippingQuote_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingQuoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
@@ -2585,6 +2638,95 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/admin/settle-shipments": {
+      "post": {
+        "operationId": "OrdersController_settleShipments_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/shipments/{sellerId}/received": {
+      "patch": {
+        "operationId": "OrdersController_confirmReceived_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sellerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -2949,6 +3091,135 @@
         ]
       }
     },
+    "/api/v1/ghn/provinces": {
+      "get": {
+        "operationId": "GhnController_getProvinces_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Ghn"
+        ]
+      }
+    },
+    "/api/v1/ghn/districts": {
+      "get": {
+        "operationId": "GhnController_getDistricts_v1",
+        "parameters": [
+          {
+            "name": "province_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Ghn"
+        ]
+      }
+    },
+    "/api/v1/ghn/wards": {
+      "get": {
+        "operationId": "GhnController_getWards_v1",
+        "parameters": [
+          {
+            "name": "district_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Ghn"
+        ]
+      }
+    },
     "/api/v1/ghn/calculate-fee": {
       "post": {
         "operationId": "GhnController_calculateFee_v1",
@@ -3295,6 +3566,270 @@
         },
         "tags": [
           "Escrows"
+        ]
+      }
+    },
+    "/api/v1/payos/create-link": {
+      "post": {
+        "operationId": "PayosController_createLink_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePayosLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Tạo link thanh toán PayOS cho đơn hàng hoặc nạp ví\nPOST /payos/create-link\nbody: { type: 'order' | 'topup', order_id?: number, amount?: number }",
+        "tags": [
+          "Payos"
+        ]
+      }
+    },
+    "/api/v1/payos/order/{orderId}": {
+      "get": {
+        "operationId": "PayosController_getOrderStatus_v1",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Lấy trạng thái thanh toán theo orderId (nội bộ)\nGET /payos/order/:orderId",
+        "tags": [
+          "Payos"
+        ]
+      }
+    },
+    "/api/v1/payos/refresh/{orderId}": {
+      "get": {
+        "operationId": "PayosController_refresh_v1",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Payos"
+        ]
+      }
+    },
+    "/api/v1/payos/status/{code}": {
+      "get": {
+        "operationId": "PayosController_getPaymentLinkStatus_v1",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Lấy trạng thái payment link theo payos_order_code\nGET /payos/status/:code",
+        "tags": [
+          "Payos"
+        ]
+      }
+    },
+    "/api/v1/payos/cancel": {
+      "post": {
+        "operationId": "PayosController_cancel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelPayosLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Hủy payment link (user tự hủy từ frontend)\nPOST /payos/cancel\nbody: { payos_order_code: string }",
+        "tags": [
+          "Payos"
+        ]
+      }
+    },
+    "/api/v1/payos/webhook": {
+      "post": {
+        "operationId": "PayosController_webhook_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Webhook nhận thông báo từ PayOS\nPOST /payos/webhook (PUBLIC, không cần JWT)\nPayOS gửi raw JSON, cần verify signature",
+        "tags": [
+          "Payos"
         ]
       }
     },
@@ -3649,6 +4184,7 @@
             }
           }
         },
+        "summary": "Nạp ví thủ công — CHỈ admin.\n\nHàm `WalletsService.topup()` cộng thẳng vào sổ cái mà không đòi bằng chứng\ntiền thật đã về. Chú thích của chính nó đã nói rõ nó dành cho \"thao tác tay\ncủa admin\". Trước hôm nay route này không có guard nào, tức là nó phơi một\nhàm in tiền ra Internet.\n\nNgười dùng nạp tiền bằng PayOS: POST /payos/create-link type = topup.",
         "tags": [
           "Wallets"
         ]
@@ -5249,270 +5785,6 @@
         ]
       }
     },
-    "/api/v1/payos/create-link": {
-      "post": {
-        "operationId": "PayosController_createLink_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePayosLinkDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 201
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Tạo link thanh toán PayOS cho đơn hàng hoặc nạp ví\nPOST /payos/create-link\nbody: { type: 'order' | 'topup', order_id?: number, amount?: number }",
-        "tags": [
-          "Payos"
-        ]
-      }
-    },
-    "/api/v1/payos/order/{orderId}": {
-      "get": {
-        "operationId": "PayosController_getOrderStatus_v1",
-        "parameters": [
-          {
-            "name": "orderId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Lấy trạng thái thanh toán theo orderId (nội bộ)\nGET /payos/order/:orderId",
-        "tags": [
-          "Payos"
-        ]
-      }
-    },
-    "/api/v1/payos/refresh/{orderId}": {
-      "get": {
-        "operationId": "PayosController_refresh_v1",
-        "parameters": [
-          {
-            "name": "orderId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Payos"
-        ]
-      }
-    },
-    "/api/v1/payos/status/{code}": {
-      "get": {
-        "operationId": "PayosController_getPaymentLinkStatus_v1",
-        "parameters": [
-          {
-            "name": "code",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Lấy trạng thái payment link theo payos_order_code\nGET /payos/status/:code",
-        "tags": [
-          "Payos"
-        ]
-      }
-    },
-    "/api/v1/payos/cancel": {
-      "post": {
-        "operationId": "PayosController_cancel_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CancelPayosLinkDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Hủy payment link (user tự hủy từ frontend)\nPOST /payos/cancel\nbody: { payos_order_code: string }",
-        "tags": [
-          "Payos"
-        ]
-      }
-    },
-    "/api/v1/payos/webhook": {
-      "post": {
-        "operationId": "PayosController_webhook_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Webhook nhận thông báo từ PayOS\nPOST /payos/webhook (PUBLIC, không cần JWT)\nPayOS gửi raw JSON, cần verify signature",
-        "tags": [
-          "Payos"
-        ]
-      }
-    },
     "/sitemap.xml": {
       "get": {
         "operationId": "SitemapController_getSitemap",
@@ -6787,6 +7059,9 @@
           "name": {
             "type": "string"
           },
+          "name_en": {
+            "type": "string"
+          },
           "description": {
             "type": "string"
           },
@@ -6821,6 +7096,7 @@
         "required": [
           "id",
           "name",
+          "name_en",
           "description",
           "slug",
           "image",
@@ -7190,6 +7466,27 @@
           "shipping_address",
           "receiver_name",
           "receiver_phone"
+        ]
+      },
+      "ShippingQuoteDto": {
+        "type": "object",
+        "properties": {
+          "to_district_id": {
+            "type": "number"
+          },
+          "to_ward_code": {
+            "type": "string"
+          },
+          "cart_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "to_district_id",
+          "to_ward_code"
         ]
       },
       "Order": {
@@ -7597,6 +7894,39 @@
           "note",
           "created_at",
           "updated_at"
+        ]
+      },
+      "CreatePayosLinkDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "order",
+              "topup"
+            ]
+          },
+          "order_id": {
+            "type": "number"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 10000
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "CancelPayosLinkDto": {
+        "type": "object",
+        "properties": {
+          "payos_order_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "payos_order_code"
         ]
       },
       "CreatePaymentDto": {
@@ -8240,6 +8570,30 @@
           },
           "address": {
             "type": "string"
+          },
+          "pickup_name": {
+            "type": "string"
+          },
+          "pickup_phone": {
+            "type": "string"
+          },
+          "pickup_address": {
+            "type": "string"
+          },
+          "pickup_province_name": {
+            "type": "string"
+          },
+          "pickup_district_id": {
+            "type": "number"
+          },
+          "pickup_district_name": {
+            "type": "string"
+          },
+          "pickup_ward_code": {
+            "type": "string"
+          },
+          "pickup_ward_name": {
+            "type": "string"
           }
         },
         "required": [
@@ -8277,6 +8631,31 @@
           "address": {
             "type": "string"
           },
+          "pickup_name": {
+            "type": "string",
+            "description": "Địa chỉ LẤY HÀNG của người bán — nguồn gửi cho vận đơn GHN.\n\nZoldify là sàn C2C: mỗi người bán tự gửi hàng từ nhà mình, KHÔNG có kho\nchung của sàn. Nên \"from\" của mỗi vận đơn phải là địa chỉ này, không phải\nmột điểm gửi cố định trong biến môi trường.\n\nLưu cả ID lẫn TÊN vì GHN dùng hai kiểu ở hai chỗ:\n  · tính phí  -> cần district_id (số) + ward_code\n  · tạo đơn   -> cần from_district_name / from_ward_name / from_province_name (chữ)\nCả hai lấy được cùng lúc từ danh mục /ghn/provinces|districts|wards, nên\nchụp lại luôn để khỏi tra ngược tên<->id về sau.\n\nNullable vì shop cũ chưa khai; chưa đủ pickup thì rơi về shop GHN mặc định\ncủa sàn (GHN_SHOP_ID) — xem GhnService. Bắt buộc khai đủ trước khi bán."
+          },
+          "pickup_phone": {
+            "type": "string"
+          },
+          "pickup_address": {
+            "type": "string"
+          },
+          "pickup_province_name": {
+            "type": "string"
+          },
+          "pickup_district_id": {
+            "type": "number"
+          },
+          "pickup_district_name": {
+            "type": "string"
+          },
+          "pickup_ward_code": {
+            "type": "string"
+          },
+          "pickup_ward_name": {
+            "type": "string"
+          },
           "status": {
             "enum": [
               "active",
@@ -8304,6 +8683,14 @@
           "banner",
           "phone",
           "address",
+          "pickup_name",
+          "pickup_phone",
+          "pickup_address",
+          "pickup_province_name",
+          "pickup_district_id",
+          "pickup_district_name",
+          "pickup_ward_code",
+          "pickup_ward_name",
           "status",
           "created_at",
           "updated_at"
@@ -8332,41 +8719,32 @@
           },
           "address": {
             "type": "string"
-          }
-        }
-      },
-      "CreatePayosLinkDto": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "order",
-              "topup"
-            ]
           },
-          "order_id": {
+          "pickup_name": {
+            "type": "string"
+          },
+          "pickup_phone": {
+            "type": "string"
+          },
+          "pickup_address": {
+            "type": "string"
+          },
+          "pickup_province_name": {
+            "type": "string"
+          },
+          "pickup_district_id": {
             "type": "number"
           },
-          "amount": {
-            "type": "number",
-            "minimum": 10000
-          }
-        },
-        "required": [
-          "type"
-        ]
-      },
-      "CancelPayosLinkDto": {
-        "type": "object",
-        "properties": {
-          "payos_order_code": {
+          "pickup_district_name": {
+            "type": "string"
+          },
+          "pickup_ward_code": {
+            "type": "string"
+          },
+          "pickup_ward_name": {
             "type": "string"
           }
-        },
-        "required": [
-          "payos_order_code"
-        ]
+        }
       },
       "Setting": {
         "type": "object",
