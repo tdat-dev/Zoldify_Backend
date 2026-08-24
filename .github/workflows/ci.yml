@@ -1,0 +1,130 @@
+name: CI
+
+# Cổng chất lượng cho mọi PR (task #4 bảng phân công, hạn 11/08).
+#
+# Vì sao tách khỏi deploy.yml: deploy.yml chạy KHI ĐÃ MERGE vào staging — lúc đó
+# biết mình làm hỏng thì đã hỏng trên nhánh chung rồi. File này chạy TRƯỚC khi
+# merge, trên chính PR, nên thứ hỏng còn nằm trong nhánh của người gây ra.
+#
+# Sáu cổng theo bảng phân công: lint · boundaries · test · build · openapi:check
+# · diagrams:check. Năm cổng đầu nằm ở job `quality` và CHẶN merge. Cổng sơ đồ
+# tách ra job riêng vì lý do ghi ở đó.
+
+on:
+  pull_request:
+  push:
+    # Chỉ hai nhánh chung. Nhánh cá nhân đã được kiểm ở PR rồi; chạy thêm ở đây
+    # là trả tiền hai lần cho cùng một câu trả lời.
+    branches: [staging, main]
+  workflow_dispatch:
+
+concurrency:
+  # Đẩy 3 commit liên tiếp lên một PR thì chỉ commit cuối đáng chạy.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint · Boundaries · Build · OpenAPI · Test
+    runs-on: ubuntu-latest
+
+    services:
+      # 5 spec về tiền (ledger, escrows, payos, withdrawals, tasks) chạy trên
+      # MySQL THẬT chứ không mock — thứ chúng kiểm là SELECT ... FOR UPDATE và
+      # ràng buộc UNIQUE, mock đi thì test xanh mà không chứng minh gì (xem
+      # đầu ledger.service.spec.ts). Không có service này thì `npm test` đỏ 100%,
+      # và một CI đỏ vĩnh viễn thì cả nhóm sẽ học cách bỏ qua nó.
+      #
+      # Giá trị phải khớp mặc định TEST_DB_* trong các spec: root/testpw/zoldify_test.
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: testpw
+          MYSQL_DATABASE: zoldify_test
+        ports:
+          - 3306:3306
+        # Thiếu healthcheck thì job chạy tiếp lúc MySQL mới mở cổng nhưng chưa
+        # nhận kết nối — hỏng ngẫu nhiên, lần được lần không.
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptestpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=30s
+
+    env:
+      # Spec mặc định cổng 3307 (kịch bản docker cục bộ). Trên runner service
+      # nằm ở 3306, nên nói rõ ra đây thay vì sửa mã test cho vừa CI.
+      TEST_DB_HOST: 127.0.0.1
+      TEST_DB_PORT: '3306'
+      TEST_DB_USER: root
+      TEST_DB_PASSWORD: testpw
+      TEST_DB_NAME: zoldify_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Phải khớp deploy.yml. openapi:check so openapi.json trong git với
+          # bản sinh lại; sinh bằng Node khác phiên bản rất dễ lệch định dạng
+          # rồi CI đỏ trong khi không ai đổi API. selfcheck-ci.ts canh điều này.
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      # Bánh cóc nợ lint: 980 vấn đề cũ, chỉ được giảm.
+      #
+      # Không dùng `npm run lint` ở đây: nó là `eslint --fix`, trên runner sẽ
+      # SỬA file rồi vẫn thoát 0 — xanh giả. Cũng không chặn thẳng bằng eslint
+      # trần vì 980 vấn đề cũ làm CI đỏ vĩnh viễn, mà CI đỏ mãi thì cả nhóm học
+      # cách bỏ qua nó. Lý do đầy đủ ở đầu scripts/check-lint.mjs.
+      - name: Nợ lint không tăng
+        run: npm run lint:check
+
+      # Bánh cóc ranh giới nghiệp vụ: 28 vi phạm cũ, chỉ được giảm.
+      - name: Ranh giới nghiệp vụ
+        run: npm run boundaries:check
+
+      - name: Build
+        run: npm run build
+
+      # Hợp đồng API. Đổi DTO mà quên sinh lại openapi.json thì web và mobile
+      # đang code theo bản cũ — lỗi chỉ lộ lúc tích hợp.
+      - name: OpenAPI khớp code
+        run: npm run openapi:check
+
+      - name: Test
+        run: npm test
+
+      # Bài tự kiểm của chính workflow này. Đặt CUỐI có chủ đích: nó rẻ, và nếu
+      # ai sửa ci.yml làm hỏng hợp đồng (bỏ cổng, gõ nhầm tên script, thêm --fix
+      # vào lint) thì phải thấy lỗi thật của các cổng trên trước đã.
+      - name: Tự kiểm hợp đồng CI
+        run: npm run check:ci
+
+  diagrams:
+    name: Sơ đồ
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+
+      # drawio:check thuần JS, không cần trình duyệt — chặn thật được.
+      - name: Kiểm 20 file .drawio
+        run: npm run drawio:check
+
+      # diagrams:check dùng @mermaid-js/mermaid-cli, kéo theo Chromium. Trên
+      # runner sạch nó hay hỏng vì thiếu thư viện hệ thống, và chạy mất vài phút.
+      # Để nó CHẶN thì cả nhóm bị kẹt vì một thứ không liên quan tới mã sản phẩm.
+      #
+      # Nên: chạy để còn thấy, nhưng không chặn. Đây là NỢ có ý thức — gỡ
+      # continue-on-error khi đã cài đủ deps hệ thống và thấy nó xanh vài lần.
+      - name: Sinh lại sơ đồ mermaid (không chặn)
+        run: npm run diagrams:check
+        continue-on-error: true
