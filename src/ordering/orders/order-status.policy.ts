@@ -53,7 +53,9 @@ const RULES: Record<OrderStatus, TransitionRule> = {
   },
   [OrderStatus.SHIPPING]: {
     from: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING],
-    actors: [OrderActor.SELLER, OrderActor.ADMIN],
+    // GHN-driven: chỉ hệ thống/admin (poll GHN hoặc giả lập sandbox) đặt "Đang
+    // giao" — người bán KHÔNG tự bấm, vì trạng thái này đến từ tracking GHN.
+    actors: [OrderActor.ADMIN],
   },
   [OrderStatus.DELIVERED]: {
     from: [OrderStatus.SHIPPING],

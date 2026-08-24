@@ -89,6 +89,17 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ResponseMessage("Gia lap trang thai GHN thanh cong")
+  @Patch(":id/sim-ghn")
+  simGhn(
+    @Param("id") id: string,
+    @Body() body: { phase: "shipping" | "delivered" },
+    @User() user: IUser,
+  ) {
+    return this.ordersService.simulateGhnStatus(+id, body.phase, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @ResponseMessage('Chạy chốt vận đơn thành công')
   @Post('admin/settle-shipments')
   settleShipments(@User() user: IUser) {

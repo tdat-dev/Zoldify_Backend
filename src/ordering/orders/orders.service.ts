@@ -579,6 +579,60 @@ export class OrdersService {
   }
 
   /**
+   * SANDBOX: gia lap GHN day trang thai van don (GHN dev khong co shipper that).
+   * Chi chay tren host GHN dev. phase "shipping" = GHN da lay hang/dang giao ->
+   * don sang "Dang giao" (KHONG do nguoi ban bam). phase "delivered" = GHN giao
+   * toi cua -> danh dau van don DELIVERED (nguoi mua xac nhan / he thong tu chot).
+   */
+  async simulateGhnStatus(
+    orderId: number,
+    phase: "shipping" | "delivered",
+    user: IUser,
+  ) {
+    const ghnHost = (process["env"]["GHN_HOST"] as string) ?? "";
+    if (!ghnHost.includes("dev-online-gateway")) {
+      throw new BadRequestException("Gia lap GHN chi dung o moi truong sandbox");
+    }
+    const { order, actors } = await this.findOneForActor(orderId, user);
+    if (
+      !actors.includes(OrderActor.SELLER) &&
+      !actors.includes(OrderActor.ADMIN)
+    ) {
+      throw new ForbiddenException(
+        "Chi nguoi ban cua don hoac admin moi gia lap GHN",
+      );
+    }
+
+    if (phase === "shipping") {
+      if (
+        order.status !== OrderStatus.CONFIRMED &&
+        order.status !== OrderStatus.PROCESSING
+      ) {
+        throw new BadRequestException(
+          "Chi gia lap dang giao cho don da xac nhan hoac dang chuan bi",
+        );
+      }
+      order.status = OrderStatus.SHIPPING;
+      await this.orderRepository.save(order);
+      return { order_id: order.id, status: order.status };
+    }
+
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id: orderId } },
+    });
+    const now = new Date();
+    for (const s of shipments) {
+      if (s.status === ShipmentStatus.CREATED) {
+        s.status = ShipmentStatus.DELIVERED;
+        s.delivered_at = now;
+        await this.shipmentRepository.save(s);
+      }
+    }
+    return { order_id: order.id, delivered_shipments: shipments.length };
+  }
+
+
+  /**
    * Chạy tay lượt chốt vận đơn (đồng bộ GHN + tự xác nhận) — cho admin/ops khi
    * cần chốt ngay thay vì chờ cron hàng giờ. Cùng logic với job định kỳ.
    */
