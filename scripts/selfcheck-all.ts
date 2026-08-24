@@ -11,6 +11,10 @@ import { spawnSync } from 'child_process';
 import * as path from 'path';
 
 const suites: Array<{ name: string; file: string }> = [
+  // Đặt ĐẦU vì đây là suite duy nhất KHÔNG cần database: nó chỉ đọc ci.yml và
+  // package.json. Hỏng cấu hình thì biết ngay trong một giây, không phải đợi
+  // ba suite database chạy xong mới lộ.
+  { name: 'Task #4 — hợp đồng CI (không cần DB)', file: 'selfcheck-ci.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },

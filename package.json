@@ -13,6 +13,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint:check": "node scripts/check-lint.mjs",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -49,6 +50,7 @@
     "check:core": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck.ts",
     "check:index": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-indexes.ts",
     "check:cache": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-cache.ts",
+    "check:ci": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-ci.ts",
     "loadtest": "k6 run load-test/baseline.js"
   },
   "dependencies": {
@@ -122,6 +124,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
+    "js-yaml": "^5.3.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
