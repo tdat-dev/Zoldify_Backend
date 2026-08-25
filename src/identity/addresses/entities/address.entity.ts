@@ -55,6 +55,17 @@ export class Address {
   @Column({ type: 'varchar', length: 255 })
   street: string;
 
+  // Mã GHN để tính phí ship — lưu lúc thêm địa chỉ (form đã có sẵn). Nullable:
+  // địa chỉ cũ chưa có mã, checkout sẽ bắt chọn lại khi thiếu. ward là CHUỖI.
+  @Column({ type: 'int', nullable: true })
+  ghn_province_id: number;
+
+  @Column({ type: 'int', nullable: true })
+  ghn_district_id: number;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  ghn_ward_code: string;
+
   @Column({ type: 'tinyint', width: 1, default: 0 })
   is_default: boolean;
 

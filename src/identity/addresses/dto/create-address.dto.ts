@@ -1,4 +1,10 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateAddressDto {
   @IsString()
@@ -28,6 +34,18 @@ export class CreateAddressDto {
   @IsString()
   @IsNotEmpty({ message: 'Địa chỉ chi tiết không được để trống' })
   street: string;
+
+  @IsInt()
+  @IsOptional()
+  ghn_province_id?: number;
+
+  @IsInt()
+  @IsOptional()
+  ghn_district_id?: number;
+
+  @IsString()
+  @IsOptional()
+  ghn_ward_code?: string;
 
   @IsBoolean()
   @IsOptional()
@@ -62,6 +80,18 @@ export class UpdateAddressDto {
   @IsString()
   @IsOptional()
   street?: string;
+
+  @IsInt()
+  @IsOptional()
+  ghn_province_id?: number;
+
+  @IsInt()
+  @IsOptional()
+  ghn_district_id?: number;
+
+  @IsString()
+  @IsOptional()
+  ghn_ward_code?: string;
 
   @IsBoolean()
   @IsOptional()

@@ -183,7 +183,15 @@ export class AuthController {
     @User() user: IUser,
     @Body('full_name') full_name?: string,
     @Body('avatar') avatar?: string,
+    @Body('phone_number') phone_number?: string,
+    @Body('gender') gender?: string,
   ) {
-    return this.authService.updateProfile(user.id, full_name, avatar);
+    return this.authService.updateProfile(
+      user.id,
+      full_name,
+      avatar,
+      phone_number,
+      gender,
+    );
   }
 }

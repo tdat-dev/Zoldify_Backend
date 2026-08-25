@@ -243,16 +243,31 @@ export class AuthService {
     return { message: 'Thay đổi mật khẩu thành công' };
   }
 
-  async updateProfile(userId: number, full_name?: string, avatar?: string) {
+  async updateProfile(
+    userId: number,
+    full_name?: string,
+    avatar?: string,
+    phone_number?: string,
+    gender?: string,
+  ) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
 
     // Cập nhật CÓ CHỌN LỌC: chỉ đụng field được gửi lên, để đổi avatar không
     // vô tình xoá tên và ngược lại.
-    const patch: { full_name?: string; avatar?: string } = {};
+    const patch: {
+      full_name?: string;
+      avatar?: string;
+      phone_number?: string;
+      gender?: string;
+    } = {};
     if (typeof full_name === 'string' && full_name.trim())
       patch.full_name = full_name.trim();
     if (typeof avatar === 'string') patch.avatar = avatar;
+    // phone/gender cho phép chuỗi rỗng = xoá field (khác full_name bắt buộc).
+    if (typeof phone_number === 'string')
+      patch.phone_number = phone_number.trim();
+    if (typeof gender === 'string') patch.gender = gender;
     if (Object.keys(patch).length)
       await this.userRepository.update(userId, patch);
 
@@ -262,6 +277,8 @@ export class AuthService {
       email: user.email,
       role: user.role,
       avatar: patch.avatar ?? user.avatar,
+      phone_number: patch.phone_number ?? user.phone_number,
+      gender: patch.gender ?? user.gender,
     };
   }
 }
