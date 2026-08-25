@@ -185,6 +185,10 @@ export class ProductsService {
         qb.andWhere('product.price <= :pmax', { pmax: Number(qs.price_max) });
       }
 
+      if (qs.condition) {
+        qb.andWhere('product.condition = :cond', { cond: String(qs.condition) });
+      }
+
       const orderField = Object.keys(order)[0];
       const orderDir = order[orderField];
       qb.orderBy(`product.${orderField}`, orderDir);
@@ -201,6 +205,9 @@ export class ProductsService {
       }
       if (qs.seller_id) {
         where.seller = { id: Number(qs.seller_id) };
+      }
+      if (qs.condition) {
+        where.condition = String(qs.condition);
       }
       if (qs.price_min || qs.price_max) {
         const min = qs.price_min ? Number(qs.price_min) : 0;
