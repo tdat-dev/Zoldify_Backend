@@ -62,7 +62,7 @@ export class AuthController {
   @Get('profile')
   @ResponseMessage('Lấy thông tin cá nhân thành công')
   getProfile(@Req() req) {
-    return req.user;
+    return this.authService.getProfile(req.user.id);
   }
 
   @Public()

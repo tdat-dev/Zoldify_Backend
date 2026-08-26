@@ -243,6 +243,25 @@ export class AuthService {
     return { message: 'Thay đổi mật khẩu thành công' };
   }
 
+  /**
+   * Hồ sơ đầy đủ để màn "Sửa hồ sơ" điền sẵn. JWT payload chỉ có
+   * id/full_name/email/role, thiếu avatar/phone/gender — nên đọc thẳng từ DB.
+   */
+  async getProfile(userId: number) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Người dùng không tồn tại');
+    return {
+      id: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      phone_number: user.phone_number,
+      gender: user.gender,
+      email_verified: user.email_verified,
+    };
+  }
+
   async updateProfile(
     userId: number,
     full_name?: string,
