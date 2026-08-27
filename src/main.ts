@@ -14,6 +14,7 @@ import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
 import compression from 'compression';
+import { RedisIoAdapter } from './common/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -87,6 +88,27 @@ async function bootstrap() {
     swaggerOptions: { persistAuthorization: true },
   });
 
+  // Socket.IO qua Redis khi chay nhieu ban api (task #5).
+  //
+  // Khong co REDIS_URL thi bo qua hoan toan: socket chay y nhu truoc, mot
+  // tien trinh, khong can Redis. Do la kich ban may dev.
+  //
+  // Dat TRUOC app.listen() vi adapter phai co mat luc server socket duoc dung.
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    try {
+      const wsAdapter = new RedisIoAdapter(app);
+      await wsAdapter.ketNoiRedis(redisUrl);
+      app.useWebSocketAdapter(wsAdapter);
+    } catch (e) {
+      // Fail-open dong nhat voi cache va throttler: Redis chua san sang thi
+      // KHONG chan boot. Socket ve che do mot tien trinh, ghi ro ra day de
+      // nguoi doc log biet cum dang chay o che do suy giam chu khong doan.
+      console.warn(
+        `[socket] chưa bật được adapter Redis (${(e as Error).message}) — chạy chế độ một tiến trình`,
+      );
+    }
+  }
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`🚀 Backend running on http://localhost:${port}`);
