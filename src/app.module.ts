@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import Redis from 'ioredis';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { ThrottlerStorageFailOpen } from './common/throttler-fail-open';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
@@ -69,11 +72,52 @@ import { LedgerModule } from '@money/ledger/ledger.module';
       },
     }),
     UsersModule,
-    ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 10 },
-      { name: 'medium', ttl: 10000, limit: 50 },
-      { name: 'long', ttl: 60000, limit: 300 },
-    ]),
+    // Throttler đếm CHUNG qua Redis (task #5).
+    //
+    // Trước đây `forRoot` không khai `storage`, nên mỗi tiến trình api đếm
+    // riêng trong RAM. Với 3 bản api, giới hạn "10 request/giây" thật ra là 30
+    // — và không có lỗi nào được ném ra để ai biết điều đó. Rate limit vẫn
+    // trông như đang hoạt động. Đó là kiểu hỏng chỉ lộ ra khi có người thật sự
+    // cố lạm dụng, tức là lúc muộn nhất.
+    //
+    // Cùng quy ước env-bridge với cache ngay bên trên: có REDIS_URL thì dùng
+    // Redis, không có thì giữ nguyên in-memory. Máy dev không cần Redis.
+    ThrottlerModule.forRootAsync({
+      useFactory: () => {
+        const throttlers = [
+          { name: 'short', ttl: 1000, limit: 10 },
+          { name: 'medium', ttl: 10000, limit: 50 },
+          { name: 'long', ttl: 60000, limit: 300 },
+        ];
+        const url = process.env.REDIS_URL;
+        if (!url) return { throttlers };
+
+        // Tự tạo client thay vì đưa URL cho thư viện, vì hai tuỳ chọn dưới đây
+        // quyết định app sống hay chết khi Redis hỏng:
+        //
+        //   enableOfflineQueue: false — mặc định ioredis XẾP HÀNG lệnh khi mất
+        //     kết nối và chờ. Với throttler, nghĩa là mọi request treo cho tới
+        //     khi Redis trở lại. Tắt đi thì lệnh hỏng ngay, và lớp fail-open
+        //     bên dưới cho request đi tiếp. Hỏng nhanh tốt hơn treo lâu.
+        //   .on('error') — client ioredis không có listener 'error' sẽ ném lỗi
+        //     chưa bắt và giết cả tiến trình Node.
+        const client = new Redis(url, {
+          enableOfflineQueue: false,
+          maxRetriesPerRequest: 1,
+        });
+        client.on('error', () => {
+          // Nuốt ở đây có chủ đích: ThrottlerStorageFailOpen đã ghi log có
+          // tiết chế. Ghi thêm ở đây là ngập log đúng lúc đang có sự cố.
+        });
+
+        return {
+          throttlers,
+          storage: new ThrottlerStorageFailOpen(
+            new ThrottlerStorageRedisService(client),
+          ),
+        };
+      },
+    }),
     TypeOrmModule.forRootAsync({
       useFactory: (configService: ConfigService) => ({
         type: 'mysql',

@@ -287,6 +287,35 @@ async function kiemChay(): Promise<void> {
     bad(`throttler storage lỗi: ${(e as Error).message}`);
   }
 
+  // ── Redis chết KHÔNG được kéo sập API ────────────────────────────────────
+  //
+  // Kiểm này thêm sau, và đó là một thiếu sót đáng ghi lại: pre-mortem đã nêu
+  // R1 "throttler gọi storage ở MỌI request, storage ném lỗi là mọi request
+  // 500", nhưng bài test viết trước lại không kiểm nó. Nghĩa là bài test có
+  // thể xanh trọn vẹn trong khi rủi ro nghiêm trọng nhất của cả task vẫn còn
+  // nguyên. Dự đoán được rủi ro chưa đủ — phải mã hoá nó thành phép đo.
+  console.log('\n\x1b[1m— 7. CHẠY THẬT: Redis chết thì request vẫn đi qua —\x1b[0m');
+  try {
+    const {
+      ThrottlerStorageFailOpen,
+    } = require('../src/common/throttler-fail-open');
+    const storageHong = {
+      increment: () => Promise.reject(new Error('Redis giả vờ chết')),
+    };
+    const boc = new ThrottlerStorageFailOpen(storageHong);
+    const r = await boc.increment('bat-ky', 1000, 10, 0, 'short');
+    r.totalHits === 0 && r.isBlocked === false
+      ? ok('storage ném lỗi → lớp bọc cho request đi qua, không ném lên guard')
+      : bad(
+          `lớp bọc trả ${JSON.stringify(r)} — guard sẽ chặn hoặc ném, tức là ` +
+            `Redis chết sẽ làm mọi request 500`,
+        );
+  } catch (e) {
+    bad(
+      `Redis chết SẼ KÉO SẬP API: lớp bọc ném lỗi ra ngoài (${(e as Error).message})`,
+    );
+  }
+
   dong();
 }
 
