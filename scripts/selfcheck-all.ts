@@ -15,6 +15,10 @@ const suites: Array<{ name: string; file: string }> = [
   // package.json. Hỏng cấu hình thì biết ngay trong một giây, không phải đợi
   // ba suite database chạy xong mới lộ.
   { name: 'Task #4 — hợp đồng CI (không cần DB)', file: 'selfcheck-ci.ts' },
+  // Cũng không cần database — chỉ đọc file, chỉ mục git, và chạy thử phần dọn
+  // file cũ trên một thư mục giả. Đặt ngay sau CI vì cùng tính chất: rẻ, và
+  // hỏng thì phải biết trước khi đợi ba suite database.
+  { name: 'Task #24/#25 — backup + khôi phục (không cần DB)', file: 'selfcheck-backup.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
