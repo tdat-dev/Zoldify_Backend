@@ -15,6 +15,10 @@ const suites: Array<{ name: string; file: string }> = [
   // package.json. Hỏng cấu hình thì biết ngay trong một giây, không phải đợi
   // ba suite database chạy xong mới lộ.
   { name: 'Task #4 — hợp đồng CI (không cần DB)', file: 'selfcheck-ci.ts' },
+  // Cần Redis (không cần MySQL). Đặt ngay sau CI vì cùng nhóm hạ tầng, và vì
+  // nó dựng hai server socket thật nên hỏng ở đây là hỏng thứ rất đáng biết
+  // trước khi chạy ba suite database.
+  { name: 'Task #5 — trạng thái dùng chung qua Redis', file: 'selfcheck-redis-state.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
