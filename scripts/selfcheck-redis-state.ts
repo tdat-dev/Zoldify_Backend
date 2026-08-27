@@ -34,7 +34,7 @@
  * và storage — thật sự chia sẻ trạng thái qua Redis, cộng với phần đọc file để
  * chắc rằng app.module và gateway CÓ nối vào đúng thứ đã chứng minh ở trên.
  */
-import { spawnSync } from 'child_process';
+
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -139,15 +139,33 @@ function kiemTinh(): void {
     : bad('không thấy fetchSockets() — presence vẫn cục bộ');
 
   // Adapter phải được gắn ở tầng khởi động, không phải trong gateway.
-  const coAdapter = spawnSync(
-    'git',
-    ['grep', '-l', 'createAdapter', '--', 'src/'],
-    { cwd: ROOT, encoding: 'utf8' },
-  );
-  const noiGan = (coAdapter.stdout ?? '').trim();
-  noiGan
-    ? ok(`adapter Redis được gắn ở: ${noiGan.split('\n').join(', ')}`)
+  //
+  // Quét hệ thống tệp chứ KHÔNG dùng `git grep`: git grep chỉ tìm trong file đã
+  // được git theo dõi, nên một file mới viết xong mà chưa `git add` thì nó báo
+  // "không tìm thấy" — bài test đỏ trong khi mã hoàn toàn đúng. Đã dính đúng
+  // bẫy này một lần với chính redis-io.adapter.ts.
+  const timTrongSrc = (chuoi: string): string[] => {
+    const hit: string[] = [];
+    const di = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) di(p);
+        else if (e.name.endsWith('.ts') && doc(p).includes(chuoi))
+          hit.push(path.relative(ROOT, p));
+      }
+    };
+    di(path.join(ROOT, 'src'));
+    return hit;
+  };
+
+  const noiGan = timTrongSrc('createAdapter');
+  noiGan.length > 0
+    ? ok(`adapter Redis được gắn ở: ${noiGan.join(', ')}`)
     : bad('không nơi nào gọi createAdapter — socket vẫn chỉ nói chuyện trong một tiến trình');
+
+  timTrongSrc('useWebSocketAdapter').length > 0
+    ? ok('adapter được đăng ký vào app lúc khởi động')
+    : bad('có createAdapter nhưng không ai gọi useWebSocketAdapter — adapter không được dùng');
 
   console.log('\n\x1b[1m— 4. CI có Redis để chạy bài test này —\x1b[0m');
   const ci = doc(CI);
