@@ -122,7 +122,7 @@ Ba luật giữ cho việc này không vỡ:
 **Ranh giới trong backend do máy canh.** `eslint-plugin-boundaries` chặn `ordering`
 gọi thẳng repository của `money`. Nếu B lỡ tay import `LedgerAccount` vào
 `orders.service.ts`, CI sẽ đỏ chứ không cần ai đi review bắt lỗi. Mốc hiện tại là
-**29 vi phạm cũ**, chỉ được giảm, không được tăng.
+**28 vi phạm cũ**, chỉ được giảm, không được tăng.
 
 ---
 
