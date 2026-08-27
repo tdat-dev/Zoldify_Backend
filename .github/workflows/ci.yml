@@ -52,6 +52,20 @@ jobs:
           --health-retries=12
           --health-start-period=30s
 
+      # Bài tự kiểm task #5 dựng HAI server socket.io và HAI storage throttler
+      # rồi bắt chúng nhìn thấy nhau qua Redis. Không có service này thì nó
+      # không chứng minh được gì — mà thứ nó chứng minh chính là loại lỗi chỉ
+      # xuất hiện khi có bản api thứ hai, tức là chỉ xuất hiện trên production.
+      redis:
+        image: redis:7
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=3s
+          --health-retries=12
+
     env:
       # Spec mặc định cổng 3307 (kịch bản docker cục bộ). Trên runner service
       # nằm ở 3306, nên nói rõ ra đây thay vì sửa mã test cho vừa CI.
@@ -60,6 +74,9 @@ jobs:
       TEST_DB_USER: root
       TEST_DB_PASSWORD: testpw
       TEST_DB_NAME: zoldify_test
+      # Cùng lý do như TEST_DB_PORT: cục bộ dùng 6380 để không đụng Redis dev
+      # ở 6379, và trên runner cũng ánh xạ ra 6380 cho khớp.
+      TEST_REDIS_URL: redis://127.0.0.1:6380
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +114,12 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Trạng thái dùng chung qua Redis (task #5). Đặt sau `npm test` vì nó
+      # dựng server socket thật và mở cổng — nếu có gì hỏng ở tầng dưới thì
+      # phải thấy lỗi thật của tầng đó trước.
+      - name: Trạng thái dùng chung qua Redis
+        run: npm run check:redis
 
       # Bài tự kiểm của chính workflow này. Đặt CUỐI có chủ đích: nó rẻ, và nếu
       # ai sửa ci.yml làm hỏng hợp đồng (bỏ cổng, gõ nhầm tên script, thêm --fix
