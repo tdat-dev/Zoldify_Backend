@@ -106,6 +106,27 @@ SQL="$BACKUP_ABS/zoldify-$DB_NAME-$STAMP.sql"
 cd "$COMPOSE_DIR"
 log "cụm=$PROJECT database=$DB_NAME đích=$SQL.gz"
 
+# Dọn file dump dở dang trong MỌI đường thoát.
+#
+# Vì sao cần trap thay vì chỉ `rm -f` ở nhánh lỗi bên dưới: `>"$SQL"` tạo file
+# ngay lúc shell dựng chuyển hướng, TRƯỚC khi mysqldump chạy một byte nào. Nếu
+# lệnh dump hỏng (sai cụm, container chết, hết đĩa) thì `set -e` giết script
+# ngay tại dòng đó — chưa kịp tới đoạn kiểm-và-xoá — và để lại một file .sql
+# 0 byte nằm trong thư mục backup. Đúng thứ script này sinh ra để chống.
+#
+# Bẫy này lộ ra lúc đo mã thoát: trỏ backup vào một cụm không tồn tại, script
+# thoát mã 1 đúng như mong đợi, nhưng thư mục backup mọc thêm một file rỗng.
+# Không có bước đo ấy thì nó đã lên VPS.
+#
+# Lúc thành công, gzip đã đổi $SQL thành $SQL.gz nên trap không thấy gì để xoá.
+don_dep() {
+  if [ -f "$SQL" ]; then
+    log "dọn file dump dở dang: $SQL"
+    rm -f "$SQL"
+  fi
+}
+trap don_dep EXIT
+
 # ── Dump ────────────────────────────────────────────────────────────────────
 #
 # --single-transaction : chụp nhất quán bằng ảnh MVCC của InnoDB, KHÔNG khoá

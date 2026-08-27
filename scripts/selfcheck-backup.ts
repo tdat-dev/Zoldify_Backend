@@ -268,6 +268,17 @@ function main(): void {
     ? ok('dump không đạt thì bị xoá, không để lại file giả')
     : bad('dump hỏng không bị xoá — sẽ nằm đó giả làm backup thật');
 
+  // Kiểm này được thêm SAU khi lỗi đã xảy ra thật, để nó không quay lại.
+  //
+  // `>"$SQL"` tạo file ngay lúc dựng chuyển hướng, trước khi mysqldump chạy.
+  // Dump hỏng → `set -e` giết script tại chính dòng đó, không bao giờ tới được
+  // nhánh `rm -f` ở trên, và để lại file .sql 0 byte trong thư mục backup.
+  // Chỉ có `trap ... EXIT` dọn được đường thoát ấy.
+  /trap\s+\w+\s+EXIT|trap\s+'[^']*'\s+EXIT/.test(backupCode)
+    ? ok('có trap EXIT — dump hỏng giữa chừng không để lại file rỗng')
+    : bad(
+        'THIẾU trap EXIT — dump hỏng sẽ để lại file .sql 0 byte giả làm backup',
+      );
 
   // ── 5. Retention: CHẠY THẬT, không đọc (R5) ─────────────────────────────
   //
