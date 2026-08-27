@@ -74,3 +74,9 @@ docs/system-design/exports/
 # Khong commit: day la anh nguon ngoai chua ra ban quyen, dung cho du lieu gia —
 # de vao repo cua mot san thuong mai la ruoc rui ro phap ly.
 public/media/demo/
+
+# Bản dump database. KHÔNG BAO GIỜ được vào git: một bản dump production
+# chứa email thật, hash mật khẩu và toàn bộ sổ cái tiền. Lọt vào lịch sử repo
+# thì xoá file đi cũng không sạch, phải viết lại lịch sử.
+/backups/
+*.sql.gz
