@@ -51,6 +51,7 @@
     "check:index": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-indexes.ts",
     "check:cache": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-cache.ts",
     "check:ci": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-ci.ts",
+    "check:backup": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-backup.ts",
     "loadtest": "k6 run load-test/baseline.js"
   },
   "dependencies": {
