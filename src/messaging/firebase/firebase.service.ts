@@ -59,6 +59,43 @@ export class FirebaseService implements OnModuleInit {
     this.logger.log(`Firebase da khoi tao tu ${accountPath}`);
   }
 
+  /**
+   * Gửi push FCM tới nhiều thiết bị. Trả về mảng token KHÔNG còn hợp lệ (đã gỡ
+   * app / token hết hạn) để caller tự dọn khỏi DB. `data` phải toàn chuỗi (yêu
+   * cầu của FCM) — caller stringify sẵn. Nuốt lỗi mềm: thất bại gửi không được
+   * làm hỏng luồng tạo thông báo.
+   */
+  async sendPush(
+    tokens: string[],
+    payload: { title: string; body: string; data?: Record<string, string> },
+  ): Promise<string[]> {
+    if (!this.initialized || tokens.length === 0) return [];
+    try {
+      const res = await admin.messaging().sendEachForMulticast({
+        tokens,
+        notification: { title: payload.title, body: payload.body },
+        data: payload.data ?? {},
+        android: { priority: 'high' },
+      });
+      // Thu các token chết để caller xoá (không còn nhận được nữa).
+      const dead: string[] = [];
+      res.responses.forEach((r, i) => {
+        const code = r.error?.code;
+        if (
+          code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-registration-token' ||
+          code === 'messaging/invalid-argument'
+        ) {
+          dead.push(tokens[i]);
+        }
+      });
+      return dead;
+    } catch (e) {
+      this.logger.warn(`Gui push that bai: ${(e as Error).message}`);
+      return [];
+    }
+  }
+
   async verifyIdToken(idToken: string) {
     if (!this.initialized) {
       throw new UnauthorizedException('Firebase chưa được cấu hình');
