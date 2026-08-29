@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JobsModule } from '@ops/jobs/jobs.module';
+import { cacheConfig } from './common/cache.config';
 
 /**
  * Module gốc của TIẾN TRÌNH WORKER. Song song với AppModule, không phải con nó.
@@ -22,6 +24,21 @@ import { JobsModule } from '@ops/jobs/jobs.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+
+    // Worker cũng cần CACHE_MANAGER.
+    //
+    // Không phải để đọc nhanh — mà vì đồ thị phụ thuộc bắt phải có: JobsModule
+    // → TasksModule → OrdersModule → ProductsModule, và `ProductsService`
+    // `@Inject(CACHE_MANAGER)`. Thiếu nó thì Nest không dựng nổi worker.
+    //
+    // Đây là lỗi đã dính thật khi làm task #14 và bài tự kiểm 26 mục KHÔNG bắt
+    // được: nó hỏi "worker.ts có tồn tại không", không hỏi "worker có dựng
+    // được không". Chỉ tới lúc chạy `node dist/worker` mới lộ. Nay
+    // selfcheck-worker.ts dựng WorkerModule thật để lỗi này không tái diễn.
+    //
+    // Dùng CHUNG cấu hình với API (cùng Redis) chứ không cấp cache riêng — lý
+    // do ghi trong src/common/cache.config.ts.
+    CacheModule.registerAsync({ isGlobal: true, useFactory: cacheConfig }),
 
     // Cấu hình database chép từ AppModule chứ không tách ra file chung.
     //
