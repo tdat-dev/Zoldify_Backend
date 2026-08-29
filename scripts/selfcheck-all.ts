@@ -17,7 +17,7 @@ const suites: Array<{ name: string; file: string }> = [
   { name: 'Task #4 — hợp đồng CI (không cần DB)', file: 'selfcheck-ci.ts' },
   // Cần Redis chứ KHÔNG cần database. Đặt ngay sau suite CI vì cùng loại: hỏng
   // là hỏng cấu hình, biết sớm hơn ba suite database phía dưới.
-  { name: 'Task #14 — worker tách khỏi API (cần Redis)', file: 'selfcheck-worker.ts' },
+  { name: 'Task #14 — worker tách khỏi API (cần Redis + DB)', file: 'selfcheck-worker.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },

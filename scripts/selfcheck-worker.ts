@@ -31,7 +31,8 @@
  * Câu 2 phải chạy thật vì đây đúng là thứ không đọc mã mà biết được. Một hàng
  * đợi cấu hình sai vẫn "trông như" hàng đợi.
  *
- * KHÔNG có Redis thì bài test này FAIL, không SKIP. Một bài kiểm tự tắt khi
+ * Phần động cần Redis THẬT và MySQL THẬT (mục cuối dựng nguyên WorkerModule).
+ * Thiếu thì bài test này FAIL, không SKIP. Một bài kiểm tự tắt khi
  * thiếu hạ tầng là bài kiểm luôn xanh, và bộ tự kiểm nào luôn xanh thì cả nhóm
  * học cách bỏ qua nó — đúng lý do đã ghi ở đầu selfcheck-ci.ts.
  */
@@ -40,6 +41,14 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
+import { NestFactory } from '@nestjs/core';
+
+// Nạp tĩnh chứ không `await import('../src/worker.module')`: script này chạy
+// bằng ts-node ở chế độ CommonJS, mà `import()` động thì đi đường ESM và Node
+// không giải được đuôi .ts qua đường đó ("Cannot find module ... imported
+// from"). Cùng họ với chính con bug dual-package mà task này vừa sửa trong
+// src/common/cache.config.ts.
+import { WorkerModule } from '../src/worker.module';
 
 import {
   TEN_HANG_DOI,
@@ -383,6 +392,59 @@ async function phanDong() {
       ')',
   );
   await wLoi.close();
+
+  // WORKER CÓ DỰNG ĐƯỢC THẬT KHÔNG.
+  //
+  // Mục này thêm SAU, vì thiếu nó bài test đã xanh 26/26 trong khi
+  // `node dist/worker` chết ngay dòng đầu:
+  //
+  //   Nest can't resolve dependencies of the ProductsService (…, ?).
+  //   Make sure "CACHE_MANAGER" at index [4] is available in ProductsModule.
+  //
+  // Mọi mục tĩnh phía trên đều hỏi những câu ĐỌC MÃ LÀ TRẢ LỜI ĐƯỢC: file có
+  // tồn tại không, có nạp AppModule không, compose có khai service không.
+  // Không câu nào hỏi câu quan trọng nhất — "dựng lên có sống không". Và một
+  // worker không dựng được thì mọi thứ ở trên đều đúng mà vô nghĩa.
+  //
+  // Nên mục này dựng WorkerModule THẬT. Nó cần cả MySQL lẫn Redis, tức bài
+  // kiểm đắt hơn trước; đổi lại nó bắt được đúng loại lỗi mà bài kiểm rẻ hơn
+  // không bao giờ thấy.
+  process.env.DB_HOST = process.env.TEST_DB_HOST ?? '127.0.0.1';
+  process.env.DB_PORT = process.env.TEST_DB_PORT ?? '3307';
+  process.env.DB_USERNAME = process.env.TEST_DB_USER ?? 'root';
+  process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD ?? 'testpw';
+  process.env.DB_DATABASE = process.env.TEST_DB_NAME ?? 'zoldify_test';
+  process.env.REDIS_URL = REDIS_URL;
+
+  let loiDung = '';
+  try {
+    // `abortOnError: false` là BẮT BUỘC ở đây. Mặc định Nest tự kết liễu tiến
+    // trình khi dựng hỏng thay vì ném — và promise thì không bao giờ giải
+    // quyết, nên `try/catch` này ngồi đợi mãi. Đã dính: cho TEST_DB_PORT sai
+    // thì bài kiểm đứng hình quá 100 giây thay vì in FAIL.
+    const app = await NestFactory.createApplicationContext(WorkerModule, {
+      logger: false,
+      abortOnError: false,
+    });
+    await app.close();
+  } catch (e) {
+    loiDung = (e as Error).message.split('\n')[0];
+  }
+  kiem(
+    loiDung === '',
+    'WorkerModule dựng được thật (Nest + TypeORM + BullMQ)' +
+      (loiDung ? ` — ${loiDung}` : ''),
+  );
+
+  // Dọn lịch mà lần dựng thật vừa ghi vào hàng đợi SẢN PHẨM.
+  //
+  // Xoá đúng những id mình biết chứ không `obliterate` cả hàng đợi: lỡ ai đó
+  // trỏ TEST_REDIS_URL vào Redis thật thì obliterate là xoá sạch job đang chờ.
+  const qThat = new Queue(TEN_HANG_DOI, { connection: conn });
+  for (const l of LICH_LAP) {
+    await qThat.removeJobScheduler(l.id).catch(() => undefined);
+  }
+  await qThat.close();
 
   // Tên job lạ phải NÉM, không được im lặng bỏ qua.
   //

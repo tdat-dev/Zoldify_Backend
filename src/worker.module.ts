@@ -65,6 +65,17 @@ import { cacheConfig } from './common/cache.config';
         // `migrate` ra thành bước riêng. Ở compose, worker chờ `migrate` xong.
         migrationsRun: false,
 
+        // TypeORM mặc định thử lại 10 lần, mỗi lần cách 3 giây — treo 30 giây
+        // rồi mới chịu báo lỗi. Với worker thì đó là 30 giây im lặng không ai
+        // biết chuyện gì đang xảy ra, và `docker compose ps` vẫn hiện `Up`.
+        //
+        // Chỗ này lộ ra từ chính bài tự kiểm: cho TEST_DB_PORT sai thì
+        // `npm run check:worker` đứng hình thay vì FAIL. Cắt còn 3 lần ×3 giây:
+        // đủ để chịu một cú MySQL khởi động chậm, và hỏng thật thì hỏng trong
+        // 9 giây, thoát mã 1, `restart: unless-stopped` dựng lại.
+        retryAttempts: 3,
+        retryDelay: 3000,
+
         extra: {
           // 5, không phải 50 như api.
           //
