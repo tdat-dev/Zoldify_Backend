@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, IsNull } from 'typeorm';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
@@ -8,6 +7,20 @@ import { OrdersService } from '@ordering/orders/orders.service';
 /** Đơn để quá lâu mà không nhúc nhích thì bị huỷ. */
 const STALE_AFTER_HOURS = 48;
 
+/**
+ * Hai việc chạy nền của sàn. KHÔNG còn tự hẹn giờ.
+ *
+ * Trước task #14 hai phương thức dưới đây gắn `@Cron(EVERY_HOUR)`, tức là bộ
+ * hẹn giờ nằm trong chính tiến trình API. Mỗi bản api dựng thêm là một bộ hẹn
+ * giờ nữa, và tới giờ thì cả N bản cùng chạy. Cả hai việc này đụng tiền —
+ * `autoCancelOrders` hoàn ký quỹ cho người mua, `settleDeliveredShipments`
+ * giải ngân cho người bán — nên "chạy N lần" ở đây nghĩa là hoàn tiền N lần.
+ *
+ * Nay lịch nằm trong Redis (`src/ops/jobs/jobs.schedule.ts`) và chỉ tiến trình
+ * worker nhận job. Lớp này thành lớp nghiệp vụ thuần: ai gọi cũng được, gọi
+ * mấy lần cũng được — đúng một lần hay không là việc của hàng đợi, không phải
+ * của nó.
+ */
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
@@ -34,7 +47,6 @@ export class TasksService {
    *
    * Bài học không phải "sửa lại cho đúng" mà là "đừng có bản sao thứ hai".
    */
-  @Cron(CronExpression.EVERY_HOUR)
   async autoCancelOrders() {
     const cutoff = new Date(Date.now() - STALE_AFTER_HOURS * 3600 * 1000);
 
@@ -93,7 +105,6 @@ export class TasksService {
    * chỉ hẹn giờ và ghi log — cùng nguyên tắc "đừng có bản sao thứ hai" như
    * autoCancelOrders.
    */
-  @Cron(CronExpression.EVERY_HOUR)
   async settleDeliveredShipments() {
     try {
       const sync = await this.ordersService.syncGhnShipmentStatuses();

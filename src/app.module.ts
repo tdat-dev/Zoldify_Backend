@@ -29,7 +29,6 @@ import { GhnModule } from '@ordering/ghn/ghn.module';
 import { EscrowsModule } from '@money/escrows/escrows.module';
 import { PayosModule } from '@money/payos/payos.module';
 import { WalletsModule } from '@money/wallets/wallets.module';
-import { TasksModule } from '@ops/tasks/tasks.module';
 import { SitemapModule } from '@catalog/sitemap/sitemap.module';
 import { AdminModule } from '@ops/admin/admin.module';
 import { SettingsModule } from '@ops/settings/settings.module';
@@ -118,7 +117,6 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     EscrowsModule,
     PayosModule,
     WalletsModule,
-    TasksModule,
     SitemapModule,
     AdminModule,
     SettingsModule,
