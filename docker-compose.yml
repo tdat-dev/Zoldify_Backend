@@ -4,8 +4,8 @@
 #   docker compose up -d --build
 #   docker compose logs -f api
 #
-# Bốn dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
-#   mysql + redis  →  migrate (chạy một lần rồi thoát)  →  api
+# Năm dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
+#   mysql + redis  →  migrate (chạy một lần rồi thoát)  →  api + worker
 #
 # CÓ Redis từ Epic 4. Trước đây cố tình KHÔNG thêm vì cache là
 # `CacheModule.register()` in-process — thêm Redis lúc không có code nói chuyện
@@ -136,6 +136,61 @@ services:
       # chown cho UID 1000 (user `node` trong ảnh). Thiếu file thì
       # POST /api/auth/firebase trả 401 "Firebase chưa được cấu hình".
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+
+  # Tiến trình chạy job nền — task #14.
+  #
+  # VÌ SAO PHẢI LÀ MỘT CONTAINER RIÊNG, KHÔNG PHẢI MỘT LUỒNG TRONG `api`.
+  #
+  # Hai job của TasksService đụng tiền: một cái hoàn ký quỹ cho người mua, một
+  # cái giải ngân cho người bán. Trước đây chúng hẹn giờ bằng @nestjs/schedule,
+  # tức bộ đếm giờ nằm trong chính tiến trình api. Hôm nay compose dựng đúng
+  # một bản api nên chưa sao. Nhưng cả Epic 4 (cache Redis) lẫn task #5 (socket
+  # và throttler qua Redis) tồn tại chính là để chạy được NHIỀU bản api — và
+  # đúng ngày ai đó nâng số bản lên thì mỗi bản mang theo một bộ đếm giờ, tới
+  # giờ cả ba cùng huỷ một đơn. Không request nào lỗi, chỉ có sổ tiền lệch.
+  #
+  # Nay lịch nằm trong Redis, api không còn bộ đếm giờ nào, và job chỉ được
+  # giao cho MỘT worker. Nâng `api` lên bao nhiêu bản cũng không đổi điều đó.
+  #
+  # Ngược lại: KHÔNG nâng số bản của chính `worker` lên khi chưa đọc lại
+  # scripts/selfcheck-worker.ts. BullMQ giao mỗi job cho đúng một worker nên
+  # nhiều worker vẫn an toàn về số lần chạy; nhưng `OrdersService.cancelExpired`
+  # đọc đơn NGOÀI transaction và không khoá dòng, nên hai lượt quét chồng lên
+  # nhau vẫn có cửa hoàn tiền hai lần. Một worker là đủ cho hai job mỗi giờ.
+  worker:
+    build:
+      context: .
+      target: runtime
+    # CÙNG image với api: một lần build, hai lệnh chạy. Build ảnh thứ hai là mở
+    # đường cho api và worker chạy lệch phiên bản mã.
+    image: zoldify-backend:latest
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_USERNAME: root
+      REDIS_URL: redis://redis:6379
+    command: ['node', 'dist/worker']
+    # TẮT healthcheck thừa hưởng từ Dockerfile.
+    #
+    # Dockerfile khai HEALTHCHECK gọi fetch vào PORT — đúng cho api, vô nghĩa ở
+    # đây vì worker không mở cổng nào. Để nguyên thì container này `unhealthy`
+    # vĩnh viễn, và mọi thứ đọc trạng thái đó đều đọc sai.
+    #
+    # Chưa thay bằng healthcheck thật vì "worker khoẻ" nghĩa là "job vẫn tới
+    # giờ là chạy" — muốn kiểm thì phải hỏi Redis xem lượt chạy gần nhất cách
+    # đây bao lâu. Đó là việc của giám sát, ghi vào phần nợ của báo cáo #14.
+    healthcheck:
+      disable: true
+    # KHÔNG mount product-images: worker không đụng ảnh. Mount thừa một volume
+    # ghi được là mở thêm một đường cho tiến trình nền sửa dữ liệu người dùng.
 
 volumes:
   mysql-data:
