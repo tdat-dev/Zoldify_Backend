@@ -24,7 +24,7 @@
 import { ESLint } from 'eslint';
 
 // Đo ngày 2026-08-25, Node 22, trên nhánh feat/epic-6-ci.
-const BASELINE = 980;
+const BASELINE = 979;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);
