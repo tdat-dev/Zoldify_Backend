@@ -31,8 +31,31 @@ export async function cacheConfig(): Promise<Record<string, unknown>> {
   try {
     // Specifier qua biến: TS/nest build KHÔNG resolve tĩnh gói optional này,
     // nên máy chưa cài @keyv/redis vẫn build được (chỉ prod có REDIS_URL cần).
+    //
+    // `require` CHỨ KHÔNG PHẢI `await import`. Bản cũ dùng `await import(pkg)`
+    // và nó làm sập app ngay lúc khởi động, mỗi khi REDIS_URL có giá trị:
+    //
+    //   TypeError: Cannot read properties of undefined (reading 'includes')
+    //       at Keyv._checkIterableAdapter (keyv/dist/index.cjs:488)
+    //       at cachingFactory (@nestjs/cache-manager/dist/cache.providers.js:35)
+    //
+    // Nguyên nhân là "dual-package hazard", không phải lỗi của Redis hay của
+    // cấu hình. Mã này biên dịch ra CommonJS, nên `require('keyv')` mà
+    // @nestjs/cache-manager dùng lấy bản keyv/dist/index.CJS. Còn `import()`
+    // động luôn đi đường ESM, nên `@keyv/redis` nạp theo đường đó lại kéo bản
+    // keyv/dist/index.JS. Hai bản là hai lớp KHÁC NHAU trong bộ nhớ.
+    //
+    // `createKeyv()` trả về một Keyv (ESM). cache-manager kiểm
+    // `store instanceof Keyv` (CJS) — false, vì khác lớp — nên nó tưởng đây là
+    // một store thô và bọc thêm một lớp Keyv nữa. Keyv bên trong không có
+    // `.opts.dialect`, và câu `.includes` ở trên nổ.
+    //
+    // Cả hai cùng đi đường CJS thì `instanceof` đúng, cache-manager nhận
+    // nguyên Keyv và không bọc lại. Kiểm bằng scripts/selfcheck-worker.ts:
+    // nó dựng WorkerModule thật với REDIS_URL trỏ vào Redis thật.
     const pkg = '@keyv/redis';
-    const { createKeyv } = (await import(pkg)) as {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createKeyv } = require(pkg) as {
       createKeyv: (u: string) => unknown;
     };
     return { stores: [createKeyv(url)], ttl };
