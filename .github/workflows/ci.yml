@@ -9,6 +9,9 @@ name: CI
 # Sáu cổng theo bảng phân công: lint · boundaries · test · build · openapi:check
 # · diagrams:check. Năm cổng đầu nằm ở job `quality` và CHẶN merge. Cổng sơ đồ
 # tách ra job riêng vì lý do ghi ở đó.
+#
+# Cộng thêm hai cổng tự kiểm không nằm trong bảng: `check:worker` (task #14 —
+# cron có còn chạy trong API không) và `check:ci` (chính hợp đồng của file này).
 
 on:
   pull_request:
@@ -52,6 +55,26 @@ jobs:
           --health-retries=12
           --health-start-period=30s
 
+      # Redis THẬT cho `npm run check:worker` (task #14).
+      #
+      # Bài đó dựng hai worker BullMQ, đẩy một job và đếm số lần thực thi —
+      # câu hỏi trung tâm của cả task, và là câu không đọc mã mà trả lời được.
+      # Không có service này thì bài kiểm chỉ còn phần tĩnh, tức là chỉ còn
+      # kiểm "mã trông có đúng không" chứ không kiểm "chạy có đúng không".
+      #
+      # Cổng 6380 chứ không 6379: tránh đụng Redis nào runner có sẵn, và khớp
+      # mặc định TEST_REDIS_URL trong scripts/selfcheck-worker.ts.
+      redis:
+        image: redis:7
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=3s
+          --health-retries=12
+          --health-start-period=5s
+
     env:
       # Spec mặc định cổng 3307 (kịch bản docker cục bộ). Trên runner service
       # nằm ở 3306, nên nói rõ ra đây thay vì sửa mã test cho vừa CI.
@@ -60,6 +83,7 @@ jobs:
       TEST_DB_USER: root
       TEST_DB_PASSWORD: testpw
       TEST_DB_NAME: zoldify_test
+      TEST_REDIS_URL: redis://127.0.0.1:6380
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +121,11 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Task #14: cron đã ra khỏi API chưa, và ra rồi thì có còn chạy đúng MỘT
+      # lần không. Phần sau dựng hai worker thật trên service redis ở trên.
+      - name: Worker tách khỏi API
+        run: npm run check:worker
 
       # Bài tự kiểm của chính workflow này. Đặt CUỐI có chủ đích: nó rẻ, và nếu
       # ai sửa ci.yml làm hỏng hợp đồng (bỏ cổng, gõ nhầm tên script, thêm --fix
