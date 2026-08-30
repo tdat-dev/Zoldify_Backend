@@ -222,7 +222,7 @@ export class AuthService {
 
   async changePassword(
     userId: number,
-    oldPassword: string,
+    oldPassword: string | undefined,
     newPassword: string,
   ) {
     const user = await this.usersService.findOneByEmail(
@@ -230,17 +230,30 @@ export class AuthService {
         '',
     );
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
-    if (!this.usersService.isValidPassword(oldPassword, user.password)) {
-      throw new BadRequestException('Mật khẩu cũ không chính xác');
+
+    // Tài khoản social (Google) được tạo với password='' — chưa từng có mật khẩu.
+    // Trường hợp này là ĐẶT mật khẩu lần đầu: không cần (và không có) mật khẩu cũ.
+    const hasPassword = !!user.password;
+    if (hasPassword) {
+      if (
+        !this.usersService.isValidPassword(oldPassword ?? '', user.password)
+      ) {
+        throw new BadRequestException('Mật khẩu cũ không chính xác');
+      }
+      if (oldPassword === newPassword) {
+        throw new BadRequestException(
+          'Mật khẩu mới không được trùng với mật khẩu cũ',
+        );
+      }
     }
-    if (oldPassword === newPassword) {
-      throw new BadRequestException(
-        'Mật khẩu mới không được trùng với mật khẩu cũ',
-      );
-    }
+
     const hashedPassword = this.usersService.hashPassword(newPassword);
     await this.userRepository.update(userId, { password: hashedPassword });
-    return { message: 'Thay đổi mật khẩu thành công' };
+    return {
+      message: hasPassword
+        ? 'Thay đổi mật khẩu thành công'
+        : 'Đặt mật khẩu thành công',
+    };
   }
 
   /**
@@ -259,6 +272,9 @@ export class AuthService {
       phone_number: user.phone_number,
       gender: user.gender,
       email_verified: user.email_verified,
+      // Có mật khẩu chưa? Tài khoản Google/social ban đầu chưa có → client hiện
+      // "Đặt mật khẩu" thay vì "Đổi mật khẩu".
+      has_password: !!user.password,
     };
   }
 
