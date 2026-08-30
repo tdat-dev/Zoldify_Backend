@@ -157,7 +157,8 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   // Giới hạn nhịp: dù đã yêu cầu JWT, chặn spam đổi mật khẩu / dội mail cảnh báo
-  // nếu token bị lạm dụng. ≤1 lần/giây, ≤5 lần/phút.
+  // nếu token bị lạm dụng. ĐÃ verify live: ≤1 lần/giây (short) + ≤3 lần/phút
+  // (medium). Người thật đổi mật khẩu rất hiếm nên mức này không cản luồng thật.
   @Throttle({
     short: { limit: 1, ttl: 1000 },
     medium: { limit: 3, ttl: 60000 },
