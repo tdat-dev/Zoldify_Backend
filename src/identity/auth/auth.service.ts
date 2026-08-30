@@ -249,11 +249,43 @@ export class AuthService {
 
     const hashedPassword = this.usersService.hashPassword(newPassword);
     await this.userRepository.update(userId, { password: hashedPassword });
+
+    // Cảnh báo qua email: nếu token bị lạm dụng, chính chủ biết ngay có người
+    // đụng mật khẩu. KHÔNG chặn/không làm fail nếu gửi mail hỏng (đổi đã xong).
+    if (user.email) {
+      this.notifyPasswordChanged(user.email, user.full_name, hasPassword).catch(
+        (err) =>
+          this.logger.error(
+            `Gửi mail cảnh báo đổi mật khẩu tới ${user.email} thất bại: ${err?.message || err}`,
+          ),
+      );
+    }
+
     return {
       message: hasPassword
         ? 'Thay đổi mật khẩu thành công'
         : 'Đặt mật khẩu thành công',
     };
+  }
+
+  /** Email báo mật khẩu vừa được đặt/đổi (an ninh: phát hiện lạm dụng token). */
+  private async notifyPasswordChanged(
+    to: string,
+    name: string | undefined,
+    wasChange: boolean,
+  ) {
+    const action = wasChange ? 'thay đổi' : 'đặt';
+    const subject = `Zoldify — Mật khẩu của bạn vừa được ${action}`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;font-size:15px;color:#1b2733;line-height:1.6">
+        <p>Xin chào ${name || 'bạn'},</p>
+        <p>Mật khẩu tài khoản Zoldify của bạn <b>vừa được ${action}</b>.</p>
+        <p>Nếu <b>chính bạn</b> thực hiện, bỏ qua email này.</p>
+        <p>Nếu <b>không phải bạn</b>, hãy đổi lại mật khẩu ngay và kiểm tra bảo mật tài khoản
+        (đăng xuất khỏi các thiết bị lạ).</p>
+        <p style="color:#64748b;font-size:13px">Email tự động từ Zoldify — vui lòng không trả lời.</p>
+      </div>`;
+    await this.send(to, subject, html);
   }
 
   /**
