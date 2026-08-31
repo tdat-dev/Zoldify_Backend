@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { ShipmentTrackingService } from './shipment-tracking.service';
 import { OrdersController } from './orders.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
@@ -39,7 +40,7 @@ import { PayosModule } from '@money/payos/payos.module';
     PayosModule,
   ],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, ShipmentTrackingService],
   // Job quá hạn dùng chung đường huỷ ở đây thay vì chép lại. An toàn vì
   // TasksModule chỉ được WorkerModule nạp (task #14 chuyển nó ra khỏi API),
   // không module nào ở trên nạp nó.

@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ShipmentTrackingService } from './shipment-tracking.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -24,7 +25,6 @@ import {
   EntityManager,
   Repository,
   In,
-  Not,
   IsNull,
   LessThan,
 } from 'typeorm';
@@ -63,6 +63,7 @@ export class OrdersService {
     private readonly ghnService: GhnService,
     private readonly escrowsService: EscrowsService,
     private readonly payosService: PayosService,
+    private readonly shipmentTracking: ShipmentTrackingService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
@@ -649,28 +650,18 @@ export class OrdersService {
     checked: number;
     delivered: number;
   }> {
-    const shipments = await this.shipmentRepository.find({
-      where: { status: ShipmentStatus.CREATED, tracking_code: Not(IsNull()) },
-    });
-
-    let delivered = 0;
-    for (const s of shipments) {
-      if (!s.tracking_code) continue;
-      try {
-        const status = await this.ghnService.getOrderStatus(s.tracking_code);
-        if (status === 'delivered') {
-          s.status = ShipmentStatus.DELIVERED;
-          s.delivered_at = new Date();
-          await this.shipmentRepository.save(s);
-          delivered += 1;
-        }
-      } catch (err) {
-        this.logger.error(
-          `Đồng bộ trạng thái GHN lỗi (vận đơn ${s.tracking_code}): ${(err as Error).message}`,
-        );
-      }
-    }
-    return { checked: shipments.length, delivered };
+    // Thân hàm chuyển sang ShipmentTrackingService ở task #26.
+    //
+    // Vì sao: webhook GHN (đường nhanh) và lượt quét này (lưới an toàn) làm
+    // ĐÚNG một việc — chuyển lô sang 'đã giao' và ghi `delivered_at`. Để hai
+    // bản sao là lặp lại đúng cái bẫy ghi ở đầu `tasks.service.ts`: bản sao
+    // thứ hai của đường huỷ đơn từng chép kèm cả lỗi, để tiền người mua kẹt
+    // trong `escrow_hold` không lối ra.
+    //
+    // Giữ nguyên phương thức này thay vì bắt TasksService gọi thẳng: nó là
+    // hợp đồng công khai mà worker đang dùng, đổi chữ ký là đổi thêm một chỗ
+    // không cần thiết.
+    return this.shipmentTracking.dongBoTatCa();
   }
 
   /**
