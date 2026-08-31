@@ -23,8 +23,11 @@
 // `lint:check` gọi thẳng eslint.
 import { ESLint } from 'eslint';
 
-// Đo ngày 2026-08-25, Node 22, trên nhánh feat/epic-6-ci.
-const BASELINE = 979;
+// Đo ngày 2026-08-31, Node 24, trên staging sau khi gộp PR #18 + #19.
+// Mốc cũ 979 (đo 25/08). Hai PR đó viết lại chat.service.ts nên dọn kèm 13
+// vấn đề; hạ mốc ngay để 13 chỗ ấy không lặng lẽ mọc lại — bánh cóc chỉ có
+// tác dụng khi ai đó chịu vặn nó xuống sau mỗi lần sửa.
+const BASELINE = 966;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);

@@ -1,0 +1,421 @@
+@startuml Zoldify-ERD
+' ERD Zoldify — sinh tự động từ information_schema của DB thật.
+' 25 bảng · 34 khoá ngoại. Bảng `migrations` (nội bộ TypeORM) đã loại.
+
+hide circle
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 55
+skinparam shadowing false
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 12
+skinparam class {
+  BorderColor #5F6368
+  ArrowColor #5F6368
+  FontSize 12
+}
+skinparam package {
+  BorderColor #9AA0A6
+  FontStyle bold
+}
+
+' PK in đậm · <<FK>> khoá ngoại · <<U>> UNIQUE · dấu * = NOT NULL
+
+package "identity — người dùng & địa chỉ" #E8F0FE {
+  entity "addresses" as addresses {
+    * <b>id</b> : int <<PK>>
+    --
+    * recipient_name : varchar(100)
+    * phone_number : varchar(20)
+    * label : varchar(50)
+    * country : char(2)
+    * province : varchar(100)
+    * district : varchar(100)
+      ward : varchar(100)
+    * street : varchar(255)
+    * is_default : tinyint(1)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      user_id : int <<FK>>
+  }
+  entity "users" as users {
+    * <b>id</b> : int <<PK>>
+    --
+    * full_name : varchar(100)
+    * email : varchar(150) <<U>>
+    * password : varchar(255)
+      phone_number : varchar(20)
+    * role : enum(4)
+      avatar : text
+    * email_verified : tinyint(1)
+    * is_locked : tinyint(1)
+      last_seen : datetime
+      gender : varchar(10)
+      refresh_token : varchar(500)
+    * token_version : int
+    * created_at : timestamp(6)
+      deleted_at : datetime(6)
+  }
+}
+
+package "catalog — hàng hoá & shop" #E6F4EA {
+  entity "categories" as categories {
+    * <b>id</b> : int <<PK>>
+    --
+    * name : varchar(100) <<U>>
+      name_en : varchar(150)
+      description : text
+      slug : varchar(150) <<U>>
+      image : varchar(255)
+    * is_active : tinyint(1)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      deleted_at : datetime(6)
+  }
+  entity "files" as files {
+    * <b>id</b> : int <<PK>>
+    --
+    * file_name : varchar(255)
+    * url : varchar(500)
+    * mime_type : varchar(50)
+    * size : int
+    * folder : varchar(50)
+    * created_at : timestamp(6)
+      uploaded_by : int <<FK>>
+  }
+  entity "follows" as follows {
+    * <b>id</b> : int <<PK>>
+    --
+    * follower_id : int <<FK>>
+    * following_id : int <<FK>>
+    * created_at : timestamp(6)
+  }
+  entity "products" as products {
+    * <b>id</b> : int <<PK>>
+    --
+    * name : varchar(255)
+      slug : varchar(255) <<U>>
+      description : text
+    * price : decimal(15,2)
+    * currency : char(3)
+    * stock : int
+      image : varchar(255)
+      brand : varchar(100)
+      spec : text
+      images : json
+    * condition : varchar(20)
+    * is_freeship : tinyint(1)
+    * sold_count : int
+    * view_count : int
+    * status : enum(5)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      deleted_at : datetime(6)
+      category_id : int <<FK>>
+      seller_id : int <<FK>>
+  }
+  entity "reviews" as reviews {
+    * <b>id</b> : int <<PK>>
+    --
+    * rating : int
+      comment : text
+      images : json
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      deleted_at : datetime(6)
+      user_id : int <<FK>>
+      product_id : int <<FK>>
+      order_id : int <<FK>>
+  }
+  entity "shops" as shops {
+    * <b>id</b> : int <<PK>>
+    --
+    * name : varchar(100)
+    * slug : varchar(150) <<U>>
+      description : text
+      logo : varchar(255)
+      banner : varchar(255)
+      phone : varchar(20)
+      address : text
+    * status : enum(3)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      user_id : int <<FK>> <<U>>
+      pickup_name : varchar(100)
+      pickup_phone : varchar(20)
+      pickup_address : varchar(255)
+      pickup_province_name : varchar(100)
+      pickup_district_id : int
+      pickup_district_name : varchar(100)
+      pickup_ward_code : varchar(20)
+      pickup_ward_name : varchar(100)
+  }
+}
+
+package "ordering — giỏ & đơn hàng" #FEF7E0 {
+  entity "carts" as carts {
+    * <b>id</b> : int <<PK>>
+    --
+    * quantity : int
+      created_at : timestamp(6)
+      updated_at : timestamp(6)
+      user_id : int <<FK>>
+      product_id : int <<FK>>
+  }
+  entity "order_items" as order_items {
+    * <b>id</b> : int <<PK>>
+    --
+    * product_name : varchar(255)
+      product_image : varchar(255)
+    * price : decimal(15,2)
+    * quantity : int
+    * subtotal : decimal(15,2)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      order_id : int <<FK>>
+      product_id : int <<FK>>
+  }
+  entity "order_shipments" as order_shipments {
+    * <b>id</b> : int <<PK>>
+    --
+      order_id : int <<FK>>
+      seller_id : int <<FK>>
+      tracking_code : varchar(100)
+    * cod_amount : decimal(15,2)
+    * status : enum(4)
+      error : text
+    * created_at : timestamp
+    * updated_at : timestamp
+      delivered_at : timestamp
+      received_at : timestamp
+    * auto_received : tinyint
+  }
+  entity "orders" as orders {
+    * <b>id</b> : int <<PK>>
+    --
+    * order_code : varchar(50) <<U>>
+    * total_amount : decimal(15,2)
+    * shipping_fee : decimal(10,2)
+    * discount_amount : decimal(10,2)
+    * final_amount : decimal(15,2)
+    * currency : char(3)
+    * status : enum(7)
+    * payment_method : enum(6)
+    * is_paid : tinyint(1)
+      paid_at : datetime
+    * receiver_name : varchar(100)
+    * receiver_phone : varchar(20)
+    * shipping_address : text
+      province : varchar(100)
+      district : varchar(100)
+      ghn_district_id : int
+      ghn_ward_code : varchar(20)
+      note : text
+      tracking_code : varchar(100)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      deleted_at : datetime(6)
+      user_id : int <<FK>>
+  }
+}
+
+package "money — thanh toán, ví, sổ cái" #FCE8E6 {
+  entity "escrows" as escrows {
+    * <b>id</b> : int <<PK>>
+    --
+    * amount : decimal(15,2)
+    * status : enum(4)
+      released_at : datetime
+      note : text
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      order_id : int <<FK>>
+      buyer_id : int <<FK>>
+      seller_id : int <<FK>>
+  }
+  entity "ledger_accounts" as ledger_accounts {
+    * <b>id</b> : bigint <<PK>>
+    --
+    * owner_type : enum(3)
+      owner_id : bigint
+    * purpose : enum(6)
+    * balance : bigint
+    * version : int
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+  }
+  entity "ledger_entries" as ledger_entries {
+    * <b>id</b> : bigint <<PK>>
+    --
+    * amount : bigint
+    * balance_after : bigint
+    * created_at : timestamp(6)
+      transaction_id : bigint <<FK>>
+      account_id : bigint <<FK>>
+  }
+  entity "ledger_transactions" as ledger_transactions {
+    * <b>id</b> : bigint <<PK>>
+    --
+    * type : enum(7)
+    * idempotency_key : varchar(191) <<U>>
+      reference_type : varchar(50)
+      reference_id : bigint
+      metadata : json
+    * created_at : timestamp(6)
+  }
+  entity "payments" as payments {
+    * <b>id</b> : int <<PK>>
+    --
+    * amount : decimal(15,2)
+    * payment_method : enum(6)
+      transaction_code : varchar(100)
+    * status : enum(3)
+    * type : enum(2)
+      note : text
+      paid_at : datetime
+      payos_order_code : varchar(50)
+      payos_payment_link_id : varchar(100)
+      payos_checkout_url : text
+      payos_qr_code : text
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      order_id : int <<FK>>
+      user_id : int <<FK>>
+  }
+  entity "payos_webhook_logs" as payos_webhook_logs {
+    * <b>id</b> : int <<PK>>
+    --
+    * transaction_id : varchar(100) <<U>>
+    * body : json
+    * processed : tinyint
+    * created_at : timestamp(6)
+  }
+  entity "wallet_transactions" as wallet_transactions {
+    * <b>id</b> : int <<PK>>
+    --
+    * amount : decimal(15,2)
+    * balance_before : decimal(15,2)
+    * balance_after : decimal(15,2)
+    * type : enum(4)
+      reference : varchar(255)
+      note : text
+    * created_at : timestamp(6)
+      wallet_id : int <<FK>>
+  }
+  entity "wallets" as wallets {
+    * <b>id</b> : int <<PK>>
+    --
+    * balance : decimal(15,2)
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      user_id : int <<FK>> <<U>>
+  }
+  entity "withdrawals" as withdrawals {
+    * <b>id</b> : int <<PK>>
+    --
+    * amount : decimal(15,2)
+    * bank_name : varchar(100)
+    * bank_account : varchar(50)
+    * bank_holder : varchar(100)
+    * status : enum(4)
+      note : text
+      processed_at : datetime
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      user_id : int <<FK>>
+      approved_by : int <<FK>>
+  }
+}
+
+package "messaging — chat & thông báo" #F3E8FD {
+  entity "conversations" as conversations {
+    * <b>id</b> : int <<PK>>
+    --
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+      buyer_id : int <<FK>>
+      seller_id : int <<FK>>
+      product_id : int <<FK>>
+  }
+  entity "messages" as messages {
+    * <b>id</b> : int <<PK>>
+    --
+    * content : text
+      images : json
+    * is_read : tinyint(1)
+    * created_at : timestamp(6)
+      conversation_id : int <<FK>>
+      sender_id : int <<FK>>
+  }
+  entity "notifications" as notifications {
+    * <b>id</b> : int <<PK>>
+    --
+    * type : enum(6)
+    * title : varchar(255)
+    * content : text
+      data : json
+    * is_read : tinyint(1)
+    * created_at : timestamp(6)
+      user_id : int <<FK>>
+  }
+}
+
+package "ops — vận hành" #ECEFF1 {
+  entity "settings" as settings {
+    * <b>id</b> : int <<PK>>
+    --
+    * key : varchar(100) <<U>>
+    * value : text
+    * created_at : timestamp(6)
+    * updated_at : timestamp(6)
+  }
+}
+
+' ── Quan hệ ──
+' ||--o{  cha bắt buộc, con nhiều      |o--o{  cha tuỳ chọn (FK nullable)
+' Nhãn = cột khoá ngoại. Ghi kèm quy tắc xoá khi KHÔNG phải CASCADE.
+users |o--o{ addresses : user_id
+products |o--o{ carts : product_id
+users |o--o{ carts : user_id
+users |o--o{ conversations : buyer_id
+products |o--o{ conversations : product_id (SET NULL)
+users |o--o{ conversations : seller_id
+users |o--o{ escrows : buyer_id
+orders |o--o{ escrows : order_id
+users |o--o{ escrows : seller_id
+users |o--o{ files : uploaded_by
+users ||--o{ follows : follower_id
+users ||--o{ follows : following_id
+ledger_accounts |o--o{ ledger_entries : account_id (RESTRICT)
+ledger_transactions |o--o{ ledger_entries : transaction_id (RESTRICT)
+conversations |o--o{ messages : conversation_id
+users |o--o{ messages : sender_id
+users |o--o{ notifications : user_id
+orders |o--o{ order_items : order_id
+products |o--o{ order_items : product_id (SET NULL)
+orders |o--o{ order_shipments : order_id
+users |o--o{ order_shipments : seller_id
+users |o--o{ orders : user_id
+orders |o--o{ payments : order_id (SET NULL)
+users |o--o{ payments : user_id
+categories |o--o{ products : category_id (SET NULL)
+users |o--o{ products : seller_id
+orders |o--o{ reviews : order_id (SET NULL)
+products |o--o{ reviews : product_id
+users |o--o{ reviews : user_id
+users |o--o| shops : user_id
+wallets |o--o{ wallet_transactions : wallet_id
+users |o--o| wallets : user_id
+users |o--o{ withdrawals : approved_by (NO ACTION)
+users |o--o{ withdrawals : user_id
+
+note as N1
+  **ledger_accounts KHÔNG có khoá ngoại — đúng như thiết kế.**
+  Nó dùng cặp owner_type + owner_id (quan hệ đa hình): chủ tài khoản
+  có thể là user, là sàn, hoặc là bên ngoài. Không FK nào diễn tả
+  được cả ba, nên ràng buộc nằm ở tầng nghiệp vụ.
+  ledger_entries -> ledger_accounts để RESTRICT: sổ cái là append-only,
+  không cho xoá tài khoản còn bút toán.
+end note
+
+@enduml
