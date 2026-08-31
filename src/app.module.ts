@@ -8,6 +8,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
 import { mailerConfig } from './common/mailer.config';
+import { cacheConfig } from './common/cache.config';
 import { JwtModule } from '@nestjs/jwt';
 import { MaintenanceGuard } from './common/guards/maintenance.guard';
 import { AppService } from './app.service';
@@ -32,7 +33,6 @@ import { GhnModule } from '@ordering/ghn/ghn.module';
 import { EscrowsModule } from '@money/escrows/escrows.module';
 import { PayosModule } from '@money/payos/payos.module';
 import { WalletsModule } from '@money/wallets/wallets.module';
-import { TasksModule } from '@ops/tasks/tasks.module';
 import { SitemapModule } from '@catalog/sitemap/sitemap.module';
 import { AdminModule } from '@ops/admin/admin.module';
 import { SettingsModule } from '@ops/settings/settings.module';
@@ -46,30 +46,13 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     // Cache env-bridge (12-factor: khác biệt dev/prod nằm ở CONFIG, không ở CODE).
     //   - Có REDIS_URL  → dùng Redis qua Keyv (production trên máy chủ Linux).
     //   - Không có       → in-memory mặc định (dev/test local, không cần Redis).
-    // @keyv/redis được import ĐỘNG, chỉ khi thật sự có REDIS_URL — nên máy không
-    // cài gói đó vẫn chạy. Trên server chạy: `npm i @keyv/redis` + đặt REDIS_URL.
+    //
+    // Thân hàm chuyển sang src/common/cache.config.ts ở task #14: tiến trình
+    // worker cũng cần CACHE_MANAGER (ProductsService inject nó) và hai tiến
+    // trình PHẢI trỏ vào cùng một cache — lý do đầy đủ ghi trong file đó.
     CacheModule.registerAsync({
       isGlobal: true,
-      useFactory: async () => {
-        const ttl = 60000;
-        const url = process.env.REDIS_URL;
-        if (!url) return { ttl };
-        try {
-          // Specifier qua biến: TS/nest build KHÔNG resolve tĩnh gói optional này,
-          // nên máy chưa cài @keyv/redis vẫn build được (chỉ prod có REDIS_URL cần).
-          const pkg = '@keyv/redis';
-          const { createKeyv } = await import(pkg);
-          return { stores: [createKeyv(url)], ttl };
-        } catch (e) {
-          // REDIS_URL có nhưng KHÔNG nạp được @keyv/redis (chưa cài) hoặc lỗi tạo
-          // store → KHÔNG chặn boot: rơi về in-memory + cảnh báo. Fail-open ngay từ
-          // lúc khởi động, đồng nhất tinh thần C3 (Redis chết không được làm sập app).
-          console.warn(
-            `[cache] REDIS_URL có nhưng chưa dùng được Redis (${(e as Error).message}) — tạm dùng in-memory. Cài: npm i @keyv/redis`,
-          );
-          return { ttl };
-        }
-      },
+      useFactory: cacheConfig,
     }),
     UsersModule,
     // Throttler đếm CHUNG qua Redis (task #5).
@@ -174,7 +157,6 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     EscrowsModule,
     PayosModule,
     WalletsModule,
-    TasksModule,
     SitemapModule,
     AdminModule,
     SettingsModule,
