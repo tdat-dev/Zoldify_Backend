@@ -87,7 +87,19 @@ import { LedgerModule } from '@money/ledger/ledger.module';
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         migrationsRun: false,
         extra: {
-          connectionLimit: 50,
+          // 15 chứ không phải 50 — task #5 bảng phân công.
+          //
+          // Con số này KHÔNG phải "càng to càng nhanh". Nó là số kết nối mà MỘT
+          // tiến trình API được phép giữ, và sơ đồ deployment dự tính chạy 3 bản
+          // api. MySQL mặc định `max_connections = 151`. Với 50, ba bản api ăn
+          // hết 150 — chạm trần, không còn chỗ cho `migrate`, cho backup
+          // mysqldump hằng đêm, hay cho một phiên soi database lúc sự cố. Thứ
+          // hỏng trước sẽ là những thứ mình cần nhất đúng lúc đang hỏng.
+          //
+          // 15 × 3 = 45, còn dư rộng. Và một tiến trình Node đơn luồng không
+          // dùng hết 50 kết nối song song: quá ngưỡng nào đó, thêm kết nối chỉ
+          // chuyển hàng đợi từ trong ứng dụng sang trong MySQL, nơi nó đắt hơn.
+          connectionLimit: 15,
         },
       }),
       inject: [ConfigService],

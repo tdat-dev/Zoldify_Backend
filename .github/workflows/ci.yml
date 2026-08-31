@@ -119,12 +119,18 @@ jobs:
       - name: Kiểm 20 file .drawio
         run: npm run drawio:check
 
-      # diagrams:check dùng @mermaid-js/mermaid-cli, kéo theo Chromium. Trên
-      # runner sạch nó hay hỏng vì thiếu thư viện hệ thống, và chạy mất vài phút.
-      # Để nó CHẶN thì cả nhóm bị kẹt vì một thứ không liên quan tới mã sản phẩm.
+      # diagrams:check dùng @mermaid-js/mermaid-cli, kéo theo Chromium. Lúc dựng
+      # workflow, lo nó hỏng trên runner sạch vì thiếu thư viện hệ thống, nên để
+      # `continue-on-error: true` — chạy để còn thấy, nhưng không chặn.
       #
-      # Nên: chạy để còn thấy, nhưng không chặn. Đây là NỢ có ý thức — gỡ
-      # continue-on-error khi đã cài đủ deps hệ thống và thấy nó xanh vài lần.
-      - name: Sinh lại sơ đồ mermaid (không chặn)
+      # Nay gỡ hedge đó, và gỡ dựa trên số chứ không dựa trên cảm giác: 6 lần
+      # chạy gần nhất đều `success` Ở MỨC BƯỚC, không phải chỉ job xanh nhờ
+      # continue-on-error. Đó là phân biệt quan trọng — với cờ ấy bật, một bước
+      # hỏng vẫn cho job màu xanh, nên "job xanh 6 lần" tự nó KHÔNG chứng minh
+      # được gì về bước này. Phải đọc conclusion của từng bước mới biết.
+      #
+      # Từ đây nó là cổng chặn thật. Nếu sau này hỏng vì môi trường runner đổi
+      # chứ không phải vì sơ đồ sai, thì sửa môi trường — đừng bật lại cờ này,
+      # vì bật lại là quay về chỗ không ai biết cổng còn sống hay đã chết.
+      - name: Sinh lại sơ đồ mermaid
         run: npm run diagrams:check
-        continue-on-error: true

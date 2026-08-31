@@ -13,7 +13,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Product } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
-import { Repository, ILike, Between } from 'typeorm';
+import { Repository, Between } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
