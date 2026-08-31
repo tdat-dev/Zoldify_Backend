@@ -21,9 +21,37 @@ import { NotificationsService } from '@messaging/notifications/notifications.ser
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
 
-  // Map userId -> Set<socketId> để biết user nào đang online
-  // Một user có thể mở nhiều tab → nhiều socket
-  private onlineUsers = new Map<number, Set<string>>();
+  /**
+   * Ai đang online — hỏi CẢ CỤM, không giữ trong RAM (task #5).
+   *
+   * Trước đây chỗ này là `private onlineUsers = new Map<number, Set<string>>()`.
+   * Map ấy đúng khi chạy một tiến trình và sai ngay khi chạy hai: mỗi bản api
+   * chỉ thấy socket của chính nó, nên `request_online_users` trả về một danh
+   * sách khác nhau tuỳ người dùng rơi vào bản nào — và không bản nào đúng.
+   *
+   * VÌ SAO KHÔNG THAY BẰNG MỘT SET TRONG REDIS.
+   *
+   * Đó là cách rõ ràng nhất và cũng là cách rò rỉ. Muốn Set đúng thì phải
+   * `SREM` lúc socket đóng — nhưng một bản api bị `kill -9`, hết RAM, hay
+   * container bị thay lúc deploy thì không kịp `SREM` gì cả. Những userId đó
+   * ở lại trong Set vĩnh viễn, "online" mãi mãi, và không có gì tự dọn. Rác
+   * kiểu này tích lại theo từng lần deploy.
+   *
+   * `fetchSockets()` hỏi các tiến trình đang sống theo thời gian thực qua
+   * adapter Redis. Bản api chết thì socket của nó biến mất cùng nó — không có
+   * gì để rò rỉ, không cần dọn dẹp, không cần TTL.
+   *
+   * Đánh đổi: mỗi lần hỏi là một vòng request/response qua Redis, đắt hơn đọc
+   * một Map trong RAM. Chấp nhận được ở đây vì nó chỉ chạy lúc kết nối, lúc
+   * ngắt, và khi client xin ảnh chụp — không nằm trên đường đi của mỗi tin nhắn.
+   */
+  private async userIdsDangOnline(): Promise<number[]> {
+    const sockets = await this.server.fetchSockets();
+    const ids = sockets
+      .map((s) => s.data?.user?.id as number | undefined)
+      .filter((id): id is number => typeof id === 'number');
+    return [...new Set(ids)];
+  }
 
   constructor(
     private readonly chatService: ChatService,
@@ -45,9 +73,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const now = new Date();
       await this.userRepository.update(userId, { last_seen: now });
 
-      // Thêm socket vào map online
-      if (!this.onlineUsers.has(userId)) this.onlineUsers.set(userId, new Set());
-      this.onlineUsers.get(userId)!.add(client.id);
+      // Không còn map nào để cập nhật: socket vừa nối là đã nằm trong adapter,
+      // và mọi câu hỏi "ai đang online" đều đi qua userIdsDangOnline().
 
       // Broadcast tới tất cả client rằng user này vừa online
       this.server.emit('user_presence', { user_id: userId, online: true, last_seen: now });
@@ -60,18 +87,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!client.data.user?.id) return;
     const userId = client.data.user.id;
 
-    // Gỡ socket khỏi map online
-    const sockets = this.onlineUsers.get(userId);
-    if (sockets) {
-      sockets.delete(client.id);
-      if (sockets.size === 0) {
-        this.onlineUsers.delete(userId);
-        // Cập nhật last_seen khi user thực sự offline (không còn socket nào)
-        const now = new Date();
-        await this.userRepository.update(userId, { last_seen: now });
-        // Broadcast offline
-        this.server.emit('user_presence', { user_id: userId, online: false, last_seen: now });
-      }
+    // "Thực sự offline" phải hỏi CẢ CỤM, không chỉ tiến trình này.
+    //
+    // Một người mở web trên máy tính và app trên điện thoại là hai socket, và
+    // load balancer rất có thể đẩy chúng vào hai bản api khác nhau. Đóng tab
+    // web mà chỉ đếm socket của bản đang xử lý thì kết luận "offline" trong
+    // khi điện thoại vẫn đang nối — bạn bè thấy họ offline dù họ vẫn ở đó.
+    //
+    // Loại trừ client.id: lúc handleDisconnect chạy, socket vừa ngắt vẫn có
+    // thể còn trong danh sách của adapter.
+    const conNoi = await this.server.fetchSockets();
+    const conSocketKhac = conNoi.some(
+      (s) => s.id !== client.id && (s.data?.user?.id as number) === userId,
+    );
+
+    if (!conSocketKhac) {
+      // Cập nhật last_seen khi user thực sự offline (không còn socket nào)
+      const now = new Date();
+      await this.userRepository.update(userId, { last_seen: now });
+      // Broadcast offline
+      this.server.emit('user_presence', { user_id: userId, online: false, last_seen: now });
     }
   }
 
@@ -82,8 +117,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Client yêu cầu server trả về danh sách userId đang online (để sync lần đầu)
   @SubscribeMessage('request_online_users')
-  handleRequestOnlineUsers(@ConnectedSocket() client: Socket) {
-    const onlineIds = Array.from(this.onlineUsers.keys());
+  async handleRequestOnlineUsers(@ConnectedSocket() client: Socket) {
+    const onlineIds = await this.userIdsDangOnline();
     client.emit('online_users_snapshot', { user_ids: onlineIds });
   }
 

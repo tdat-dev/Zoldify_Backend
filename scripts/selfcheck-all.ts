@@ -19,6 +19,10 @@ const suites: Array<{ name: string; file: string }> = [
   // file cũ trên một thư mục giả. Đặt ngay sau CI vì cùng tính chất: rẻ, và
   // hỏng thì phải biết trước khi đợi ba suite database.
   { name: 'Task #24/#25 — backup + khôi phục (không cần DB)', file: 'selfcheck-backup.ts' },
+  // Cần Redis (không cần MySQL). Đặt ngay sau CI vì cùng nhóm hạ tầng, và vì
+  // nó dựng hai server socket thật nên hỏng ở đây là hỏng thứ rất đáng biết
+  // trước khi chạy ba suite database.
+  { name: 'Task #5 — trạng thái dùng chung qua Redis', file: 'selfcheck-redis-state.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
