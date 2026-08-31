@@ -1,7 +1,7 @@
 # Báo cáo Task #4 — CI backend
 
-**Người thực hiện:** Cường · **Ngày:** 2026-08-25 · **Nhánh:** `feat/epic-6-ci` → PR vào `staging`
-**Trạng thái:** XONG (test-first; 6 cổng chạy xanh cục bộ; nghiệm thu cuối là CI xanh trên chính PR)
+**Người thực hiện:** Cường · **Ngày:** 2026-08-25 · **Nhánh:** `feat/epic-6-ci` → PR #11 → đã merge vào `staging` (`da70782`)
+**Trạng thái:** XONG — **đã nghiệm thu thật trên GitHub Actions**, không còn phần nào chỉ xanh cục bộ. Số liệu ở mục 8.
 
 ## 1. Mục tiêu & bối cảnh
 
@@ -22,7 +22,7 @@ Mọi script cần gọi đã có sẵn trong `package.json` từ trước; thi�
 | R1 | **CAO** | `npm run lint` là `eslint --fix`. Trên runner nó **sửa file rồi vẫn thoát 0** → cổng lint thành trang trí, nợ lint không bao giờ lộ. | Script riêng không `--fix`; `selfcheck-ci.ts` đọc định nghĩa script và chặn nếu thấy `--fix`. | Đúng như dự đoán, đã chặn |
 | R2 | **CAO** | 5 spec tiền chạy trên **MySQL thật** (`jest.config.js` để `maxWorkers: 1` chính vì chúng dùng chung `zoldify_test`). Runner sạch → `npm test` đỏ 100%. | Khai `services: mysql:8` + healthcheck, truyền `TEST_DB_*` khớp mặc định trong spec. | Đúng như dự đoán, đã chặn |
 | R3 | **CAO** | `openapi:check` so `openapi.json` với bản sinh lại. Khác môi trường → CI **đỏ giả**. | Pin `node-version: '24'` khớp `deploy.yml`; `selfcheck-ci.ts` canh hai file không lệch nhau. | **Đỏ THẬT, không phải giả** — xem mục 5 |
-| R4 | TB | `diagrams:check` kéo Chromium qua mermaid-cli → hỏng/chậm trên runner sạch. | Tách job riêng, `continue-on-error`; giữ `drawio:check` (thuần JS) làm cổng chặn thật. | Cục bộ xanh 25 sơ đồ; vẫn giữ hedge cho runner |
+| R4 | TB | `diagrams:check` kéo Chromium qua mermaid-cli → hỏng/chậm trên runner sạch. | Tách job riêng, `continue-on-error`; giữ `drawio:check` (thuần JS) làm cổng chặn thật. | Lo thừa — mermaid-cli **chạy xanh trên runner sạch** ngay lần đầu. Hedge chưa phải dùng tới |
 | R5 | TB | Mốc boundaries: tài liệu ghi 29, code để 28. Đặt sai mốc là CI đỏ ngay hoặc mất tác dụng bánh cóc. | Đo lại cục bộ, **không sửa** `BASELINE` trong PR hạ tầng. | Số thật = **28**, khớp code. Tài liệu ghi 29 là số cũ |
 | R6 | TB | Chạy trên mọi push của mọi nhánh → đốt phút Actions, trùng `deploy.yml`. | `on.pull_request` + `push` giới hạn `staging`/`main` + `concurrency` huỷ lần chạy cũ. | Đã làm |
 | R7 | TB | `npm ci` đòi lock khớp `package.json`. | Kiểm cục bộ trước khi đẩy. | Đã kiểm |
@@ -116,14 +116,19 @@ vào file hợp đồng chung mà nằm lẫn trong PR "thêm CI" thì người 
 
 **Thứ tự merge: PR hợp đồng trước, PR CI sau.**
 
+*Đã thực hiện đúng thứ tự đó.* PR #10 (hợp đồng) merge lúc 19:44, PR #11 (CI) merge lúc 20:41.
+Mục 8 ghi lại bằng chứng cho thấy thứ tự này không phải cẩn thận thừa.
+
 ## 6. Giới hạn (nói thẳng)
 
 - Cổng lint **không** làm nợ lint giảm đi — nó chỉ chặn nợ tăng. 980 vấn đề vẫn nằm nguyên
   đó, cần một PR dọn riêng (bắt đầu bằng 462 lỗi prettier, tự sửa được).
-- `diagrams:check` để `continue-on-error`: chạy để còn thấy, nhưng không chặn. Đây là **nợ
-  có ý thức** — gỡ khi đã thấy nó xanh trên runner vài lần.
-- Bài test ở mục 3 kiểm workflow **nói** đúng thứ cần nói. Việc workflow **chạy** được thật
-  thì chỉ GitHub trả lời được. Nghiệm thu cuối cùng là nhìn CI xanh trên chính PR này.
+- `diagrams:check` vẫn để `continue-on-error`. Nó đã xanh trên runner **2 lần liên tiếp**, nên
+  điều kiện gỡ hedge ("xanh vài lần") gần đạt — nhưng chưa gỡ trong PR này, để mốc quyết định
+  nằm ở người đọc con số chứ không ở người viết workflow.
+- ~~Việc workflow **chạy** được thật thì chỉ GitHub trả lời được.~~ **GitHub đã trả lời** —
+  xem mục 8. Giữ lại dòng gạch để thấy giới hạn này từng có thật và đã được gỡ, không phải
+  bị lặng lẽ xoá đi.
 - Chưa bật `openapi:check` cho nhánh `main` riêng biệt — `push` giới hạn `staging`/`main`
   dùng chung một job.
 - Cổng test chạy trên container `zoldify-test-mysql` dựng đúng theo hướng dẫn trong
@@ -137,3 +142,87 @@ vào file hợp đồng chung mà nằm lẫn trong PR "thêm CI" thì người 
   `scripts/check-boundaries.mjs` và đo lại đều là **28**.
 - `epic-5-infra-erd.md` ghi "không có Docker cục bộ" nên phần Redis trong compose mới là
   *config-verified*. Máy hiện **có Docker 29.7.2** — phần đó nghiệm thu thật được rồi.
+
+## 8. Nghiệm thu thật trên GitHub Actions
+
+Mục này thay cho dòng "nghiệm thu cuối là CI xanh trên chính PR" ở các bản trước. CI đã chạy,
+đây là số nó trả về.
+
+### 8.1. Lần chạy đầu — ĐỎ, và đỏ đúng chỗ đã dự đoán
+
+Run `32772475120`, ~1 phút 53. Job `quality` dừng ở cổng 4:
+
+| Cổng | Kết quả |
+|---|---|
+| Nợ lint không tăng | xanh |
+| Ranh giới nghiệp vụ | xanh |
+| Build | xanh |
+| **OpenAPI khớp code** | **ĐỎ** |
+| Test · Tự kiểm hợp đồng CI | bỏ qua (cổng trước đỏ) |
+
+Job `Sơ đồ` xanh hoàn toàn.
+
+**Đây là bằng chứng mạnh nhất trong cả task**, nên ghi kỹ. Dòng `git diff` trên runner:
+
+```
+diff --git a/openapi.json b/openapi.json
+index 24700ca..d6b1780
+```
+
+- `24700ca` — blob `openapi.json` đang nằm trong `staging` lúc đó (87 route)
+- `d6b1780` — blob runner **tự sinh lại được** (93 route)
+
+Và `d6b1780` **trùng khít từng byte** với `openapi.json` trong PR #10. Tức bản vá hợp đồng
+mà con người viết ra chính xác là thứ runner Linux tự sinh.
+
+Ý nghĩa: **R3 bị loại trừ bằng bằng chứng, không phải bằng lập luận.** Nỗi lo "đỏ giả do khác
+môi trường" là có cơ sở, nhưng ở đây đỏ này là đỏ THẬT. Việc pin `node-version: '24'` khớp
+`deploy.yml` đã ăn tiền.
+
+Một chi tiết dễ đọc nhầm: diff hiện **37 dòng thêm / 31 dòng xoá** cho các khoá `/api/...`.
+Con số đó **không** phải "37 route bị thiếu" — phần lớn là sắp xếp lại thứ tự khoá. Chênh
+lệch thật là 93 − 87 = **6 route**, khớp đúng thông điệp commit của PR #10.
+
+### 8.2. Lần chạy sau — XANH đủ 6 cổng
+
+Sau khi merge PR #10 rồi đồng bộ `staging` vào nhánh này, run `32773212858` xanh toàn bộ:
+
+| Cổng | Số đo thật trên runner |
+|---|---|
+| Nợ lint không tăng | 980 vấn đề, không tăng |
+| Ranh giới nghiệp vụ | **28 vi phạm / mốc 28** |
+| Build | xanh |
+| OpenAPI khớp code | 93 route, không lệch |
+| Test | **8 suite, 52 test pass**, 6.079s |
+| Tự kiểm hợp đồng CI | R1 · R2 · R3 · R6 đều pass |
+| *Sơ đồ (không chặn)* | 20 file `.drawio` + mermaid, xanh |
+
+Vài điều chỉ lần chạy thật mới nói được:
+
+- **Cổng test không xanh rỗng.** 52 test chạy thật trên container MySQL 8, gồm cả 5 spec tiền
+  vốn cần database. Đáng kiểm riêng, vì một cổng chạy 0 test cũng hiện dấu tick y hệt cổng
+  chạy 52 test — đây đúng là kiểu hỏng mà mục 3 nói: *workflow hỏng không kêu*.
+- **Mốc boundaries = 28 được xác nhận trên Linux**, không chỉ trên máy Windows. Củng cố phần
+  đính chính ở mục 7.
+- **R2 và R7 chặn thành công**: `Initialize containers` và `npm ci` đều xanh, không có đỏ giả
+  nào từ hạ tầng.
+
+### 8.3. Sau khi merge vào `staging`
+
+Merge PR #11 (`da70782`) kích hoạt đồng thời hai workflow trên `staging`, **cả hai xanh**:
+
+- `CI` (run `32775291725`) — 6 cổng chạy lần đầu trên nhánh chung
+- `Deploy Backend` (run `32775291730`) — workflow cũ **không** bị workflow mới làm hỏng
+
+Điều cuối này đáng nói riêng: thêm một workflow vào repo có thể làm hỏng workflow sẵn có qua
+tranh chấp `concurrency` hoặc trùng trigger. Đã kiểm, không xảy ra.
+
+### 8.4. Hệ quả cho cả nhóm
+
+Từ `da70782` trở đi, **mọi PR vào `staging` và `main` đều bị 6 cổng chặn**. Đây là thay đổi
+ảnh hưởng cả 4 người chứ không riêng người viết CI — cần nhắn nhóm, để người mở PR tiếp theo
+không ngạc nhiên khi bị chặn.
+
+Món nợ lint 980 vấn đề vẫn nguyên. Nhắc lại cho người nhận PR dọn nợ: 462 lỗi `prettier/prettier`
+là tự sửa được, sau đó tới `no-unsafe-member-access` (212), `no-unsafe-assignment` (155),
+`no-unused-vars` (50), `no-unsafe-argument` (32).
