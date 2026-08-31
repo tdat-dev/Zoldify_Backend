@@ -102,20 +102,37 @@ describe('ShipmentTrackingService — webhook GHN', () => {
       `INSERT INTO users (full_name, email, password, role) VALUES ('s','s@t.local','x','seller')`,
     );
     sellerId = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
+    // receiver_* và shipping_address là NOT NULL không mặc định — bỏ sót thì
+    // lỗi "Field 'receiver_name' doesn't have a default value", và lỗi đó nói
+    // về bài kiểm chứ không về mã đang kiểm.
     await ds.query(
-      `INSERT INTO orders (order_code, user_id, final_amount, status)
-       VALUES ('ORD-1', ?, 100000, 'shipping')`,
+      `INSERT INTO orders (order_code, user_id, final_amount, status,
+                           receiver_name, receiver_phone, shipping_address)
+       VALUES ('ORD-1', ?, 100000, 'shipping', 'Nguoi Nhan', '0900000000', 'So 1')`,
       [sellerId],
     );
     orderId = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
   });
 
-  /** Tạo một lô hàng ở trạng thái cho trước. */
+  /**
+   * Tạo một lô hàng ở trạng thái cho trước.
+   *
+   * Mỗi lô một NGƯỜI BÁN KHÁC NHAU: `uq_shipment_order_seller` là UNIQUE
+   * (order_id, seller_id) — đúng thiết kế, mỗi người bán trong đơn chỉ có một
+   * lô. Dùng chung một seller cho hai lô là dựng dữ liệu không tồn tại được
+   * ngoài đời, và ràng buộc đã bắt đúng lúc viết bài kiểm này.
+   */
   async function taoLo(status = ShipmentStatus.CREATED, ma = 'GHN123') {
+    await ds.query(
+      `INSERT INTO users (full_name, email, password, role)
+       VALUES ('s', ?, 'x', 'seller')`,
+      [`s-${ma}@t.local`],
+    );
+    const sid = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
     await ds.query(
       `INSERT INTO order_shipments (order_id, seller_id, tracking_code, cod_amount, status)
        VALUES (?, ?, ?, 0, ?)`,
-      [orderId, sellerId, ma, status],
+      [orderId, sid, ma, status],
     );
     const id = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
     return repo.findOneByOrFail({ id });
