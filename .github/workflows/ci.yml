@@ -128,6 +128,50 @@ jobs:
       - name: Test
         run: npm test
 
+      # Một database RIÊNG, dựng bằng đúng 16 migration mà production chạy.
+      #
+      # Vì sao không dùng `zoldify_test` ở trên: database đó do jest tự dựng
+      # bằng `synchronize: true`, và mỗi spec chỉ khai những entity nó cần — nên
+      # nó chỉ có 14/25 bảng và KHÔNG có index nào do migration tạo. Soi index
+      # trên đó là soi một lược đồ không tồn tại ở đâu cả.
+      #
+      # Đây cũng là lý do hai cổng dưới trước nay không chạy trong CI: chúng cần
+      # lược đồ thật. Một cái chốt không chạy thì không phải là chốt — Epic 3b
+      # audit xong bốn bảng rồi mã mới đẻ lỗi cũ suốt hai tuần mà không ai kêu.
+      - name: Dựng schema thật để soi
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -ptestpw \
+            -e "CREATE DATABASE IF NOT EXISTS zoldify_schema
+                CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          DB_DATABASE=zoldify_schema \
+            node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+
+      # Index: mọi list "WHERE khoá + ORDER BY thời gian" phải có index ghép.
+      - name: Index đủ cho các danh sách nặng
+        run: npm run check:index
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
+      # Đua: 20 người bấm cùng lúc. Chặn khi xuất hiện chỗ đua MỚI; hai chỗ đã
+      # biết (R1, R4 — đều thuộc task #2 của vai A) ghi trong DA_BIET_HONG.
+      - name: Không có chỗ đua mới
+        run: npm run check:race
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
       # Trạng thái dùng chung qua Redis (task #5). Đặt sau `npm test` vì nó
       # dựng server socket thật và mở cổng — nếu có gì hỏng ở tầng dưới thì
       # phải thấy lỗi thật của tầng đó trước.

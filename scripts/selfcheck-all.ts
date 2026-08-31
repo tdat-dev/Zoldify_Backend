@@ -28,6 +28,9 @@ const suites: Array<{ name: string; file: string }> = [
   { name: 'Task #14 — worker tách khỏi API (cần Redis + DB)', file: 'selfcheck-worker.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
+  // Cần schema thật (đủ 25 bảng + index của migration), không phải schema do
+  // jest synchronize dựng. Xem bước 'Dựng schema thật để soi' trong ci.yml.
+  { name: 'Đua — 20 người bấm cùng lúc', file: 'selfcheck-race.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
 ];
 
