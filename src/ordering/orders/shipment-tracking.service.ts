@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull } from 'typeorm';
 import { timingSafeEqual } from 'crypto';
 import { GhnService } from '@ordering/ghn/ghn.service';
-import { OrderShipment, ShipmentStatus } from './entities/order-shipment.entity';
+import {
+  OrderShipment,
+  ShipmentStatus,
+} from './entities/order-shipment.entity';
 
 /**
  * "GHN nói gì về lô hàng này" — MỘT chỗ duy nhất, hai đường vào.
@@ -107,14 +110,22 @@ export class ShipmentTrackingService {
    */
   async xuLyWebhook(
     token: string | undefined,
-    body: Record<string, any>,
+    body: Record<string, unknown>,
   ): Promise<{ known: boolean; updated: boolean }> {
     this.kiemToken(token);
 
     // GHN đặt tên trường không thống nhất giữa các bản tài liệu; nhận cả bốn
     // cách viết đã gặp thay vì cãi nhau với nhà cung cấp lúc production đang lỗi.
-    const ma: string | undefined =
-      body?.OrderCode ?? body?.order_code ?? body?.ClientOrderCode ?? body?.CodeGHN;
+    //
+    // Lọc bằng `typeof === 'string'` chứ không `??`: thân request là dữ liệu
+    // của người ngoài, nên `OrderCode: { $ne: null }` hay `OrderCode: 123` phải
+    // rơi ra ở đây thay vì đi tiếp xuống câu truy vấn.
+    const ma = [
+      body?.OrderCode,
+      body?.order_code,
+      body?.ClientOrderCode,
+      body?.CodeGHN,
+    ].find((v): v is string => typeof v === 'string' && v.length > 0);
 
     if (!ma) {
       this.logger.warn('Webhook GHN không có mã vận đơn — bỏ qua.');

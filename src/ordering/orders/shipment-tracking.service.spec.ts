@@ -74,9 +74,9 @@ describe('ShipmentTrackingService — webhook GHN', () => {
     // GhnService giả: chỉ cần đúng một phương thức mà service này gọi. Bài kiểm
     // hỏi "hệ thống xử lý ra sao", không hỏi "GHN trả lời thế nào".
     const ghnGia = {
-      getOrderStatus: async () => {
+      getOrderStatus: () => {
         soLanHoiGhn += 1;
-        return ghnTraVe;
+        return Promise.resolve(ghnTraVe);
       },
     } as unknown as GhnService;
 
@@ -101,7 +101,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
     await ds.query(
       `INSERT INTO users (full_name, email, password, role) VALUES ('s','s@t.local','x','seller')`,
     );
-    sellerId = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
+    sellerId = await idVuaChen();
     // receiver_* và shipping_address là NOT NULL không mặc định — bỏ sót thì
     // lỗi "Field 'receiver_name' doesn't have a default value", và lỗi đó nói
     // về bài kiểm chứ không về mã đang kiểm.
@@ -111,7 +111,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
        VALUES ('ORD-1', ?, 100000, 'shipping', 'Nguoi Nhan', '0900000000', 'So 1')`,
       [sellerId],
     );
-    orderId = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
+    orderId = await idVuaChen();
   });
 
   /**
@@ -128,25 +128,40 @@ describe('ShipmentTrackingService — webhook GHN', () => {
        VALUES ('s', ?, 'x', 'seller')`,
       [`s-${ma}@t.local`],
     );
-    const sid = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
+    const sid = await idVuaChen();
     await ds.query(
       `INSERT INTO order_shipments (order_id, seller_id, tracking_code, cod_amount, status)
        VALUES (?, ?, ?, 0, ?)`,
       [orderId, sid, ma, status],
     );
-    const id = (await ds.query('SELECT LAST_INSERT_ID() AS id'))[0].id;
+    const id = await idVuaChen();
     return repo.findOneByOrFail({ id });
   }
 
   const doc = (id: number) => repo.findOneByOrFail({ id });
 
+  /**
+   * `ds.query` trả `any`, nên đọc thẳng `[0].id` là bốn lỗi lint
+   * unsafe-member-access. Bắt kiểu một lần ở đây thay vì rải khắp nơi.
+   *
+   * Dùng THAM SỐ KIỂU của `query<T>()` chứ không `as Array<{id:number}>`:
+   * `eslint --fix` coi phép ép từ `any` là thừa và gỡ mất, nên viết kiểu đó là
+   * lần chạy lint sau tự xoá rồi lỗi quay lại.
+   */
+  async function idVuaChen(): Promise<number> {
+    const rows = await ds.query<Array<{ id: number }>>(
+      'SELECT LAST_INSERT_ID() AS id',
+    );
+    return Number(rows[0].id);
+  }
+
   // ── W1: token ────────────────────────────────────────────────────────────
   it('token sai thì từ chối, và KHÔNG đụng vào lô hàng', async () => {
     const lo = await taoLo();
 
-    await expect(svc.xuLyWebhook('token-bay-ba', { OrderCode: 'GHN123' })).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      svc.xuLyWebhook('token-bay-ba', { OrderCode: 'GHN123' }),
+    ).rejects.toThrow(UnauthorizedException);
 
     const sau = await doc(lo.id);
     expect(sau.status).toBe(ShipmentStatus.CREATED);
@@ -157,9 +172,9 @@ describe('ShipmentTrackingService — webhook GHN', () => {
 
   it('thiếu token cũng bị từ chối', async () => {
     await taoLo();
-    await expect(svc.xuLyWebhook(undefined, { OrderCode: 'GHN123' })).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      svc.xuLyWebhook(undefined, { OrderCode: 'GHN123' }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   // ── Đường đi đúng ────────────────────────────────────────────────────────
@@ -206,7 +221,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
 
     expect(kq2.updated).toBe(false);
     expect(lan2.status).toBe(ShipmentStatus.DELIVERED);
-    expect(lan2.delivered_at!.getTime()).toBe(lan1.delivered_at!.getTime());
+    expect(lan2.delivered_at.getTime()).toBe(lan1.delivered_at.getTime());
   });
 
   // ── W3: webhook tới sai thứ tự ───────────────────────────────────────────
@@ -259,11 +274,13 @@ describe('ShipmentTrackingService — webhook GHN', () => {
     await taoLo(ShipmentStatus.CREATED, 'GHN-OK');
 
     let lan = 0;
-    (svc as any).ghn = {
-      getOrderStatus: async () => {
+    // Thay GhnService bằng bản hỏng ở lần gọi đầu. Ép kiểu qua `unknown` chứ
+    // không `any`: vẫn vào được field private mà không tắt kiểm tra cả đối tượng.
+    (svc as unknown as { ghn: Pick<GhnService, 'getOrderStatus'> }).ghn = {
+      getOrderStatus: () => {
         lan += 1;
-        if (lan === 1) throw new Error('GHN 500');
-        return 'delivered';
+        if (lan === 1) return Promise.reject(new Error('GHN 500'));
+        return Promise.resolve('delivered');
       },
     };
 
