@@ -331,22 +331,26 @@ export class ChatService {
   }
 
   // Đếm số tin nhắn chưa đọc của user (tổng tất cả conversations)
+  /**
+   * Tổng số tin chưa đọc của user — MỘT câu truy vấn.
+   *
+   * Bản cũ nạp TOÀN BỘ hội thoại của user về RAM chỉ để lấy danh sách id, rồi
+   * mới đếm. Nhẹ hơn N+1 nhiều (hai câu, không phải 2N), nhưng vẫn là hình
+   * dạng "nạp cả bảng rồi lọc trong app" mà Epic 1 đã chữa ở `orders.findAll`
+   * — và nó chạy mỗi lần app hiện chấm đỏ trên icon chat, tức là rất thường.
+   *
+   * Nay để database làm việc của nó: join sang `conversations` và lọc ngay
+   * trong SQL. Không dòng nào của bảng hội thoại đi qua Node.
+   */
   async getUnreadCount(user: IUser) {
-    const conversations = await this.conversationRepository.find({
-      where: [{ buyer: { id: user.id } }, { seller: { id: user.id } }],
-    });
-
-    const conversationIds = conversations.map((c) => c.id);
-
-    if (conversationIds.length === 0) {
-      return { unread_count: 0 };
-    }
-
     const count = await this.messageRepository
-      .createQueryBuilder('message')
-      .where('message.conversation_id IN (:...ids)', { ids: conversationIds })
-      .andWhere('message.is_read = :is_read', { is_read: false })
-      .andWhere('message.sender_id != :userId', { userId: user.id })
+      .createQueryBuilder('m')
+      .innerJoin('conversations', 'c', 'c.id = m.conversation_id')
+      .where('(c.buyer_id = :userId OR c.seller_id = :userId)', {
+        userId: user.id,
+      })
+      .andWhere('m.is_read = 0')
+      .andWhere('m.sender_id <> :userId', { userId: user.id })
       .getCount();
 
     return { unread_count: count };

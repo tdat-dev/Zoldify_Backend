@@ -189,6 +189,19 @@ describe('ChatService.getMyConversations', () => {
     }
   });
 
+  // ── getUnreadCount: chấm đỏ trên icon chat, gọi rất thường ───────────────
+  it('getUnreadCount đúng số, và chỉ tốn MỘT truy vấn', async () => {
+    await dungDuLieu(6);
+    dem.dem = 0;
+    const kq = await svc.getUnreadCount(user);
+
+    // Mỗi hội thoại có đúng 1 tin chưa đọc của người bán.
+    expect(kq.unread_count).toBe(6);
+    // Bản cũ nạp toàn bộ hội thoại về RAM rồi mới đếm — hai truy vấn, và một
+    // trong hai kéo mọi dòng hội thoại qua Node. Bản mới join thẳng trong SQL.
+    expect(dem.dem).toBe(1);
+  });
+
   it('hội thoại chưa có tin nhắn nào → last_message null, unread 0', async () => {
     await dungDuLieu(1);
     await ds.query('DELETE FROM messages');
