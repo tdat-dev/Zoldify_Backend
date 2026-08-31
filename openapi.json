@@ -4449,7 +4449,24 @@
       },
       "get": {
         "operationId": "ChatController_getMyConversations_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "currentPage",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",

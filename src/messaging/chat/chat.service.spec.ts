@@ -46,7 +46,8 @@ class DemTruyVan implements TypeOrmLogger {
   public dem = 0;
   logQuery(q: string) {
     // Bỏ qua câu lệnh khung của TypeORM/transaction — chỉ đếm truy vấn dữ liệu.
-    if (/^(START TRANSACTION|COMMIT|ROLLBACK|SET |SELECT VERSION)/i.test(q)) return;
+    if (/^(START TRANSACTION|COMMIT|ROLLBACK|SET |SELECT VERSION)/i.test(q))
+      return;
     this.dem += 1;
   }
   logQueryError() {}
@@ -141,14 +142,14 @@ describe('ChatService.getMyConversations', () => {
   // ── Lỗi 1: không phân trang ──────────────────────────────────────────────
   it('có chặn số lượng — không nạp toàn bộ hội thoại', async () => {
     await dungDuLieu(12);
-    const kq = await svc.getMyConversations(user, '1', '5');
+    const { result: kq } = await svc.getMyConversations(user, '1', '5');
     expect(kq).toHaveLength(5);
   });
 
   it('trang 2 nối tiếp trang 1, không trùng', async () => {
     await dungDuLieu(12);
-    const t1 = await svc.getMyConversations(user, '1', '5');
-    const t2 = await svc.getMyConversations(user, '2', '5');
+    const { result: t1 } = await svc.getMyConversations(user, '1', '5');
+    const { result: t2 } = await svc.getMyConversations(user, '2', '5');
     const id1 = t1.map((c) => c.id);
     const id2 = t2.map((c) => c.id);
     expect(id2).toHaveLength(5);
@@ -178,7 +179,7 @@ describe('ChatService.getMyConversations', () => {
   // ── Nhanh mà sai thì tệ hơn chậm mà đúng ─────────────────────────────────
   it('vẫn trả đúng tin nhắn cuối và số tin chưa đọc', async () => {
     await dungDuLieu(4);
-    const kq = await svc.getMyConversations(user, '1', '50');
+    const { result: kq } = await svc.getMyConversations(user, '1', '50');
 
     expect(kq).toHaveLength(4);
     for (const c of kq) {
@@ -191,7 +192,7 @@ describe('ChatService.getMyConversations', () => {
   it('hội thoại chưa có tin nhắn nào → last_message null, unread 0', async () => {
     await dungDuLieu(1);
     await ds.query('DELETE FROM messages');
-    const kq = await svc.getMyConversations(user, '1', '50');
+    const { result: kq } = await svc.getMyConversations(user, '1', '50');
     expect(kq).toHaveLength(1);
     expect(kq[0].last_message).toBeNull();
     expect(kq[0].unread_count).toBe(0);
