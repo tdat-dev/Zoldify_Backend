@@ -30,6 +30,9 @@ export function configureRouting(app: INestApplication): void {
       // Thiếu hai dòng này thì route vẫn tồn tại, chỉ là ở /api/sitemap-...,
       // và bảng chỉ mục trỏ vào chỗ trả 404. Đã dính thật lúc thêm — bài kiểm
       // đơn vị không thấy được vì nó gọi thẳng service, không qua HTTP.
+      // Docker thăm dò đúng đường dẫn này (xem HEALTHCHECK trong Dockerfile).
+      // Nằm dưới /api thì Docker gõ vào chỗ trả 404 và coi container là chết.
+      { path: 'health', method: RequestMethod.GET },
       { path: 'sitemap-static.xml', method: RequestMethod.GET },
       { path: 'sitemap-products-:lo.xml', method: RequestMethod.GET },
     ],
