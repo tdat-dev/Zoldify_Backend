@@ -56,7 +56,9 @@
     "check:backup": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-backup.ts",
     "check:redis": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-redis-state.ts",
     "check:worker": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-worker.ts",
-    "loadtest": "k6 run load-test/baseline.js"
+    "loadtest": "node -r ts-node/register -r tsconfig-paths/register scripts/loadtest.ts",
+    "sql:audit:seed": "node -r ts-node/register -r tsconfig-paths/register scripts/sql-audit-seed.ts",
+    "sql:audit": "node -r ts-node/register -r tsconfig-paths/register scripts/sql-audit.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
