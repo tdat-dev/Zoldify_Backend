@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { ShipmentTrackingService } from './shipment-tracking.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -235,25 +236,104 @@ export class OrdersService {
       ghn_ward_code: createOrderDto.ghn_ward_code,
     });
 
-    const savedOrder = await this.orderRepository.save(order);
+    // ── TỪ ĐÂY TRỞ XUỐNG LÀ MỘT TRANSACTION ──────────────────────────────────
+    //
+    // Task #2 bảng phân công: "SELECT ... FOR UPDATE trong orders.create, chặn
+    // kho về âm".
+    //
+    // Trước đây bốn việc dưới đây là bốn lần ghi rời: lưu đơn, lưu món, trừ
+    // kho, xoá giỏ. Và việc kiểm kho nằm mãi ở trên, lúc duyệt giỏ. Giữa lúc
+    // kiểm và lúc trừ có cả một quãng — lưu hai bảng, và trước đó còn hỏi phí
+    // ship qua mạng. Hai mươi người bấm cùng lúc thì cả hai mươi đều đọc thấy
+    // "còn 1", đều qua cửa, rồi đều trừ.
+    //
+    // Đo được bằng `npm run check:race` R1, gọi thẳng service này: kho 1 → bán
+    // 20, còn **-19**. Kho âm nghĩa là hai mươi người đã trả tiền cho một món
+    // hàng duy nhất.
+    //
+    // BA LỚP CHẶN, CÓ CHỦ ĐÍCH CHỒNG NHAU:
+    //
+    //   1. Khoá hàng sản phẩm (`FOR UPDATE`) rồi ĐỌC LẠI kho dưới khoá. Đây là
+    //      lớp cho ra câu báo lỗi tử tế: "chỉ còn N trong kho".
+    //   2. Trừ kho có điều kiện `WHERE stock >= n`, kiểm số dòng bị ảnh hưởng.
+    //      Thừa khi đã có khoá — giữ lại có chủ đích: mai kia ai đó gỡ khoá đi
+    //      thì kho vẫn không thể về âm, vì database từ chối chứ không phải mã
+    //      từ chối.
+    //   3. Cả khối trong một transaction: giỏ hai món mà món thứ hai hết hàng
+    //      thì món thứ nhất KHÔNG bị trừ, và không còn cái đơn dở dang nào.
+    //
+    // KHOÁ THEO THỨ TỰ id TĂNG DẦN. Hai người mua hai giỏ có chung hai sản phẩm
+    // nhưng thứ tự ngược nhau sẽ khoá chéo và MySQL giết một bên. Cùng đi theo
+    // một thứ tự thì không có vòng chờ.
+    //
+    // Việc hỏi phí ship qua GHN nằm Ở TRÊN, ngoài transaction — có chủ đích.
+    // Giữ khoá hàng trong lúc chờ mạng là cách chắc chắn nhất để một sự cố GHN
+    // biến thành sự cố database.
+    const idTheoThuTu = [
+      ...new Set(orderItemsData.map((i) => i.product.id)),
+    ].sort((a, b) => a - b);
 
-    const orderItems = orderItemsData.map((item) => ({
-      ...item,
-      order: { id: savedOrder.id },
-    }));
+    const savedOrder = await this.dataSource.transaction(
+      async (em: EntityManager) => {
+        const daKhoa = await em
+          .createQueryBuilder(Product, 'p')
+          .setLock('pessimistic_write')
+          .where('p.id IN (:...ids)', { ids: idTheoThuTu })
+          .orderBy('p.id', 'ASC')
+          .getMany();
 
-    await this.orderItemRepository.save(orderItems);
+        const khoThat = new Map(daKhoa.map((p) => [p.id, Number(p.stock)]));
+        for (const item of orderItemsData) {
+          const con = khoThat.get(item.product.id);
+          if (con === undefined) {
+            throw new NotFoundException(
+              `Sản phẩm ID ${item.product.id} không tồn tại`,
+            );
+          }
+          if (con < item.quantity) {
+            throw new BadRequestException(
+              `Sản phẩm "${item.product_name}" chỉ còn ${con} trong kho`,
+            );
+          }
+        }
 
-    // Decrement product stock
-    for (const item of orderItemsData) {
-      await this.productRepository.decrement(
-        { id: item.product.id },
-        'stock',
-        item.quantity,
-      );
-    }
+        const luuDon = await em.save(Order, order);
 
-    await this.cartRepository.delete(cartItems.map((c) => c.id));
+        await em.save(
+          OrderItem,
+          orderItemsData.map((item) => ({
+            ...item,
+            order: { id: luuDon.id },
+          })) as unknown as OrderItem[],
+        );
+
+        for (const id of idTheoThuTu) {
+          const soLuong = orderItemsData
+            .filter((i) => i.product.id === id)
+            .reduce((s, i) => s + i.quantity, 0);
+          const kq = await em
+            .createQueryBuilder()
+            .update(Product)
+            .set({ stock: () => 'stock - :soLuong' })
+            .where('id = :id AND stock >= :soLuong', { id, soLuong })
+            .execute();
+          if (kq.affected !== 1) {
+            // Không thể xảy ra khi khoá còn giữ. Nếu nó xảy ra thì có người vừa
+            // gỡ khoá ở trên, và ném ở đây là thứ duy nhất còn chặn kho về âm.
+            throw new ConflictException(
+              'Kho vừa thay đổi, mời bạn đặt lại đơn',
+            );
+          }
+        }
+
+        await em.delete(
+          Cart,
+          cartItems.map((c) => c.id),
+        );
+
+        return luuDon;
+      },
+    );
 
     await this.notificationsService.create({
       user_id: user.id,
@@ -1020,6 +1100,43 @@ export class OrdersService {
    */
   private async applyCancellation(order: Order) {
     await this.dataSource.transaction(async (em: EntityManager) => {
+      // KHOÁ DÒNG ĐƠN TRƯỚC MỌI THỨ, RỒI ĐỌC LẠI TRẠNG THÁI TỪ DATABASE.
+      //
+      // Task #2 bảng phân công. `assertCancellable` phía trên có kiểm trạng
+      // thái, nhưng nó kiểm trên đối tượng đã nạp từ TRƯỚC — hai lượt huỷ đồng
+      // thời đều đọc thấy "pending", đều qua cửa, rồi đều cộng hàng về kho.
+      //
+      // Đo được bằng `npm run check:race` R4: huỷ 20 lượt cùng lúc thì kho về
+      // 20 trong khi đơn chỉ có 1 món. Không mất tiền, nhưng kho phình ra hàng
+      // không có thật và người sau đặt được món đã hết.
+      //
+      // `pessimistic_write` sinh `SELECT ... FOR UPDATE`: lượt thứ hai phải chờ
+      // lượt thứ nhất commit xong mới đọc, và lúc đó nó thấy 'cancelled'.
+      const chot = await em.findOne(Order, {
+        where: { id: order.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!chot) return;
+
+      // Đã có người huỷ trước → không làm gì. KHÔNG ném lỗi: đây là đường mà
+      // cron huỷ đơn quá hạn cũng đi qua, và một cron chạy lại phải vô hại.
+      if (chot.status === OrderStatus.CANCELLED) return;
+
+      // Trạng thái có thể đã đổi sang thứ khác trong lúc chờ khoá (người bán
+      // vừa bấm giao hàng chẳng hạn). Lúc đó huỷ là sai, phải dừng hẳn.
+      if (
+        chot.status !== OrderStatus.PENDING &&
+        chot.status !== OrderStatus.CONFIRMED
+      ) {
+        throw new BadRequestException(
+          'Đơn hàng vừa đổi trạng thái, không huỷ được nữa',
+        );
+      }
+
+      // Đọc `is_paid` từ bản vừa khoá, không dùng bản nạp từ trước: tiền có thể
+      // vừa về trong lúc chờ.
+      order.is_paid = chot.is_paid;
+
       if (order.is_paid) {
         try {
           await this.escrowsService.refund(order.id, em);
@@ -1036,8 +1153,11 @@ export class OrdersService {
         }
       }
 
+      // `update` chứ không `save(order)`: `order` là đối tượng nạp từ trước khi
+      // có khoá, lưu cả nó là ghi đè bằng dữ liệu có thể đã cũ. Chỉ đổi đúng
+      // một cột mình vừa quyết định.
+      await em.update(Order, { id: order.id }, { status: OrderStatus.CANCELLED });
       order.status = OrderStatus.CANCELLED;
-      await em.save(Order, order);
 
       for (const item of order.items) {
         if (item.product) {

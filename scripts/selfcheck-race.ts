@@ -95,14 +95,21 @@ const bad = (m: string) => {
  * hỏng MỚI. Gỡ một dòng khỏi đây khi đã sửa xong — gỡ rồi mà vẫn đỏ thì CI chặn.
  */
 const DA_BIET_HONG = new Set<string>([
-  // Task #2 bảng phân công (vai A, hạn 12/08): "SELECT ... FOR UPDATE trong
-  // orders.create, chặn kho về âm". Chưa làm.
-  'R1 orders.create — bán quá số lượng',
-
-  // Cùng gốc với R1, cùng file: `applyCancellation` cộng hàng về kho mà không
-  // khoá dòng đơn. Đơn CHƯA thanh toán không sinh bút toán nào nên không có gì
-  // chặn hai lượt huỷ đồng thời.
-  'R4 huỷ đơn chưa thanh toán — cộng kho nhiều lần',
+  // TRỐNG — và giữ cho nó trống.
+  //
+  // Hai mục từng nằm ở đây, cả hai đều là task #2 bảng phân công:
+  //
+  //   R1 orders.create — bán quá số lượng
+  //   R4 huỷ đơn chưa thanh toán — cộng kho nhiều lần
+  //
+  // Đã sửa ngày 02/09 trong `orders.service.ts`. Trước khi sửa, chạy bộ này
+  // trên chính service thật cho ra: kho 1 → bán 20, còn **-19**; và huỷ 20 lượt
+  // → kho về 20 trong khi đơn chỉ có 1 món. Sau khi sửa: bán 1 còn 0, và kho
+  // về đúng 1.
+  //
+  // Danh sách trống nghĩa là MỌI kịch bản đua phải xanh. Thêm một dòng vào đây
+  // là tự cho phép mình đi tiếp với một chỗ đua đã biết — chỉ làm thế khi việc
+  // sửa thuộc người khác và có ghi rõ ai, như hai dòng vừa gỡ.
 ]);
 
 /** Chờ một nhịp để mô phỏng công việc xen giữa lúc kiểm và lúc ghi. */
