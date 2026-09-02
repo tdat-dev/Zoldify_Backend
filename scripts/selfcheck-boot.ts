@@ -187,6 +187,47 @@ async function main(): Promise<void> {
   const loLa = await lay('/sitemap-products-abc.xml');
   kiem('lô không phải số → 404 (không chạm database)', loLa.status === 404, `HTTP ${loLa.status}`);
 
+  // ĐI HẾT CHUỖI: bảng chỉ mục → từng file con.
+  //
+  // Bắt buộc phải kiểm, vì đây là lỗi đã lọt lên staging một lần: bảng chỉ mục
+  // trỏ file con sang domain WEB (SITE_URL) trong khi mấy file đó do API phục
+  // vụ. Cả `/sitemap.xml` lẫn `/sitemap-static.xml` gọi riêng đều trả 200, nên
+  // kiểm từng cái một thì không thấy gì — chỉ khi ĐI THEO đường dẫn mà bảng chỉ
+  // mục đưa ra mới lộ: cả hai file con đều 404.
+  //
+  // Kiểm hai vế: gốc phải khớp API_PUBLIC_URL, và đường dẫn phải mở được thật.
+  // Cùng mặc định với SitemapService, để lúc không đặt biến thì bài kiểm vẫn so
+  // đúng thứ ứng dụng thật sự dùng chứ không so với chuỗi rỗng.
+  const gocApi = (process.env.API_PUBLIC_URL || 'http://localhost:3000')
+    .split(',')[0]
+    .trim()
+    .replace(/\/+$/, '');
+  const fileCon = [...chiMuc.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map(
+    (m) => m[1],
+  );
+  kiem('bảng chỉ mục có liệt kê file con', fileCon.length > 0, `${fileCon.length} file`);
+
+  const saiGoc = fileCon.filter((u) => !u.startsWith(gocApi));
+  kiem(
+    `file con nằm ở gốc của API (${gocApi})`,
+    gocApi.length > 0 && saiGoc.length === 0,
+    saiGoc.length ? `sai gốc: ${saiGoc[0]}` : '',
+  );
+
+  let conHong = 0;
+  for (const u of fileCon) {
+    const duong = u.slice(gocApi.length) || '/';
+    const r = await lay(duong);
+    // 404 "lô rỗng" không tính là hỏng — nhưng bảng chỉ mục vốn chỉ liệt kê lô
+    // CÓ hàng, nên gặp nó ở đây là bất thường. Chỉ tha khi database rỗng (CI).
+    if (r.status !== 200 && !r.body.includes('Không có file sitemap')) conHong++;
+  }
+  kiem(
+    'mọi file con trong bảng chỉ mục đều mở được',
+    conHong === 0,
+    conHong ? `${conHong}/${fileCon.length} không mở được` : '',
+  );
+
   // Mọi `<loc>` phải là URL DÙNG ĐƯỢC.
   //
   // Nghe như thừa, nhưng đây đúng là lỗi vừa bắt được trên api-staging: biến

@@ -96,7 +96,10 @@ const ngay = (d?: Date | null): string | undefined =>
  */
 @Injectable()
 export class SitemapService {
+  /** Gốc của TRANG WEB — dùng cho URL của các trang mà người dùng mở. */
   private readonly siteUrl: string;
+  /** Gốc của CHÍNH API NÀY — dùng cho địa chỉ của các file sitemap con. */
+  private readonly apiUrl: string;
 
   constructor(
     @InjectRepository(Product)
@@ -131,6 +134,26 @@ export class SitemapService {
     // SÁCH ngăn bởi dấu phẩy (main.ts dùng nó cho CORS). Đọc thô thì mọi <loc>
     // thành URL rác — đã đo được trên api-staging trước khi sửa.
     this.siteUrl = siteUrlChinh(process.env.SITE_URL);
+
+    // HAI GỐC KHÁC NHAU, VÀ ĐÂY LÀ CHỖ ĐÃ LÀM HỎNG BẢNG CHỈ MỤC.
+    //
+    // Các trang trong sitemap là trang của WEB (staging.zoldify.com). Nhưng
+    // bản thân mấy file sitemap lại do API phục vụ (api-staging.zoldify.com).
+    // Bản đầu dùng chung `siteUrl` cho cả hai, nên bảng chỉ mục trỏ file con
+    // sang web — mà web không phục vụ file nào. Đo trên staging: cả hai file
+    // con đều 404. Bản cũ chỉ có MỘT file nên không có chỗ để lộ lỗi này.
+    //
+    // VÌ SAO KHÔNG LẤY TỪ HEADER `Host` CỦA REQUEST, DÙ NHƯ THẾ LÀ KHỎI CẤU HÌNH.
+    // Vì các route sitemap có cache đánh khoá theo ĐƯỜNG DẪN, không theo host.
+    // Ai đó gửi `Host: evil.com` một lần là bản sitemap trỏ sang evil.com nằm
+    // luôn trong cache và được trả cho mọi người sau đó — đầu độc cache. Đọc từ
+    // biến môi trường thì không ai từ bên ngoài đổi được.
+    //
+    // Mặc định `http://localhost:3000` chứ không để `siteUrlChinh` tự rơi về
+    // 3001: 3001 là cổng của WEB, còn đây là API. Con số này khớp .env.sample.
+    this.apiUrl = siteUrlChinh(
+      process.env.API_PUBLIC_URL || 'http://localhost:3000',
+    );
   }
 
   /** Danh sách file con cho bảng chỉ mục — chỉ những lô THẬT SỰ có hàng. */
@@ -146,10 +169,12 @@ export class SitemapService {
       .setParameter('size', this.kichThuocLo)
       .getRawMany<{ lo: string | number; moi_nhat: Date | null }>();
 
+    // `apiUrl` chứ KHÔNG phải `siteUrl`: đây là địa chỉ của chính mấy file
+    // sitemap, mà chúng do API phục vụ. Xem ghi chú ở constructor.
     return [
-      { loc: `${this.siteUrl}/sitemap-static.xml` },
+      { loc: `${this.apiUrl}/sitemap-static.xml` },
       ...lo.map((l) => ({
-        loc: `${this.siteUrl}/sitemap-products-${Number(l.lo)}.xml`,
+        loc: `${this.apiUrl}/sitemap-products-${Number(l.lo)}.xml`,
         lastmod: ngay(l.moi_nhat),
       })),
     ];
