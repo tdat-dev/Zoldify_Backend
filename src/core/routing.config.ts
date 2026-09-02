@@ -23,6 +23,15 @@ export function configureRouting(app: INestApplication): void {
     exclude: [
       { path: '/', method: RequestMethod.GET },
       { path: 'sitemap.xml', method: RequestMethod.GET },
+      // Sitemap giờ là bảng chỉ mục trỏ sang các file con, nên các file con
+      // cũng phải ở gốc domain: chuẩn sitemap đòi file con nằm cùng thư mục
+      // hoặc sâu hơn bảng chỉ mục. Nằm dưới /api thì Google từ chối cả bộ.
+      //
+      // Thiếu hai dòng này thì route vẫn tồn tại, chỉ là ở /api/sitemap-...,
+      // và bảng chỉ mục trỏ vào chỗ trả 404. Đã dính thật lúc thêm — bài kiểm
+      // đơn vị không thấy được vì nó gọi thẳng service, không qua HTTP.
+      { path: 'sitemap-static.xml', method: RequestMethod.GET },
+      { path: 'sitemap-products-:lo.xml', method: RequestMethod.GET },
     ],
   });
 
