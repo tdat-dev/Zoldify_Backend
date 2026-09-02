@@ -162,6 +162,53 @@ async function main(): Promise<void> {
   const dsSan = await lay('/api/v1/products');
   kiem('GET /api/v1/products (có prefix + version)', dsSan.status === 200, `HTTP ${dsSan.status}`);
 
+  // `/health` phải ở GỐC domain: Dockerfile thăm dò đúng đường dẫn này, và nằm
+  // dưới /api thì Docker gõ vào chỗ trả 404 rồi coi container là chết.
+  const suc = await lay('/health');
+  kiem('GET /health ở gốc domain', suc.status === 200, `HTTP ${suc.status}`);
+  let than: { db?: string; redis?: string; status?: string } = {};
+  try {
+    than = JSON.parse(suc.body) as typeof than;
+  } catch {
+    /* để rỗng — mục dưới sẽ FAIL và nói rõ */
+  }
+  kiem(
+    'health nói rõ trạng thái db và redis',
+    than.db === 'up' && ['up', 'down', 'off'].includes(than.redis ?? ''),
+    `db=${than.db} redis=${than.redis} status=${than.status}`,
+  );
+  kiem(
+    'health KHÔNG bị bọc phong bì {statusCode, data}',
+    !suc.body.includes('"statusCode"'),
+    'bọc vào thì mã ngoài luôn 200 và healthcheck vô dụng như bản cũ',
+  );
+
+  // Mã request: có ở MỌI phản hồi, kể cả phản hồi lỗi — vì đúng những request
+  // bị từ chối mới là thứ hay phải đi tra nhất.
+  const coId = await fetch(base + '/');
+  kiem(
+    'mọi phản hồi mang X-Request-Id',
+    (coId.headers.get('x-request-id') ?? '').length > 0,
+    coId.headers.get('x-request-id') ?? '(không có)',
+  );
+
+  // Header do client gửi đi THẲNG vào log, nên phải làm sạch.
+  //
+  // Dạng nguy hiểm nhất — xuống dòng để chèn một dòng log giả — thì tầng HTTP
+  // đã chặn sẵn: `fetch` (và bộ phân tích của Node) từ chối gửi header có
+  // CR/LF. Nên ở đây kiểm dạng mà tầng HTTP CHO qua: dấu nháy, khoảng trắng, và
+  // chuỗi dài quá mức. Một mã request 5.000 ký tự lặp lại mỗi dòng log cũng đủ
+  // làm log không đọc được nữa.
+  const bay = await fetch(base + '/', {
+    headers: { 'X-Request-Id': `x"} {"level":"info" ${'A'.repeat(5000)}` },
+  });
+  const traVe = bay.headers.get('x-request-id') ?? '';
+  kiem(
+    'X-Request-Id bậy thì bị thay, không lọt nguyên văn',
+    !traVe.includes('"') && !traVe.includes(' ') && traVe.length <= 64,
+    `trả về ${traVe.length} ký tự: ${JSON.stringify(traVe.slice(0, 40))}`,
+  );
+
   // Ba route sitemap phải nằm ở GỐC domain. Đây là chỗ vừa hỏng: chúng bị đẩy
   // vào /api vì thiếu trong danh sách exclude của setGlobalPrefix.
   const chiMuc = await lay('/sitemap.xml');
