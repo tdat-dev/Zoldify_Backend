@@ -307,6 +307,17 @@ async function main(): Promise<void> {
   );
 
   in_(`\n${B}— 3. Guard còn chặn —${X}`);
+
+  // Tài liệu API (`/api/docs`) KHÔNG kiểm ở đây, có lý do.
+  //
+  // Bài này dựng app bằng `NestFactory.create` + `configureRouting` chứ không
+  // chạy trọn `main.ts`, nên Swagger không được mount — gọi vào sẽ 404 vì
+  // route không tồn tại, không phải vì chốt chặn làm việc. Một mục xanh/đỏ ở
+  // đây sẽ nói dối về thứ nó tưởng đang đo.
+  //
+  // Việc chặn nằm ở `src/core/swagger-guard.spec.ts`: 9 bài, giả lập được địa
+  // chỉ IP nên kiểm được cả ba nhánh (có tài khoản / loopback / ở xa) — thứ mà
+  // gọi HTTP từ chính máy đang chạy không bao giờ kiểm được.
   const rieng = await lay('/api/v1/chat/conversations');
   kiem('GET /api/v1/chat/conversations không token → 401', rieng.status === 401, `HTTP ${rieng.status}`);
 
