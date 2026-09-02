@@ -70,6 +70,15 @@ class GhiTruyVan implements TypeOrmLogger {
   log() {}
 }
 
+// Hai gốc KHÁC NHAU, cố ý đặt khác hẳn để bài kiểm phân biệt được:
+//   - SITE_URL       → trang mà người dùng mở
+//   - API_PUBLIC_URL → nơi phục vụ chính mấy file sitemap
+// Phải đặt TRƯỚC khi dựng service, vì constructor đọc chúng một lần.
+const SITE_URL = 'https://web.test.local';
+const API_URL = 'https://api.test.local';
+process.env.SITE_URL = SITE_URL;
+process.env.API_PUBLIC_URL = API_URL;
+
 // Lô nhỏ để bài kiểm chạy nhanh. Bản chạy thật dùng KICH_THUOC_LO trong
 // sitemap.service.ts; điều bài kiểm khẳng định là CÁCH chia, không phải con số.
 const LO = 100;
@@ -153,6 +162,27 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
 
   afterAll(async () => {
     if (ds?.isInitialized) await ds.destroy();
+  });
+
+  it('file con nằm ở gốc của API, còn trang nằm ở gốc của WEB', async () => {
+    // Đây là lỗi đã dính THẬT trên staging: bản đầu dùng chung một gốc cho cả
+    // hai, nên bảng chỉ mục trỏ file con sang domain web — mà web không phục vụ
+    // file sitemap nào. Đo được: cả hai file con đều trả 404.
+    //
+    // Hai thứ này là hai loại địa chỉ khác nhau:
+    //   - trang người dùng mở        → SITE_URL       (web)
+    //   - bản thân file sitemap      → API_PUBLIC_URL (API phục vụ chúng)
+    const muc = await svc.danhSachFileCon();
+    for (const m of muc) {
+      expect(m.loc.startsWith(API_URL)).toBe(true);
+      expect(m.loc.startsWith(SITE_URL)).toBe(false);
+    }
+
+    const trang = [...(await svc.urlTinh()), ...(await svc.urlSanPham(0))];
+    for (const t of trang) {
+      expect(t.loc.startsWith(SITE_URL)).toBe(true);
+      expect(t.loc.startsWith(API_URL)).toBe(false);
+    }
   });
 
   it('bảng chỉ mục liệt kê đủ số file con, không thiếu lô nào', async () => {

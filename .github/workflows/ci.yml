@@ -193,6 +193,12 @@ jobs:
           #
           # Để CI chạy với dạng KHÓ, không phải dạng dễ.
           SITE_URL: https://a.example.com,https://b.example.com
+          # Đặt KHÁC HẲN SITE_URL có chủ đích. Bảng chỉ mục sitemap phải trỏ các
+          # file con về gốc của API (nơi phục vụ chúng), còn URL các trang thì
+          # trỏ về gốc của WEB. Bản đầu dùng chung một gốc và lọt lên staging:
+          # cả hai file con đều 404. Hai giá trị khác nhau ở đây là thứ làm cho
+          # cổng phân biệt được hai loại địa chỉ.
+          API_PUBLIC_URL: https://api.example.com
 
       # Đua: 20 người bấm cùng lúc. Chặn khi xuất hiện chỗ đua MỚI; hai chỗ đã
       # biết (R1, R4 — đều thuộc task #2 của vai A) ghi trong DA_BIET_HONG.
