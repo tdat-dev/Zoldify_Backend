@@ -295,10 +295,16 @@ async function main(): Promise<void> {
     { ten: 'đơn của tôi', duong: '/api/v1/orders?currentPage=1&limit=10', token: tBuyer },
     { ten: 'admin: thống kê', duong: '/api/v1/admin/stats', token: tAdmin },
     {
-      ten: 'sitemap — nạp TOÀN BỘ sản phẩm',
+      ten: 'sitemap — bảng chỉ mục',
       duong: '/sitemap.xml',
       token: null,
-      ghiChu: 'route nặng nhất; xem cột lag',
+      ghiChu: 'thứ Google gọi đầu tiên; giờ chỉ là một câu GROUP BY + vài chục dòng XML',
+    },
+    {
+      ten: 'sitemap — một file con',
+      duong: '/sitemap-products-0.xml',
+      token: null,
+      ghiChu: 'phần nặng còn lại, nhưng đã chặn ở KICH_THUOC_LO và có cache',
     },
   ];
   const mucSong = [1, 10, 50, 100];
@@ -507,7 +513,8 @@ function xuatBaoCao(kq: KetQua[], cn: ChenNgang, tiLeLoi: number): string {
   L.push(`| Danh sách có cache, trúng cache | ${spCache} |`);
   L.push(`| Danh sách chạm DB thật | ${spKhong} |`);
   L.push(`| Đường có xác thực + JOIN (chat, đơn) | ${Math.max(lay('chat: danh sách hội thoại'), lay('đơn của tôi'))} |`);
-  L.push(`| Route nặng nhất (\`sitemap.xml\`) | **${lay('sitemap — nạp TOÀN BỘ sản phẩm')}** |`);
+  L.push(`| \`sitemap.xml\` — bảng chỉ mục | ${lay('sitemap — bảng chỉ mục')} |`);
+  L.push(`| Route nặng nhất (một file sitemap con) | **${lay('sitemap — một file con')}** |`);
   L.push('');
   L.push('Bốn điều rút ra:');
   L.push('');
@@ -518,10 +525,11 @@ function xuatBaoCao(kq: KetQua[], cn: ChenNgang, tiLeLoi: number): string {
   L.push('   dài thêm hàng đợi: nhìn cột `p95` tăng gấp đôi mỗi khi số song song gấp đôi,');
   L.push('   trong khi cột `RPS` đứng yên. Muốn hơn thì phải **thêm tiến trình**, không');
   L.push('   phải thêm nhân cho một tiến trình.');
-  L.push(`3. **\`sitemap.xml\` là chỗ yếu nhất**: ${lay('sitemap — nạp TOÀN BỘ sản phẩm')} rps, và quan trọng hơn là nó`);
-  L.push('   làm mọi request khác chậm đi (xem bài chèn ngang). Nó nạp toàn bộ bảng sản');
-  L.push('   phẩm — hôm nay 2.000 dòng; ở 200.000 dòng thì nó không còn là route chậm,');
-  L.push('   nó là sự cố. Đây cũng là chỗ `sql-audit.md` đã đánh dấu mức CAO.');
+  L.push(`3. **Bảng chỉ mục ${lay('sitemap — bảng chỉ mục')} rps, file con ${lay('sitemap — một file con')} rps.** Google gọi bảng chỉ mục`);
+  L.push('   trước, và đó giờ chỉ là một câu `GROUP BY` — nên cú chèn ngang ở dưới đo');
+  L.push('   đúng thứ crawler thật gây ra. File con vẫn là route đắt nhất còn lại, nhưng');
+  L.push('   chi phí của nó bị chặn ở `KICH_THUOC_LO` sản phẩm mỗi file, nên **không còn');
+  L.push('   tăng theo kích thước bảng** — đó mới là điều đổi được. Xem `sql-audit.md`.');
   L.push('4. **Rate limit thật là 10 request/giây mỗi IP.** Nghĩa là trong vận hành bình');
   L.push('   thường sẽ không ai chạm tới các con số trên. Các số này trả lời câu hỏi khác:');
   L.push('   *khi có sự cố, hoặc khi throttler fail-open vì Redis chết, thì trần ở đâu.*');

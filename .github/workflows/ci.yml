@@ -161,6 +161,30 @@ jobs:
           DB_PASSWORD: testpw
           DB_DATABASE: zoldify_schema
 
+      # App có DỰNG ĐƯỢC không, và route có đúng đường dẫn không.
+      #
+      # Cổng này sinh ra vì `npm test` KHÔNG trả lời được câu đó: test đơn vị tự
+      # `new Service(...)`, không đi qua bộ tiêm phụ thuộc của Nest lẫn bộ định
+      # tuyến. Đã dính hai lần — task #14 (worker xanh 26/26 mà không boot nổi)
+      # và sitemap (8/8 xanh, build sạch, `NestFactory.create` chết vì tham số
+      # có giá trị mặc định bị Nest hiểu thành provider tên `Number`).
+      #
+      # `test/app.e2e-spec.ts` có dựng AppModule thật, nhưng nó chạy bằng
+      # `npm run test:e2e` mà CI chưa bao giờ gọi. Một cái chốt không chạy thì
+      # không phải là chốt — đúng chuyện đã xảy ra với check:index.
+      #
+      # Dùng `zoldify_schema` chứ không `zoldify_test`: app chạy
+      # `synchronize: false`, nên nó cần lược đồ do migration dựng, không phải
+      # lược đồ jest tự sinh.
+      - name: App khởi động được và route đúng chỗ
+        run: npm run check:boot
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
       # Đua: 20 người bấm cùng lúc. Chặn khi xuất hiện chỗ đua MỚI; hai chỗ đã
       # biết (R1, R4 — đều thuộc task #2 của vai A) ghi trong DA_BIET_HONG.
       - name: Không có chỗ đua mới

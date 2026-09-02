@@ -5848,8 +5848,60 @@
     },
     "/sitemap.xml": {
       "get": {
-        "operationId": "SitemapController_getSitemap",
+        "operationId": "SitemapController_getSitemapIndex",
         "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Bảng chỉ mục — KHÔNG còn chứa URL sản phẩm, chỉ trỏ sang các file con.\n\nĐây là lý do cả bài sửa này tồn tại: request vào `/sitemap.xml` giờ chỉ tốn\nmột câu `GROUP BY` và vài chục dòng XML, thay vì nạp cả bảng sản phẩm.",
+        "tags": [
+          "Sitemap"
+        ]
+      }
+    },
+    "/sitemap-static.xml": {
+      "get": {
+        "operationId": "SitemapController_getSitemapStatic",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Sitemap"
+        ]
+      }
+    },
+    "/sitemap-products-{lo}.xml": {
+      "get": {
+        "operationId": "SitemapController_getSitemapProducts",
+        "parameters": [
+          {
+            "name": "lo",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
