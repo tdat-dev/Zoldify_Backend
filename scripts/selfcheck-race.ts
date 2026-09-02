@@ -27,7 +27,60 @@
 import AppDataSource from '../src/data-source';
 import type { DataSource } from 'typeorm';
 
+// Dựng `AppModule` kéo theo cả nhánh xác thực, và `JwtStrategy` ném ngay lúc
+// khởi tạo nếu thiếu khoá. Bài kiểm này không đăng nhập ai — nó gọi thẳng
+// service — nên giá trị ở đây chỉ cần tồn tại.
+const E = process.env;
+E.JWT_ACCESS_SECRET ??= 'check-race-access';
+E.JWT_REFRESH_TOKEN_SECRET ??= 'check-race-refresh';
+E.JWT_ACCESS_EXPIRE ??= '1d';
+E.JWT_REFRESH_EXPIRE ??= '7d';
+E.SITE_URL ??= 'http://localhost:3001';
+E.API_PUBLIC_URL ??= 'http://localhost:3000';
+
 const N = 20; // số người "bấm" cùng lúc
+
+/**
+ * R1 VÀ R4 GỌI THẲNG `OrdersService` THẬT, KHÔNG CHÉP LẠI TRÌNH TỰ SQL.
+ *
+ * Bản đầu của hai kịch bản này tự viết lại đúng trình tự mà `orders.service.ts`
+ * đang làm — đọc kho, chờ một nhịp, rồi trừ. Cách đó chứng minh được rằng LỖI
+ * CÓ THẬT, nhưng nó có một khuyết tật chí mạng: **sửa mã thật xong bài kiểm vẫn
+ * đỏ y nguyên**, vì nó đang đo bản chép chứ không đo mã. Một bài kiểm không thể
+ * chuyển sang xanh thì không dùng để nghiệm thu bản sửa được.
+ *
+ * Nên nay hai kịch bản này dựng hẳn `AppModule` và lấy `OrdersService` ra khỏi
+ * bộ tiêm phụ thuộc. Chậm hơn vài giây, đổi lại chúng đo đúng thứ người dùng
+ * chạm vào.
+ *
+ * R2 và R3 GIỮ NGUYÊN dạng SQL trần, có chủ đích: chúng là ĐỐI CHỨNG, việc của
+ * chúng là chứng minh phép đo đúng (có khoá thì kết quả đúng). Đối chứng mà đi
+ * qua cùng lớp mã với thứ đang nghi ngờ thì không còn là đối chứng.
+ */
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
+interface DichVuDon {
+  create: (dto: unknown, user: unknown) => Promise<unknown>;
+  cancelExpired: (orderId: number) => Promise<void>;
+}
+
+async function layDichVuDon(): Promise<{
+  svc: DichVuDon;
+  dong: () => Promise<void>;
+}> {
+  require('reflect-metadata');
+  const { NestFactory } = require('@nestjs/core');
+  const { AppModule } = require('../src/app.module');
+  const { OrdersService } = require('../src/ordering/orders/orders.service');
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: false,
+    abortOnError: false,
+  });
+  return {
+    svc: app.get(OrdersService) as DichVuDon,
+    dong: () => app.close() as Promise<void>,
+  };
+}
+/* eslint-enable */
 
 let failures = 0;
 const results = new Map<string, boolean>();
@@ -43,19 +96,12 @@ const bad = (m: string) => {
  */
 const DA_BIET_HONG = new Set<string>([
   // Task #2 bảng phân công (vai A, hạn 12/08): "SELECT ... FOR UPDATE trong
-  // orders.create, chặn kho về âm". Chưa làm — orders.service.ts đọc stock ở
-  // dòng 151, kiểm, rồi mãi dòng 249 mới decrement, không transaction, không
-  // khoá, không điều kiện `WHERE stock >= n`.
+  // orders.create, chặn kho về âm". Chưa làm.
   'R1 orders.create — bán quá số lượng',
 
-  // Cùng gốc với R1, cùng file, cùng chủ (vai A): `applyCancellation` cộng hàng
-  // về kho mà không khoá dòng đơn. Với đơn ĐÃ thanh toán thì khoá chống trùng
-  // của sổ cái (R3) cứu — lượt thứ hai chết ở đó nên cả transaction quay lui.
-  // Đơn CHƯA thanh toán không sinh bút toán nào nên không có gì chặn.
-  //
-  // Kích hoạt thật: người mua bấm "Huỷ đơn" hai lần, hoặc client tự gửi lại khi
-  // timeout. Không mất tiền, nhưng kho phình ra hàng không có thật — và người
-  // sau đặt được món đã hết.
+  // Cùng gốc với R1, cùng file: `applyCancellation` cộng hàng về kho mà không
+  // khoá dòng đơn. Đơn CHƯA thanh toán không sinh bút toán nào nên không có gì
+  // chặn hai lượt huỷ đồng thời.
   'R4 huỷ đơn chưa thanh toán — cộng kho nhiều lần',
 ]);
 
@@ -64,7 +110,15 @@ const nhip = (ms = 15) => new Promise((r) => setTimeout(r, ms));
 
 async function dungSanPham(ds: DataSource, kho: number) {
   await ds.query('SET FOREIGN_KEY_CHECKS = 0');
-  for (const t of ['order_items', 'orders', 'products', 'categories', 'users']) {
+  for (const t of [
+    'carts',
+    'notifications',
+    'order_items',
+    'orders',
+    'products',
+    'categories',
+    'users',
+  ]) {
     await ds.query(`DELETE FROM ${t}`);
   }
   await ds.query('SET FOREIGN_KEY_CHECKS = 1');
@@ -74,10 +128,35 @@ async function dungSanPham(ds: DataSource, kho: number) {
   );
   await ds.query(`INSERT INTO categories (id, name, slug) VALUES (1,'dm','dm')`);
   await ds.query(
-    `INSERT INTO products (id, name, slug, price, stock, seller_id, category_id)
-     VALUES (1,'mon cuoi','mon-cuoi',1000,?,1,1)`,
+    `INSERT INTO products (id, name, slug, price, stock, seller_id, category_id, status)
+     VALUES (1,'mon cuoi','mon-cuoi',1000,?,1,1,'active')`,
     [kho],
   );
+}
+
+/**
+ * N người mua RIÊNG BIỆT, mỗi người một món trong giỏ, cùng trỏ vào sản phẩm 1.
+ *
+ * Phải là N người khác nhau chứ không phải một người bấm N lần: `orders.create`
+ * đọc giỏ THEO NGƯỜI DÙNG, nên cùng một người thì hai lần gọi sẽ tranh nhau
+ * cùng một dòng giỏ và ta lại đi đo một cuộc đua khác.
+ */
+async function dungNguoiMua(ds: DataSource): Promise<number[]> {
+  const ids: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const uid = 100 + i;
+    await ds.query(
+      `INSERT INTO users (id, full_name, email, password, role)
+       VALUES (?,?,?,'x','buyer')`,
+      [uid, `mua ${i}`, `b${i}@race.local`],
+    );
+    await ds.query(
+      `INSERT INTO carts (user_id, product_id, quantity) VALUES (?,1,1)`,
+      [uid],
+    );
+    ids.push(uid);
+  }
+  return ids;
 }
 
 async function khoHienTai(ds: DataSource): Promise<number> {
@@ -88,9 +167,11 @@ async function khoHienTai(ds: DataSource): Promise<number> {
 }
 
 /** Chạy `ham` N lần đồng thời, nuốt lỗi lẻ, trả về số lần "thành công". */
-async function dongThoi(ham: () => Promise<boolean>): Promise<number> {
+async function dongThoi(
+  ham: (i: number) => Promise<boolean>,
+): Promise<number> {
   const kq = await Promise.all(
-    Array.from({ length: N }, () => ham().catch(() => false)),
+    Array.from({ length: N }, (_, i) => ham(i).catch(() => false)),
   );
   return kq.filter(Boolean).length;
 }
@@ -105,21 +186,28 @@ function chot(ten: string, dat: boolean, chiTiet: string) {
 async function main() {
   console.log('\x1b[1m═══ TỰ KIỂM ĐUA — nhiều người cùng lúc ═══\x1b[0m');
   const ds = await AppDataSource.initialize();
+  const { svc, dong } = await layDichVuDon();
   console.log(`Kết nối DB: ${ds.options.database} · ${N} người đồng thời\n`);
 
-  // ── R1: đúng khuôn orders.create đang dùng ────────────────────────────────
+  // ── R1: gọi THẲNG orders.create ───────────────────────────────────────────
   //
-  // Tái hiện trình tự thật: đọc stock (orders.service.ts:151) → kiểm → làm việc
-  // khác → decrement không điều kiện (dòng 249). KHÔNG gọi thẳng OrdersService
-  // vì lớp đó có mười phụ thuộc; nhưng trình tự thì y nguyên, và trình tự mới
-  // là thứ quyết định đúng/sai ở đây.
+  // 20 người mua khác nhau, mỗi người một dòng giỏ, cùng trỏ vào món hàng cuối
+  // cùng. Không truyền `ghn_district_id`/`ghn_ward_code` để `create` bỏ qua
+  // bước hỏi phí ship — đây là lời gọi mạng ra GHN, và bài kiểm này đo khoá
+  // trong database chứ không đo đường truyền.
   console.log('\x1b[1mR1 · Hai mươi người mua món hàng cuối cùng\x1b[0m');
   await dungSanPham(ds, 1);
-  const muaR1 = await dongThoi(async () => {
-    const s = await khoHienTai(ds);
-    if (s < 1) return false;
-    await nhip();
-    await ds.query('UPDATE products SET stock = stock - 1 WHERE id = 1');
+  const nguoiMua = await dungNguoiMua(ds);
+  const muaR1 = await dongThoi(async (i) => {
+    await svc.create(
+      {
+        receiver_name: 'Nguoi mua',
+        receiver_phone: '0900000000',
+        shipping_address: 'So 1 duong Dua',
+        payment_method: 'cod',
+      },
+      { id: nguoiMua[i], role: 'buyer' },
+    );
     return true;
   });
   const khoR1 = await khoHienTai(ds);
@@ -214,26 +302,15 @@ async function main() {
                          receiver_name, receiver_phone, shipping_address, is_paid)
      VALUES (1,'ORD-RACE',1,1000,'pending','a','0900000000','x',0)`,
   );
+  // Gọi THẲNG `cancelExpired` — đúng đường mà cron huỷ đơn quá hạn đi qua, và
+  // nó dùng chung `applyCancellation` với nút "Huỷ đơn" của người dùng.
+  await ds.query(
+    `INSERT INTO order_items (order_id, product_id, product_name, price, quantity, subtotal)
+     VALUES (1, 1, 'mon cuoi', 1000, 1, 1000)`,
+  );
   const huyR4 = await dongThoi(async () => {
-    const r = await ds.query<Array<{ status: string }>>(
-      'SELECT status FROM orders WHERE id = 1',
-    );
-    if (r[0].status !== 'pending') return false;
-    await nhip();
-    const qr = ds.createQueryRunner();
-    await qr.connect();
-    await qr.startTransaction();
-    try {
-      await qr.query(`UPDATE orders SET status = 'cancelled' WHERE id = 1`);
-      await qr.query('UPDATE products SET stock = stock + 1 WHERE id = 1');
-      await qr.commitTransaction();
-      return true;
-    } catch {
-      await qr.rollbackTransaction();
-      return false;
-    } finally {
-      await qr.release();
-    }
+    await svc.cancelExpired(1);
+    return true;
   });
   const khoR4 = await khoHienTai(ds);
   chot(
@@ -263,6 +340,14 @@ async function main() {
       console.log(`  \x1b[2m· đã biết hỏng\x1b[0m  ${t}`);
     }
   }
+
+  // Đóng app trước khi thoát: `createApplicationContext` giữ pool kết nối và
+  // hàng đợi BullMQ, không đóng thì tiến trình treo thay vì trả mã.
+  await dong();
+  // Có điều kiện: `app.close()` đóng luôn kết nối mang tên "default", mà đó
+  // cũng chính là tên của AppDataSource. Gọi `destroy()` lần nữa thì nổ
+  // CannotExecuteNotConnectedError sau khi đã in xong kết quả — báo đỏ giả.
+  if (ds.isInitialized) await ds.destroy();
 
   if (hongMoi.length) {
     console.log(`\n\x1b[31m═══ ${hongMoi.length} CHỖ ĐUA MỚI ═══\x1b[0m`);
