@@ -1,24 +1,41 @@
-# Nhánh `chore/soat-cau-hinh-payos-firebase` — hai câu hỏi cho Đạt
+# Nhánh `chore/soat-cau-hinh-payos-firebase` — số liệu cho lần promote staging → production
 
 *Cường soạn 02/09/2026. Mọi con số dưới đây đều kèm lệnh để tự kiểm lại.*
 
+> **Sửa lần 2.** Bản đầu của file này hỏi "10 commit trên nhánh đó còn cần
+> không" và "`deploy.yml` trỏ nhánh đó ra production có đúng ý không". **Cả hai
+> đều là câu hỏi sai**, vì Đạt đã trả lời từ trước trong tin nhắn:
+>
+> > *"À lên staging thì em đẩy từ staging lên production thôi"*
+>
+> Tức nhánh này **đúng là đường production**, được nuôi từ `staging`, và Đạt là
+> người promote. 10 commit trên đó là mã đang chạy thật ở `api.zoldify.com`,
+> không phải bản nháp. File này giữ lại vì số liệu vẫn dùng được — nhưng dùng
+> cho việc khác: **chuẩn bị cho lần promote đó**.
+
 ---
 
-## Hai câu hỏi
+## Việc thật sự cần làm
 
-### 1. Mười commit trên nhánh đó còn cần không?
+Lần promote `staging` → production **chưa từng xảy ra**: `git merge-base` giữa
+hai nhánh vẫn dừng ở **19/08**, nghĩa là chưa một commit nào của `staging` đi
+sang. Lần deploy production gần nhất (30/08) là Đạt đẩy mã của chính mình lên
+nhánh đó, không phải promote.
 
-Nhánh đang giữ **10 commit · 562 dòng · 18 file**, và chúng **chỉ tồn tại ở đúng
-một chỗ này** — chưa từng có PR nào mở từ nhánh. Xoá nhánh là mất, gồm **2
-migration** và **một bảng mới** (`push_tokens`).
+Nên khoảng cách **100 commit** là thật. Ba thứ cần biết trước khi promote:
 
-- **Còn cần** → mình mở PR vào `staging`, gỡ 2 xung đột, chạy đủ cổng. Xong mới xoá.
-- **Không cần** → xoá được, nhưng đọc câu 2 trước đã.
+1. **Xung đột: đúng 2 file** — `auth.controller.ts` và `auth.service.ts`. Phía
+   `staging` chỉ đổi 5 + 15 dòng ở đó kể từ điểm tách, nên vùng chồng rất hẹp.
+2. **Lần promote này sẽ chạy 4 migration index lên DB production thật** —
+   `1787100000000` → `1787400000000`. Đây là lần đầu tiên chúng chạm dữ liệu
+   thật. Nên diễn tập trên bản sao trước.
+3. **Nợ lint**: 562 dòng của nhánh production chưa từng qua cổng lint nào (nhánh
+   không có `ci.yml`). Đếm sơ bộ 14 chỗ — 12 dòng nháy đôi, 1 `process["env"]`,
+   1 `any`. Mốc bánh cóc là **966**, vượt thì phải dọn trước.
 
-### 2. `deploy.yml` đang trỏ nhánh đó ra `api.zoldify.com` — có đúng ý không?
+## Bối cảnh cấu hình
 
-Cường nói đây là nhánh Đạt ngồi test, chưa xoá. Nhưng cấu hình đang coi nó là
-nguồn của production:
+`deploy.yml` đang coi nhánh này là nguồn của production:
 
 ```yaml
 # .github/workflows/deploy.yml (trên staging), dòng 5-6 — chú thích trong file:
@@ -102,25 +119,24 @@ mục trên biến mất.
 
 ---
 
-## Nếu Đạt nói CÒN CẦN
+## Gợi ý trình tự khi promote
 
-Các bước, theo đúng quy trình 6 bước của nhóm:
+Theo đúng quy trình 6 bước của nhóm — Đạt chủ động, đây chỉ là số liệu để đỡ
+phải đo lại:
 
-1. Mở PR từ `chore/soat-cau-hinh-payos-firebase` vào `staging`.
+1. Gộp `staging` vào `chore/soat-cau-hinh-payos-firebase`.
 2. Gỡ 2 xung đột auth — giữ cả hai phía, vùng chồng nhau hẹp.
 3. Chạy đủ cổng trên bản đã gộp: `lint:check` · `test` · `build` · `openapi:check`
    · `check:index` · `check:race` · `check:worker` · `check:redis`.
-4. Xanh thì gộp, rồi mới xoá nhánh.
+   Nhánh production không có `ci.yml` nên phải chạy tay, hoặc thêm nhánh đó vào
+   `on.push.branches` của `ci.yml` trước.
+4. **Diễn tập migration trên bản sao DB production trước khi đẩy.** Bốn migration
+   index sẽ chạy lần đầu trên dữ liệu thật. `scripts/restore-mysql.sh` (task
+   #24/#25) dựng lại được bản sao từ bản backup của `scripts/backup-mysql.sh`.
+5. Xanh hết mới push — push là deploy ngay ra `api.zoldify.com`.
 
-**Chi phí ước tính:** 562 dòng đó **chưa từng qua cổng lint nào** (nhánh không có
-`ci.yml`). Đếm sơ bộ: **12 dòng dùng nháy đôi** (repo dùng nháy đơn), **1 chỗ**
-`process["env"]["GHN_HOST"]`, **1 chỗ** `any`. Prettier tự sửa được phần lớn.
-Mốc bánh cóc hiện tại là **966**, nên nếu vượt thì phải dọn trước khi gộp.
-
-## Nếu Đạt nói KHÔNG CẦN
-
-Sửa `on.push.branches` trong `deploy.yml` **trước**, xoá nhánh **sau** — nếu
-không, đường deploy production sẽ trỏ vào nhánh không tồn tại.
+**Việc của Cường trong lần đó:** không có, trừ khi Đạt nhờ. Bốn migration index
+là của Cường nên nếu bước 4 có gì lạ thì hỏi Cường.
 
 ---
 
