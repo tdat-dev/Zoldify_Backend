@@ -80,3 +80,8 @@ public/media/demo/
 # thì xoá file đi cũng không sạch, phải viết lại lịch sử.
 /backups/
 *.sql.gz
+
+# Bản máy đọc của bài soi SQL. File .md mới là thứ để người đọc; cái này
+# 232KB toàn SQL sinh tự động, đưa vào git chỉ làm mọi diff sau này thành
+# rác. Sinh lại bằng: npm run sql:audit
+docs/system-design/sql-audit.json
