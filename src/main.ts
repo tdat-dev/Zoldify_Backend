@@ -15,9 +15,14 @@ import * as bodyParser from 'body-parser';
 import helmet from 'helmet';
 import compression from 'compression';
 import { RedisIoAdapter } from './common/redis-io.adapter';
+import { JsonLogger } from './common/json-logger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  // Gắn NGAY sau khi dựng: từ đây mọi `new Logger(...)` sẵn có trong service
+  // đi qua đây và tự mang mã request, không phải sửa dòng nào trong nghiệp vụ.
+  app.useLogger(new JsonLogger());
 
   // CORS strict - chỉ allow domain trong env, không dùng '*' (CSRF protection)
   const allowedOrigins = (process.env.SITE_URL || 'http://localhost:3001')

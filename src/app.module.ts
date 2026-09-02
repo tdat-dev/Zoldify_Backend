@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import Redis from 'ioredis';
@@ -34,6 +34,8 @@ import { EscrowsModule } from '@money/escrows/escrows.module';
 import { PayosModule } from '@money/payos/payos.module';
 import { WalletsModule } from '@money/wallets/wallets.module';
 import { SitemapModule } from '@catalog/sitemap/sitemap.module';
+import { HealthModule } from '@ops/health/health.module';
+import { RequestIdMiddleware } from '@common/request-id.middleware';
 import { AdminModule } from '@ops/admin/admin.module';
 import { SettingsModule } from '@ops/settings/settings.module';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
@@ -158,6 +160,7 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     PayosModule,
     WalletsModule,
     SitemapModule,
+    HealthModule,
     AdminModule,
     SettingsModule,
     WithdrawalsModule,
@@ -188,4 +191,12 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     },
   ],
 })
-export class AppModule {}
+// `configure` chứ không phải một interceptor toàn cục: middleware chạy TRƯỚC
+// mọi guard, pipe và interceptor, nên cả request bị chặn ở guard (401, 429)
+// cũng có mã request và cũng được ghi lại. Đặt ở interceptor thì đúng những
+// request bị từ chối — thứ hay phải đi tra nhất — lại không có dòng nào.
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}
