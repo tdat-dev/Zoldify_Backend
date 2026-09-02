@@ -1,6 +1,6 @@
 # Sức chịu tải — đo trên chính hệ này
 
-> Sinh tự động bằng `npm run loadtest` lúc 2026-09-02T08:01:36.592Z.
+> Sinh tự động bằng `npm run loadtest` lúc 2026-09-02T09:45:56.514Z.
 > **Đừng sửa tay** — chạy lại lệnh trên là ghi đè.
 
 ## Vì sao bài đo này khác bài đo của một hệ Java
@@ -38,42 +38,42 @@ thực tế đôi chút; thứ đáng tin là **so sánh giữa các route** và
 
 | Route | song song | RPS | p50 | p95 | p99 | lag p99 | CPU |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| healthcheck (không chạm DB) | 1 | **1911** | 0.43 | 0.73 | 3.8 | 4.59 | 76% |
-| healthcheck (không chạm DB) | 10 | **2707** | 2.85 | 7.79 | 10.23 | 8.86 | 120% |
-| healthcheck (không chạm DB) | 50 | **2597** | 18.58 | 26.96 | 33.89 | 30.34 | 113% |
-| healthcheck (không chạm DB) | 100 | **2742** | 35.32 | 48.58 | 61.39 | 60.03 | 111% |
-| danh mục (9 dòng, KHÔNG cache) | 1 | **148** | 6.46 | 10.82 | 12.52 | 6.15 | 43% |
-| danh mục (9 dòng, KHÔNG cache) | 10 | **672** | 12.78 | 27.3 | 32.35 | 9.74 | 105% |
-| danh mục (9 dòng, KHÔNG cache) | 50 | **875** | 56.08 | 67.37 | 70.06 | 12.65 | 105% |
-| danh mục (9 dòng, KHÔNG cache) | 100 | **833** | 117.6 | 143.64 | 151.81 | 14.57 | 106% |
-| sản phẩm — CÓ cache | 1 | **1365** | 0.6 | 1.11 | 4.6 | 4.44 | 96% |
-| sản phẩm — CÓ cache | 10 | **1885** | 4.41 | 9.1 | 11.44 | 9.71 | 108% |
-| sản phẩm — CÓ cache | 50 | **1654** | 27.86 | 49.09 | 59.28 | 56.46 | 108% |
-| sản phẩm — CÓ cache | 100 | **1130** | 85.1 | 114.22 | 139.13 | 117.83 | 108% |
-| chat: danh sách hội thoại | 1 | **72** | 14.13 | 18.05 | 19.82 | 4.85 | 50% |
-| chat: danh sách hội thoại | 10 | **168** | 58.78 | 73.17 | 77.15 | 16.71 | 109% |
-| chat: danh sách hội thoại | 50 | **163** | 302.77 | 341.72 | 353.76 | 36.9 | 106% |
-| chat: danh sách hội thoại | 100 | **165** | 596.37 | 773.18 | 794.85 | 42.96 | 108% |
-| đơn của tôi | 1 | **79** | 12.42 | 17.05 | 20.27 | 5.93 | 46% |
-| đơn của tôi | 10 | **171** | 57.22 | 76.62 | 82.03 | 24.61 | 101% |
-| đơn của tôi | 50 | **148** | 336.94 | 379.18 | 408.63 | 62.1 | 107% |
-| đơn của tôi | 100 | **149** | 664.6 | 766.56 | 796.23 | 65.7 | 101% |
-| admin: thống kê | 1 | **112** | 9.05 | 12.57 | 14.48 | 4.69 | 54% |
-| admin: thống kê | 10 | **217** | 45.75 | 57.02 | 61.08 | 15.19 | 99% |
-| admin: thống kê | 50 | **224** | 219.73 | 262.1 | 284.56 | 35.91 | 100% |
-| admin: thống kê | 100 | **212** | 470.81 | 523.22 | 610.64 | 34.6 | 102% |
-| sitemap — bảng chỉ mục | 1 | **861** | 1.01 | 2.34 | 5.69 | 5.88 | 68% |
-| sitemap — bảng chỉ mục | 10 | **1372** | 6.48 | 13.55 | 17.18 | 15.62 | 118% |
-| sitemap — bảng chỉ mục | 50 | **1465** | 32.9 | 48.23 | 57.47 | 50.59 | 109% |
-| sitemap — bảng chỉ mục | 100 | **1500** | 64.92 | 88.92 | 96.46 | 90.57 | 101% |
-| sitemap — một file con | 1 | **269** | 2.77 | 9.24 | 24.39 | 15.21 | 48% |
-| sitemap — một file con | 10 | **650** | 14.76 | 23.14 | 26.92 | 16.15 | 101% |
-| sitemap — một file con | 50 | **611** | 78.06 | 111.8 | 144.24 | 91.62 | 98% |
-| sitemap — một file con | 100 | **640** | 151.11 | 207.77 | 221.24 | 182.45 | 102% |
-| sản phẩm — CACHE TẮT HẲN | 1 | **67** | 15.08 | 18.7 | 19.94 | 7.38 | 46% |
-| sản phẩm — CACHE TẮT HẲN | 10 | **207** | 47.76 | 60.44 | 71.45 | 16.45 | 113% |
-| sản phẩm — CACHE TẮT HẲN | 50 | **252** | 194.69 | 238.95 | 249.21 | 26.57 | 108% |
-| sản phẩm — CACHE TẮT HẲN | 100 | **257** | 388.23 | 450.19 | 487.26 | 26.74 | 111% |
+| healthcheck (không chạm DB) | 1 | **2033** | 0.42 | 0.63 | 3.52 | 4.31 | 84% |
+| healthcheck (không chạm DB) | 10 | **3131** | 2.58 | 6.7 | 8.27 | 7.26 | 133% |
+| healthcheck (không chạm DB) | 50 | **3233** | 14.72 | 20.69 | 22.89 | 21.99 | 108% |
+| healthcheck (không chạm DB) | 100 | **3160** | 31.34 | 38.62 | 48.42 | 43.22 | 118% |
+| danh mục (9 dòng, KHÔNG cache) | 1 | **257** | 3.7 | 4.87 | 6.42 | 3.22 | 31% |
+| danh mục (9 dòng, KHÔNG cache) | 10 | **964** | 9.6 | 13.8 | 15.56 | 5.64 | 108% |
+| danh mục (9 dòng, KHÔNG cache) | 50 | **947** | 52.29 | 59.06 | 65.57 | 11.19 | 107% |
+| danh mục (9 dòng, KHÔNG cache) | 100 | **949** | 102.03 | 118.73 | 186.4 | 12.76 | 126% |
+| sản phẩm — CÓ cache | 1 | **1553** | 0.56 | 0.85 | 3.31 | 3.23 | 87% |
+| sản phẩm — CÓ cache | 10 | **2268** | 3.78 | 7.42 | 8.66 | 7.9 | 111% |
+| sản phẩm — CÓ cache | 50 | **2205** | 22.57 | 28.42 | 36.24 | 30.15 | 108% |
+| sản phẩm — CÓ cache | 100 | **2204** | 44.99 | 51.18 | 55.7 | 52.76 | 110% |
+| chat: danh sách hội thoại | 1 | **135** | 7.1 | 9.44 | 10.33 | 2.75 | 42% |
+| chat: danh sách hội thoại | 10 | **304** | 33.01 | 37.71 | 40.47 | 8.79 | 106% |
+| chat: danh sách hội thoại | 50 | **301** | 162.87 | 197.37 | 216.07 | 18.42 | 111% |
+| chat: danh sách hội thoại | 100 | **308** | 318.92 | 375.26 | 465.97 | 21.71 | 123% |
+| đơn của tôi | 1 | **144** | 6.75 | 8.38 | 9.42 | 2.81 | 49% |
+| đơn của tôi | 10 | **305** | 32.07 | 39.09 | 41.83 | 13.66 | 103% |
+| đơn của tôi | 50 | **276** | 180.78 | 191.02 | 209.36 | 25.66 | 110% |
+| đơn của tôi | 100 | **278** | 360.74 | 375.39 | 381.73 | 29.88 | 110% |
+| admin: thống kê | 1 | **212** | 4.52 | 6 | 6.66 | 2.18 | 50% |
+| admin: thống kê | 10 | **414** | 23.68 | 27.75 | 30.42 | 7.73 | 101% |
+| admin: thống kê | 50 | **435** | 113.75 | 128.13 | 142.08 | 15.52 | 100% |
+| admin: thống kê | 100 | **432** | 230.93 | 249.71 | 271.97 | 17.32 | 104% |
+| sitemap — bảng chỉ mục | 1 | **2022** | 0.42 | 0.64 | 3.38 | 4.28 | 74% |
+| sitemap — bảng chỉ mục | 10 | **3075** | 2.62 | 7.16 | 8.28 | 7.66 | 125% |
+| sitemap — bảng chỉ mục | 50 | **3131** | 15.06 | 21.92 | 26.79 | 23.17 | 110% |
+| sitemap — bảng chỉ mục | 100 | **3114** | 31.33 | 38.9 | 50.97 | 43.12 | 112% |
+| sitemap — một file con | 1 | **659** | 1.29 | 2.65 | 5.96 | 5.29 | 66% |
+| sitemap — một file con | 10 | **1173** | 8.12 | 12.31 | 14.64 | 12.36 | 104% |
+| sitemap — một file con | 50 | **1128** | 42.21 | 61.39 | 79.04 | 55.28 | 105% |
+| sitemap — một file con | 100 | **1129** | 84.16 | 116.92 | 132.23 | 107.41 | 105% |
+| sản phẩm — CACHE TẮT HẲN | 1 | **126** | 7.67 | 9.52 | 11.68 | 3.58 | 43% |
+| sản phẩm — CACHE TẮT HẲN | 10 | **452** | 21.7 | 27.56 | 32.01 | 7.09 | 116% |
+| sản phẩm — CACHE TẮT HẲN | 50 | **487** | 100.89 | 115.81 | 133.03 | 12.89 | 115% |
+| sản phẩm — CACHE TẮT HẲN | 100 | **497** | 199.5 | 220.2 | 267.04 | 12.98 | 113% |
 
 `RPS` = request/giây · `p95` = 95% request xong trong ngần này ms ·
 `lag p99` = vòng lặp sự kiện bị trễ · `CPU` = phần trăm của MỘT luồng.
@@ -90,10 +90,10 @@ Bắn một healthcheck rỗng (không chạm DB) trong hai hoàn cảnh:
 
 | Hoàn cảnh | healthcheck mất |
 |---|---:|
-| máy đang rảnh | 1.18 ms |
-| 4 request `/sitemap.xml` đang chạy | **3.03 ms** |
+| máy đang rảnh | 0.46 ms |
+| 4 request `/sitemap.xml` đang chạy | **1.42 ms** |
 
-**Chậm đi 2.6×.** Vòng lặp sự kiện có lúc trễ tới 22.61 ms.
+**Chậm đi 3.1×.** Vòng lặp sự kiện có lúc trễ tới 10.79 ms.
 
 Ở một hệ Java tỉ lệ này gần bằng 1: healthcheck có luồng riêng, không quan
 tâm ai đang bận. Ở đây nó không có luồng riêng — nó xếp hàng sau phần CPU của
@@ -105,23 +105,23 @@ nguy hiểm hơn cùng route đó ở Java: nó không làm chậm chính nó, n
 
 | Loại đường | RPS đỉnh (1 tiến trình) |
 |---|---:|
-| Trần của khung (không chạm DB) | 2742 |
-| Danh sách có cache, trúng cache | 1885 |
-| Danh sách chạm DB thật | 257 |
-| Đường có xác thực + JOIN (chat, đơn) | 171 |
-| `sitemap.xml` — bảng chỉ mục | 1500 |
-| Route nặng nhất (một file sitemap con) | **650** |
+| Trần của khung (không chạm DB) | 3233 |
+| Danh sách có cache, trúng cache | 2268 |
+| Danh sách chạm DB thật | 497 |
+| Đường có xác thực + JOIN (chat, đơn) | 308 |
+| `sitemap.xml` — bảng chỉ mục | 3131 |
+| Route nặng nhất (một file sitemap con) | **1173** |
 
 Bốn điều rút ra:
 
-1. **Cache đang gánh 7.3×** cho đường sản phẩm (1885 so với 257 rps).
+1. **Cache đang gánh 4.6×** cho đường sản phẩm (2268 so với 497 rps).
    Cache hỏng hoặc Redis chết là tụt thẳng xuống mức dưới, không phải tụt dần.
 2. **CPU chạm ~100% ngay từ mức 10 người bấm cùng lúc** ở gần như mọi route.
    Một tiến trình Node chỉ có một luồng JS, nên từ đó trở đi tăng tải chỉ làm
    dài thêm hàng đợi: nhìn cột `p95` tăng gấp đôi mỗi khi số song song gấp đôi,
    trong khi cột `RPS` đứng yên. Muốn hơn thì phải **thêm tiến trình**, không
    phải thêm nhân cho một tiến trình.
-3. **Bảng chỉ mục 1500 rps, file con 650 rps.** Google gọi bảng chỉ mục
+3. **Bảng chỉ mục 3131 rps, file con 1173 rps.** Google gọi bảng chỉ mục
    trước, và đó giờ chỉ là một câu `GROUP BY` — nên cú chèn ngang ở dưới đo
    đúng thứ crawler thật gây ra. File con vẫn là route đắt nhất còn lại, nhưng
    chi phí của nó bị chặn ở `KICH_THUOC_LO` sản phẩm mỗi file, nên **không còn

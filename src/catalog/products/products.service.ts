@@ -19,11 +19,38 @@ import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 
-// TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn; list KHÔNG
-// purge từng key (không liệt kê được key trên Redis một cách an toàn) nên TTL ngắn
-// là lưới an toàn cuối chống stale — đúng chốt pre-mortem C4/C5.
+// TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn.
 const PRODUCT_DETAIL_TTL = 60_000; // 60s
 const PRODUCT_LIST_TTL = 30_000; //  30s
+
+/**
+ * "Đời" của cache danh sách — cách làm mới TẤT CẢ khoá danh sách bằng một lần ghi.
+ *
+ * VẤN ĐỀ. Khoá cache danh sách gồm 8 tham số (trang, cỡ trang, sắp xếp, từ khoá,
+ * danh mục, người bán, khoảng giá). Nhân lên là hàng nghìn khoá, và không liệt kê
+ * được: `SCAN` trên Redis vừa đắt vừa không có trong giao diện của cache-manager.
+ *
+ * Nên trước đây KHÔNG chỗ nào xoá cache danh sách cả — chỉ có TTL 30s đỡ. Hệ quả
+ * người dùng thấy: **người bán bấm "Đăng bán" xong, tới 30 giây sau hàng của mình
+ * mới hiện ra trong danh sách.** Đó là đánh đổi có ý thức, nhưng chọn sai phía.
+ *
+ * CÁCH LÀM. Không xoá khoá — ĐỔI KHÔNG GIAN KHOÁ. Mỗi khoá danh sách mang thêm
+ * một con số "đời". Ghi sản phẩm thì đặt đời = thời điểm hiện tại; từ đó mọi khoá
+ * đời cũ không ai với tới nữa và tự hết hạn theo TTL của chính chúng.
+ *
+ * VÌ SAO DÙNG `Date.now()` CHỨ KHÔNG PHẢI BỘ ĐẾM TĂNG DẦN. Vì tăng dần cần
+ * đọc-rồi-ghi, mà hai người bán ghi cùng lúc sẽ cùng đọc một giá trị rồi cùng ghi
+ * đè — mất một nhịp. `Date.now()` chỉ ghi, không đọc, nên không có chỗ đua.
+ *
+ * VÌ SAO TTL CỦA ĐỜI PHẢI DÀI HƠN HẲN TTL DANH SÁCH. Nếu khoá đời hết hạn trước,
+ * nó về lại 0, và những mục cache thời "đời 0" còn sống sẽ SỐNG LẠI. 24 giờ so
+ * với 30 giây là khoảng cách đủ để chuyện đó không xảy ra.
+ */
+const PRODUCT_LIST_GEN_KEY = 'products:list:gen';
+const PRODUCT_LIST_GEN_TTL = 24 * 60 * 60_000; // 24h
+
+/** Nhớ "đời" bao lâu trong tiến trình trước khi hỏi lại cache. Xem `doiDanhSach`. */
+const DOI_NHO_MS = 1_000;
 
 @Injectable()
 export class ProductsService {
@@ -119,6 +146,61 @@ export class ProductsService {
     }
   }
 
+  /**
+   * Đời hiện tại của cache danh sách, có NHỚ TRONG TIẾN TRÌNH.
+   *
+   * VÌ SAO PHẢI NHỚ, DÙ ĐÃ CÓ CACHE.
+   *
+   * Đọc đời là một lần chạm cache nữa trên mỗi request danh sách. Với cache
+   * in-memory thì gần như miễn phí — và đó chính là chỗ suýt đọc nhầm. Đo lại
+   * bằng `LOADTEST_REDIS=1 npm run loadtest`, tức đúng cấu hình production:
+   *
+   *   song song      1      10      50     100
+   *   không nhớ    452   1.693   2.201   2.263  rps
+   *   bản cũ       607   2.199   2.460   2.506  rps
+   *                −26%    −23%    −11%    −10%
+   *
+   * Một vòng đi-về Redis nữa lấy mất tới một phần tư thông lượng. Nhớ lại trong
+   * một giây thì chi phí đó chia cho số request trong giây ấy.
+   *
+   * ĐÁNH ĐỔI, NÓI RÕ. Khi chạy nhiều bản api: bản A ghi, bản B có thể còn phục
+   * vụ danh sách cũ thêm tối đa `DOI_NHO_MS`. Đó là 1 giây, so với 30 giây của
+   * cách cũ. Còn chính bản vừa ghi thì thấy ngay, vì `moiDanhSach` cập nhật
+   * luôn phần nhớ của nó.
+   */
+  private doiNho = 0;
+  private doiNhoLuc = 0;
+
+  private async doiDanhSach(): Promise<number> {
+    const bayGio = Date.now();
+    if (bayGio - this.doiNhoLuc < DOI_NHO_MS) return this.doiNho;
+    const doi = (await this.cacheGet<number>(PRODUCT_LIST_GEN_KEY)) ?? 0;
+    this.doiNho = doi;
+    this.doiNhoLuc = bayGio;
+    return doi;
+  }
+
+  /**
+   * Làm mới TOÀN BỘ cache danh sách bằng một lần ghi.
+   *
+   * Gọi sau MỌI thao tác đổi thứ hiện trong danh sách: đăng mới, sửa, xoá, đổi
+   * kho. Không gọi ở chỗ tăng lượt xem — sắp xếp `most_viewed` có hơi cũ đi
+   * trong vòng TTL cũng không sao, còn nếu bật đời ở mỗi lượt xem thì cache
+   * chẳng còn tác dụng gì nữa.
+   *
+   * Fail-open như mọi thao tác cache khác: không đặt được đời thì cùng lắm danh
+   * sách cũ thêm 30 giây, chứ không được làm hỏng việc đăng bán.
+   */
+  private async moiDanhSach(): Promise<void> {
+    const doi = Date.now();
+    // Cập nhật phần nhớ TRƯỚC: bản api vừa ghi phải thấy danh sách mới ngay ở
+    // request kế tiếp, không đợi hết một giây nhớ. Đây là trường hợp hay gặp
+    // nhất — người bán bấm "Đăng bán" rồi lập tức xem lại danh sách.
+    this.doiNho = doi;
+    this.doiNhoLuc = doi;
+    await this.cacheSet(PRODUCT_LIST_GEN_KEY, doi, PRODUCT_LIST_GEN_TTL);
+  }
+
   async create(createProductDto: CreateProductDto, user: IUser) {
     await this.assertSellerHasPickup(user.id);
 
@@ -160,6 +242,8 @@ export class ProductsService {
       is_freeship: is_freeship || false,
     });
     const saved = await this.productRepository.save(newProduct);
+    // Hàng mới phải hiện trong danh sách NGAY, không đợi hết TTL 30 giây.
+    await this.moiDanhSach();
 
     // Notify all followers of the seller
     const followers = await this.followRepository.find({
@@ -198,7 +282,7 @@ export class ProductsService {
     // hưởng kết quả (pre-mortem C2: thiếu 1 tham số = trả nhầm trang cho request
     // khác). Endpoint @Public() không phụ thuộc user nên không rò dữ liệu cá nhân.
     const cacheKey =
-      'products:list:' +
+      `products:list:g${await this.doiDanhSach()}:` +
       JSON.stringify({
         page: numPage,
         size: numLimit,
@@ -391,6 +475,7 @@ export class ProductsService {
     // Invalidate detail TRƯỚC khi đọc lại: xoá bản cũ để findOne nạp lại bản mới,
     // không để user thấy dữ liệu lỗi thời (pre-mortem C1/C4).
     await this.cacheDel(this.detailKey(id));
+    await this.moiDanhSach();
     return await this.findOne(id);
   }
 
@@ -407,6 +492,7 @@ export class ProductsService {
     }
     await this.productRepository.softDelete(id);
     await this.cacheDel(this.detailKey(id));
+    await this.moiDanhSach();
     return { id, deleted: true };
   }
 
@@ -430,6 +516,7 @@ export class ProductsService {
     product.stock = stock;
     await this.productRepository.save(product);
     await this.cacheDel(this.detailKey(productId));
+    await this.moiDanhSach();
     return product;
   }
 }
