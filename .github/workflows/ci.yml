@@ -184,6 +184,15 @@ jobs:
           DB_USERNAME: root
           DB_PASSWORD: testpw
           DB_DATABASE: zoldify_schema
+          # CỐ Ý đặt SITE_URL thành DANH SÁCH, giống production và staging.
+          #
+          # Máy dev thường chỉ có một địa chỉ, nên lỗi "đọc thô SITE_URL rồi nối
+          # đường dẫn" không bao giờ lộ ở đó. Nó lộ trên staging, nơi biến này
+          # là danh sách origin cho CORS — và lộ dưới dạng sitemap nộp URL rác
+          # cho Google, cùng returnUrl PayOS hỏng sau khi khách trả tiền.
+          #
+          # Để CI chạy với dạng KHÓ, không phải dạng dễ.
+          SITE_URL: https://a.example.com,https://b.example.com
 
       # Đua: 20 người bấm cùng lúc. Chặn khi xuất hiện chỗ đua MỚI; hai chỗ đã
       # biết (R1, R4 — đều thuộc task #2 của vai A) ghi trong DA_BIET_HONG.

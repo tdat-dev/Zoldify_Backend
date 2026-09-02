@@ -187,6 +187,37 @@ async function main(): Promise<void> {
   const loLa = await lay('/sitemap-products-abc.xml');
   kiem('lô không phải số → 404 (không chạm database)', loLa.status === 404, `HTTP ${loLa.status}`);
 
+  // Mọi `<loc>` phải là URL DÙNG ĐƯỢC.
+  //
+  // Nghe như thừa, nhưng đây đúng là lỗi vừa bắt được trên api-staging: biến
+  // `SITE_URL` ở đó là một DANH SÁCH ngăn bởi dấu phẩy (main.ts dùng nó cho
+  // CORS), mà sitemap đọc thô rồi nối đường dẫn vào sau, nên phát ra:
+  //
+  //   <loc>https://staging.zoldify.com,https://admin-staging.zoldify.com/sitemap-static.xml</loc>
+  //
+  // Cả `npm test` lẫn CI đều xanh trong khi Google nhận toàn URL rác — vì trên
+  // máy dev `SITE_URL` chỉ có một giá trị nên không ai thấy. Kiểm ở đây vì đây
+  // là chỗ duy nhất chạy với biến môi trường thật.
+  const locs = [
+    ...chiMuc.body.matchAll(/<loc>([^<]+)<\/loc>/g),
+    ...tinh.body.matchAll(/<loc>([^<]+)<\/loc>/g),
+    ...(con.status === 200 ? con.body.matchAll(/<loc>([^<]+)<\/loc>/g) : []),
+  ].map((m) => m[1]);
+  const hongUrl = locs.filter((u) => {
+    if (u.includes(',')) return true;
+    try {
+      new URL(u);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  kiem(
+    `mọi <loc> là URL hợp lệ (${locs.length} địa chỉ)`,
+    locs.length > 0 && hongUrl.length === 0,
+    hongUrl.length ? `hỏng: ${hongUrl[0]}` : '',
+  );
+
   in_(`\n${B}— 3. Guard còn chặn —${X}`);
   const rieng = await lay('/api/v1/chat/conversations');
   kiem('GET /api/v1/chat/conversations không token → 401', rieng.status === 401, `HTTP ${rieng.status}`);
