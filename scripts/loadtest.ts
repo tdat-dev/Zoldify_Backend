@@ -53,9 +53,15 @@ E.JWT_REFRESH_TOKEN_SECRET ??= 'do-tai-refresh';
 E.JWT_ACCESS_EXPIRE ??= '1d';
 E.JWT_REFRESH_EXPIRE ??= '7d';
 E.SITE_URL ??= 'http://localhost:3001';
-// Cố ý KHÔNG đặt REDIS_URL: bài này đo CPU của tiến trình api, thêm một chặng
-// mạng tới Redis chỉ làm mờ thứ đang muốn nhìn.
-delete E.REDIS_URL;
+// Mặc định KHÔNG đặt REDIS_URL: bài này đo CPU của tiến trình api, thêm một
+// chặng mạng tới Redis chỉ làm mờ thứ đang muốn nhìn.
+//
+// Nhưng đôi khi chặng mạng ĐÚNG LÀ thứ cần đo — ví dụ lúc thêm một lần đọc cache
+// nữa vào đường sản phẩm (khoá "đời" của cache danh sách): với cache in-memory
+// nó gần như miễn phí, với Redis nó là một vòng đi-về. Bật bằng:
+//
+//   LOADTEST_REDIS=1 REDIS_URL=redis://127.0.0.1:6380 npm run loadtest
+if (E.LOADTEST_REDIS !== '1') delete E.REDIS_URL;
 
 const DB = E.DB_DATABASE ?? '';
 if (!/audit/i.test(DB)) {
