@@ -7,6 +7,7 @@ import {
 } from '@catalog/products/entities/product.entity';
 import { Category } from '@catalog/categories/entities/category.entity';
 import { Shop, ShopStatus } from '@catalog/shop/entities/shop.entity';
+import { siteUrlChinh } from '@common/site-url';
 
 /**
  * Số sản phẩm tối đa trong MỘT file sitemap con.
@@ -126,7 +127,10 @@ export class SitemapService {
     @Optional()
     private readonly kichThuocLo: number = KICH_THUOC_LO,
   ) {
-    this.siteUrl = process.env.SITE_URL || 'http://localhost:3001';
+    // KHÔNG đọc thẳng process.env.SITE_URL: trên staging biến đó là một DANH
+    // SÁCH ngăn bởi dấu phẩy (main.ts dùng nó cho CORS). Đọc thô thì mọi <loc>
+    // thành URL rác — đã đo được trên api-staging trước khi sửa.
+    this.siteUrl = siteUrlChinh(process.env.SITE_URL);
   }
 
   /** Danh sách file con cho bảng chỉ mục — chỉ những lô THẬT SỰ có hàng. */
