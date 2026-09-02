@@ -16,6 +16,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { RedisIoAdapter } from './common/redis-io.adapter';
 import { JsonLogger } from './common/json-logger';
+import { chanTaiLieu, taiKhoanTuMoiTruong } from './core/swagger-guard';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -85,7 +86,18 @@ async function bootstrap() {
   // Prefix + version: mọi route thành /api/v1/...
   configureRouting(app);
 
-  // Swagger: /api/docs — hợp đồng cho web và app
+  // Swagger: /api/docs — hợp đồng cho web và app.
+  //
+  // CHẶN TRƯỚC KHI MOUNT. Đo được trước khi sửa: `/api/docs` và `/api/docs-json`
+  // đều trả 200 trên CẢ api-staging.zoldify.com LẪN api.zoldify.com — toàn bộ 98
+  // route và 62 schema, gồm cả đường quản trị và đường tiền, mở cho bất kỳ ai.
+  // Bản thân nó không phải lỗ hổng, nhưng nó là tấm bản đồ cho người đi tìm lỗ
+  // hổng: khỏi phải dò, cứ đọc.
+  //
+  // Quy tắc ở `swagger-guard.ts` hỏng về phía ĐÓNG và không phụ thuộc NODE_ENV.
+  // Đặt `SWAGGER_USER` + `SWAGGER_PASSWORD` để mở cho người ngoài máy chủ.
+  app.use(['/api/docs', '/api/docs-json'], chanTaiLieu(taiKhoanTuMoiTruong()));
+
   const document = wrapResponsesInEnvelope(
     markQueryParamsOptional(SwaggerModule.createDocument(app, swaggerConfig)),
   );
