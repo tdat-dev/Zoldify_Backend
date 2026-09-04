@@ -176,3 +176,86 @@ là chốt.
 Đã kiểm `withdrawals.reject`, `withdrawals.complete`, `escrows.refund` — cả ba
 đi qua `idempotency_key` của sổ cái nên ghi trùng bị **database** từ chối, không
 phải mã từ chối. `check:race` R3 chứng minh điều đó bằng 20 lượt ghi đồng thời.
+
+---
+
+## 10. Phiên 04–05/09/2026 — ERD đang dở, và ghi chú cho máy mới
+
+*Viết đêm 05/09, lúc Cường tính cài lại máy sang Windows. Bộ nhớ của Claude nằm
+ở `~/.claude/`, cài lại máy là mất sạch — nên thứ gì cần sống sót đều phải nằm
+trong repo này.*
+
+### Việc đang dở: lấy ERD cho báo cáo
+
+**Chưa xuất được file.** Nhưng hỏng ở khâu hiển thị, không phải dữ liệu — phần
+đọc schema chạy sạch, log ghi `26 items from zoldify_sqlaudit`, 0 view, 0
+routine, 0 trigger, không một dòng lỗi.
+
+Những thứ **đã đo trong phiên, dùng lại được, đừng đo lại**:
+
+| | |
+|---|---|
+| DB duy nhất còn schema đầy đủ | `zoldify_sqlaudit` — **26 bảng, 34 khoá ngoại** |
+| `zoldify_test`, `zoldify_bulk_test` | **0 bảng** — phải seed lại mới dùng được |
+| `zoldify_schema` (mục 6 có nhắc) | **không tồn tại** trên máy Linux, chưa từng dựng |
+| 26 bảng gồm | 25 bảng nghiệp vụ + `migrations` (hạ tầng TypeORM, loại khỏi ERD) |
+
+`src/` có **30 file `*.entity.ts` nhưng chỉ 25 file sinh bảng**. Năm file không
+có decorator `@Entity`:
+
+```
+src/identity/auth/dto/auth.entity.ts
+src/messaging/firebase/entities/firebase.entity.ts
+src/catalog/sitemap/entities/sitemap.entity.ts
+src/ops/tasks/entities/task.entity.ts
+src/ops/admin/entities/admin.entity.ts
+```
+
+> Đừng đối chiếu "30 entity = 30 bảng" rồi kết luận ERD thiếu. Nó đủ.
+> ERD vẫn thiếu `push_tokens` đúng như mục 9 đã ghi — bảng đó chỉ có trên nhánh
+> production.
+
+### Công cụ ERD — trạng thái thật
+
+**Oracle đã bỏ phát hành Workbench qua apt**, không riêng bản Ubuntu nào. Đã quét
+`mysql-tools` và `mysql-tools-preview` trên sáu bản — resolute, questing, plucky,
+oracular, noble, jammy — **0/6 bản có gói**. Đừng mất thời gian tìm lại.
+
+- **Trên Windows**: cài trực tiếp từ dev.mysql.com, không vướng gì. Đường ngắn nhất.
+- **Trên Linux**: chỉ còn snap `mysql-workbench-community` (bên thứ ba, 8.0.36
+  bản 2024) hoặc `linuxserver/mysql-workbench` qua Docker (8.0.47). DBeaver CE
+  cũng vẽ được ERD và đã cài sẵn.
+
+Đường nào cũng vậy: **Database → Reverse Engineer** → chọn `zoldify_sqlaudit` →
+Next đến hết. Workbench **không xuất PNG**, chỉ PDF/PostScript — đổi sang ảnh
+bằng `pdftoppm -png -r 300`.
+
+`scripts/erd/layout-erd.py` xếp 25 bảng thành 6 cột theo module rồi xuất PDF mà
+không cần GUI. **Chưa nghiệm thu** — đọc header trong file trước khi tin nó.
+
+### Ba cái bẫy trên máy Linux (bỏ qua nếu đã sang Windows)
+
+| Triệu chứng | Nguyên nhân thật | Cách chặn |
+|---|---|---|
+| Workbench sập sau ~26 giây | `atk-bridge` gọi sai giao thức trong snap → segfault | `NO_AT_BRIDGE=1` |
+| Sơ đồ thu bé vào góc, chuột bấm lệch, panel nhân đôi | Màn hình **chia tỉ lệ phân số 166%** (2560x1600), GTK3 chỉ hiểu hệ số nguyên; `xwayland-native-scaling` đang bật | `gsettings set org.gnome.mutter experimental-features "['scale-monitor-framebuffer']"` |
+| Container MySQL tự tắt giữa chừng | Chưa đặt chính sách khởi động lại | `docker update --restart unless-stopped` (đã đặt cho cả hai container) |
+
+> **Bài học, mất 3 vòng chẩn sai mới ra:** "hình thu bé" đi cùng "chuột bấm
+> lệch" thì **kiểm tỉ lệ màn hình TRƯỚC**, đừng đổ cho ứng dụng. Hai vòng đầu
+> đổ cho GPU và cho backend vẽ, cả hai đều trượt. Lệnh kiểm mất 5 giây:
+> `gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState`
+
+Mục `.desktop` của Workbench đã được đè ở `~/.local/share/applications/` để tự
+kèm `NO_AT_BRIDGE=1` — thứ này **nằm ngoài repo**, cài lại máy là mất.
+
+### Quyết định hệ điều hành
+
+Máy Linux là **Ubuntu 26.04.1 LTS (Resolute Raccoon)**, cài ngày 03/09/2026.
+Đã cân nhắc lùi về 24.04 và **bác bỏ**: Workbench không có ở cả hai bản, còn lùi
+thì mất 23 tháng hỗ trợ (24.04 hết hạn 2029-05-31, 26.04 hết 2031-05-29). Máy đo
+ra sạch — 2142 gói, 0 gói hỏng, `npm run build` exit 0.
+
+Cường nghiêng về quay lại Windows vì mệt với việc phải sửa từng lỗi vặt. Nếu
+quay lại thật: **số đo tải trong `e718cab` lại thành "số của máy cũ" một lần
+nữa** — hoặc đo lại trên Windows, hoặc ghi rõ trong báo cáo là số của máy Linux.
