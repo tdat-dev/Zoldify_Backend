@@ -250,6 +250,15 @@ export class AuthService {
     const hashedPassword = this.usersService.hashPassword(newPassword);
     await this.userRepository.update(userId, { password: hashedPassword });
 
+    // Thu hồi MỌI phiên khác: tăng token_version → mọi access token cũ (mang
+    // version cũ) bị jwt.strategy từ chối; login() ngay sau đó ghi đè refresh
+    // token trong DB nên refresh token cũ cũng chết. Nếu token bị đánh cắp thì
+    // đổi mật khẩu sẽ đá kẻ gian ra khỏi mọi thiết bị.
+    await this.userRepository.increment({ id: userId }, 'token_version', 1);
+    // Cấp token MỚI (version mới) cho CHÍNH phiên đang thao tác → phiên này vẫn
+    // dùng tiếp liền mạch, chỉ các phiên KHÁC bị đá ra.
+    const tokens = await this.login(user);
+
     // Cảnh báo qua email: nếu token bị lạm dụng, chính chủ biết ngay có người
     // đụng mật khẩu. KHÔNG chặn/không làm fail nếu gửi mail hỏng (đổi đã xong).
     if (user.email) {
@@ -265,6 +274,8 @@ export class AuthService {
       message: hasPassword
         ? 'Thay đổi mật khẩu thành công'
         : 'Đặt mật khẩu thành công',
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
     };
   }
 
