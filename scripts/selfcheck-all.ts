@@ -11,8 +11,31 @@ import { spawnSync } from 'child_process';
 import * as path from 'path';
 
 const suites: Array<{ name: string; file: string }> = [
+  // Đặt ĐẦU vì đây là suite duy nhất KHÔNG cần database: nó chỉ đọc ci.yml và
+  // package.json. Hỏng cấu hình thì biết ngay trong một giây, không phải đợi
+  // ba suite database chạy xong mới lộ.
+  { name: 'Task #4 — hợp đồng CI (không cần DB)', file: 'selfcheck-ci.ts' },
+  // Cũng không cần database — chỉ đọc file, chỉ mục git, và chạy thử phần dọn
+  // file cũ trên một thư mục giả. Đặt ngay sau CI vì cùng tính chất: rẻ, và
+  // hỏng thì phải biết trước khi đợi ba suite database.
+  { name: 'Task #24/#25 — backup + khôi phục (không cần DB)', file: 'selfcheck-backup.ts' },
+  // Cần Redis (không cần MySQL). Đặt ngay sau CI vì cùng nhóm hạ tầng, và vì
+  // nó dựng hai server socket thật nên hỏng ở đây là hỏng thứ rất đáng biết
+  // trước khi chạy ba suite database.
+  { name: 'Task #5 — trạng thái dùng chung qua Redis', file: 'selfcheck-redis-state.ts' },
+  // Cần Redis chứ KHÔNG cần database. Đặt ngay sau suite CI vì cùng loại: hỏng
+  // là hỏng cấu hình, biết sớm hơn ba suite database phía dưới.
+  { name: 'Task #14 — worker tách khỏi API (cần Redis + DB)', file: 'selfcheck-worker.ts' },
+  // Đặt TRƯỚC các suite nghiệp vụ: nếu app không dựng nổi thì mọi suite dưới
+  // đều vô nghĩa, và câu trả lời "vì sao" nằm ở đây chứ không ở chúng. Bài này
+  // sinh ra sau khi sitemap có 8/8 test xanh mà `NestFactory.create` chết —
+  // test đơn vị tự `new` service nên không đi qua bộ tiêm phụ thuộc.
+  { name: 'Khởi động — app dựng được, route đúng chỗ (cần DB đã migrate)', file: 'selfcheck-boot.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
+  // Cần schema thật (đủ 25 bảng + index của migration), không phải schema do
+  // jest synchronize dựng. Xem bước 'Dựng schema thật để soi' trong ci.yml.
+  { name: 'Đua — 20 người bấm cùng lúc', file: 'selfcheck-race.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
 ];
 

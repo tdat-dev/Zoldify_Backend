@@ -27,6 +27,7 @@ import { OrderStatus } from '@ordering/orders/entities/order.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { NotificationType } from '@messaging/notifications/entities/notification.entity';
+import { siteUrlChinh } from '@common/site-url';
 
 @Injectable()
 export class PayosService {
@@ -83,8 +84,9 @@ export class PayosService {
       throw new BadRequestException('Đơn hàng đã được thanh toán');
     }
 
-    const frontendUrl =
-      this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
+    const frontendUrl = siteUrlChinh(
+      this.configService.get<string>('SITE_URL'),
+    );
 
     // Tạo payment link qua PayOS
     const link = await this.payos.paymentRequests.create({
@@ -147,8 +149,9 @@ export class PayosService {
       throw new NotFoundException('Không tìm thấy người dùng');
     }
 
-    const frontendUrl =
-      this.configService.get<string>('SITE_URL') || 'http://localhost:3001';
+    const frontendUrl = siteUrlChinh(
+      this.configService.get<string>('SITE_URL'),
+    );
     // orderCode phải unique → dùng timestamp + userId
     const orderCode = Number(`${Date.now().toString().slice(-7)}${userId}`);
 

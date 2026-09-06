@@ -21,10 +21,18 @@ export class ChatController {
     return this.chatService.createConversation(createConversationDto, user);
   }
 
+  // Hai tham số phân trang là TUỲ CHỌN — không gửi thì vẫn chạy như cũ, chỉ
+  // khác là nay chặn ở 20 hội thoại/trang thay vì nạp hết. Hình dạng trả về
+  // giữ nguyên `{ result }`, chỉ thêm `meta` (cộng thêm, không thay thế —
+  // cùng nguyên tắc keyset của Epic 2).
   @ResponseMessage('Lấy danh sách cuộc trò chuyện thành công')
   @Get('conversations')
-  getMyConversations(@User() user: IUser) {
-    return this.chatService.getMyConversations(user);
+  getMyConversations(
+    @User() user: IUser,
+    @Query('currentPage') currentPage: string,
+    @Query('limit') limit: string,
+  ) {
+    return this.chatService.getMyConversations(user, currentPage, limit);
   }
 
   @ResponseMessage('Lấy tin nhắn thành công')

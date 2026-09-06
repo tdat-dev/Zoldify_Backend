@@ -1,0 +1,259 @@
+name: CI
+
+# Cổng chất lượng cho mọi PR (task #4 bảng phân công, hạn 11/08).
+#
+# Vì sao tách khỏi deploy.yml: deploy.yml chạy KHI ĐÃ MERGE vào staging — lúc đó
+# biết mình làm hỏng thì đã hỏng trên nhánh chung rồi. File này chạy TRƯỚC khi
+# merge, trên chính PR, nên thứ hỏng còn nằm trong nhánh của người gây ra.
+#
+# Sáu cổng theo bảng phân công: lint · boundaries · test · build · openapi:check
+# · diagrams:check. Năm cổng đầu nằm ở job `quality` và CHẶN merge. Cổng sơ đồ
+# tách ra job riêng vì lý do ghi ở đó.
+#
+# Cộng thêm hai cổng tự kiểm không nằm trong bảng: `check:worker` (task #14 —
+# cron có còn chạy trong API không) và `check:ci` (chính hợp đồng của file này).
+
+on:
+  pull_request:
+  push:
+    # Chỉ hai nhánh chung. Nhánh cá nhân đã được kiểm ở PR rồi; chạy thêm ở đây
+    # là trả tiền hai lần cho cùng một câu trả lời.
+    branches: [staging, main]
+  workflow_dispatch:
+
+concurrency:
+  # Đẩy 3 commit liên tiếp lên một PR thì chỉ commit cuối đáng chạy.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint · Boundaries · Build · OpenAPI · Test
+    runs-on: ubuntu-latest
+
+    services:
+      # 5 spec về tiền (ledger, escrows, payos, withdrawals, tasks) chạy trên
+      # MySQL THẬT chứ không mock — thứ chúng kiểm là SELECT ... FOR UPDATE và
+      # ràng buộc UNIQUE, mock đi thì test xanh mà không chứng minh gì (xem
+      # đầu ledger.service.spec.ts). Không có service này thì `npm test` đỏ 100%,
+      # và một CI đỏ vĩnh viễn thì cả nhóm sẽ học cách bỏ qua nó.
+      #
+      # Giá trị phải khớp mặc định TEST_DB_* trong các spec: root/testpw/zoldify_test.
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: testpw
+          MYSQL_DATABASE: zoldify_test
+        ports:
+          - 3306:3306
+        # Thiếu healthcheck thì job chạy tiếp lúc MySQL mới mở cổng nhưng chưa
+        # nhận kết nối — hỏng ngẫu nhiên, lần được lần không.
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptestpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=30s
+
+      # Bài tự kiểm task #5 dựng HAI server socket.io và HAI storage throttler
+      # rồi bắt chúng nhìn thấy nhau qua Redis. Không có service này thì nó
+      # không chứng minh được gì — mà thứ nó chứng minh chính là loại lỗi chỉ
+      # xuất hiện khi có bản api thứ hai, tức là chỉ xuất hiện trên production.
+      # Redis THẬT cho `npm run check:worker` (task #14).
+      #
+      # Bài đó dựng hai worker BullMQ, đẩy một job và đếm số lần thực thi —
+      # câu hỏi trung tâm của cả task, và là câu không đọc mã mà trả lời được.
+      # Không có service này thì bài kiểm chỉ còn phần tĩnh, tức là chỉ còn
+      # kiểm "mã trông có đúng không" chứ không kiểm "chạy có đúng không".
+      #
+      # Cổng 6380 chứ không 6379: tránh đụng Redis nào runner có sẵn, và khớp
+      # mặc định TEST_REDIS_URL trong scripts/selfcheck-worker.ts.
+      redis:
+        image: redis:7
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=3s
+          --health-retries=12
+          --health-start-period=5s
+
+    env:
+      # Spec mặc định cổng 3307 (kịch bản docker cục bộ). Trên runner service
+      # nằm ở 3306, nên nói rõ ra đây thay vì sửa mã test cho vừa CI.
+      TEST_DB_HOST: 127.0.0.1
+      TEST_DB_PORT: '3306'
+      TEST_DB_USER: root
+      TEST_DB_PASSWORD: testpw
+      TEST_DB_NAME: zoldify_test
+      # Cùng lý do như TEST_DB_PORT: cục bộ dùng 6380 để không đụng Redis dev
+      # ở 6379, và trên runner cũng ánh xạ ra 6380 cho khớp.
+      TEST_REDIS_URL: redis://127.0.0.1:6380
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Phải khớp deploy.yml. openapi:check so openapi.json trong git với
+          # bản sinh lại; sinh bằng Node khác phiên bản rất dễ lệch định dạng
+          # rồi CI đỏ trong khi không ai đổi API. selfcheck-ci.ts canh điều này.
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      # Bánh cóc nợ lint: 980 vấn đề cũ, chỉ được giảm.
+      #
+      # Không dùng `npm run lint` ở đây: nó là `eslint --fix`, trên runner sẽ
+      # SỬA file rồi vẫn thoát 0 — xanh giả. Cũng không chặn thẳng bằng eslint
+      # trần vì 980 vấn đề cũ làm CI đỏ vĩnh viễn, mà CI đỏ mãi thì cả nhóm học
+      # cách bỏ qua nó. Lý do đầy đủ ở đầu scripts/check-lint.mjs.
+      - name: Nợ lint không tăng
+        run: npm run lint:check
+
+      # Bánh cóc ranh giới nghiệp vụ: 28 vi phạm cũ, chỉ được giảm.
+      - name: Ranh giới nghiệp vụ
+        run: npm run boundaries:check
+
+      - name: Build
+        run: npm run build
+
+      # Hợp đồng API. Đổi DTO mà quên sinh lại openapi.json thì web và mobile
+      # đang code theo bản cũ — lỗi chỉ lộ lúc tích hợp.
+      - name: OpenAPI khớp code
+        run: npm run openapi:check
+
+      - name: Test
+        run: npm test
+
+      # Một database RIÊNG, dựng bằng đúng 16 migration mà production chạy.
+      #
+      # Vì sao không dùng `zoldify_test` ở trên: database đó do jest tự dựng
+      # bằng `synchronize: true`, và mỗi spec chỉ khai những entity nó cần — nên
+      # nó chỉ có 14/25 bảng và KHÔNG có index nào do migration tạo. Soi index
+      # trên đó là soi một lược đồ không tồn tại ở đâu cả.
+      #
+      # Đây cũng là lý do hai cổng dưới trước nay không chạy trong CI: chúng cần
+      # lược đồ thật. Một cái chốt không chạy thì không phải là chốt — Epic 3b
+      # audit xong bốn bảng rồi mã mới đẻ lỗi cũ suốt hai tuần mà không ai kêu.
+      - name: Dựng schema thật để soi
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -ptestpw \
+            -e "CREATE DATABASE IF NOT EXISTS zoldify_schema
+                CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          DB_DATABASE=zoldify_schema \
+            node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+
+      # Index: mọi list "WHERE khoá + ORDER BY thời gian" phải có index ghép.
+      - name: Index đủ cho các danh sách nặng
+        run: npm run check:index
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
+      # App có DỰNG ĐƯỢC không, và route có đúng đường dẫn không.
+      #
+      # Cổng này sinh ra vì `npm test` KHÔNG trả lời được câu đó: test đơn vị tự
+      # `new Service(...)`, không đi qua bộ tiêm phụ thuộc của Nest lẫn bộ định
+      # tuyến. Đã dính hai lần — task #14 (worker xanh 26/26 mà không boot nổi)
+      # và sitemap (8/8 xanh, build sạch, `NestFactory.create` chết vì tham số
+      # có giá trị mặc định bị Nest hiểu thành provider tên `Number`).
+      #
+      # `test/app.e2e-spec.ts` có dựng AppModule thật, nhưng nó chạy bằng
+      # `npm run test:e2e` mà CI chưa bao giờ gọi. Một cái chốt không chạy thì
+      # không phải là chốt — đúng chuyện đã xảy ra với check:index.
+      #
+      # Dùng `zoldify_schema` chứ không `zoldify_test`: app chạy
+      # `synchronize: false`, nên nó cần lược đồ do migration dựng, không phải
+      # lược đồ jest tự sinh.
+      - name: App khởi động được và route đúng chỗ
+        run: npm run check:boot
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+          # CỐ Ý đặt SITE_URL thành DANH SÁCH, giống production và staging.
+          #
+          # Máy dev thường chỉ có một địa chỉ, nên lỗi "đọc thô SITE_URL rồi nối
+          # đường dẫn" không bao giờ lộ ở đó. Nó lộ trên staging, nơi biến này
+          # là danh sách origin cho CORS — và lộ dưới dạng sitemap nộp URL rác
+          # cho Google, cùng returnUrl PayOS hỏng sau khi khách trả tiền.
+          #
+          # Để CI chạy với dạng KHÓ, không phải dạng dễ.
+          SITE_URL: https://a.example.com,https://b.example.com
+          # Đặt KHÁC HẲN SITE_URL có chủ đích. Bảng chỉ mục sitemap phải trỏ các
+          # file con về gốc của API (nơi phục vụ chúng), còn URL các trang thì
+          # trỏ về gốc của WEB. Bản đầu dùng chung một gốc và lọt lên staging:
+          # cả hai file con đều 404. Hai giá trị khác nhau ở đây là thứ làm cho
+          # cổng phân biệt được hai loại địa chỉ.
+          API_PUBLIC_URL: https://api.example.com
+
+      # Đua: 20 người bấm cùng lúc. Chặn khi xuất hiện chỗ đua MỚI; hai chỗ đã
+      # biết (R1, R4 — đều thuộc task #2 của vai A) ghi trong DA_BIET_HONG.
+      - name: Không có chỗ đua mới
+        run: npm run check:race
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
+      # Trạng thái dùng chung qua Redis (task #5). Đặt sau `npm test` vì nó
+      # dựng server socket thật và mở cổng — nếu có gì hỏng ở tầng dưới thì
+      # phải thấy lỗi thật của tầng đó trước.
+      - name: Trạng thái dùng chung qua Redis
+        run: npm run check:redis
+      # Task #14: cron đã ra khỏi API chưa, và ra rồi thì có còn chạy đúng MỘT
+      # lần không. Phần sau dựng hai worker thật trên service redis ở trên.
+      - name: Worker tách khỏi API
+        run: npm run check:worker
+
+      # Bài tự kiểm của chính workflow này. Đặt CUỐI có chủ đích: nó rẻ, và nếu
+      # ai sửa ci.yml làm hỏng hợp đồng (bỏ cổng, gõ nhầm tên script, thêm --fix
+      # vào lint) thì phải thấy lỗi thật của các cổng trên trước đã.
+      - name: Tự kiểm hợp đồng CI
+        run: npm run check:ci
+
+  diagrams:
+    name: Sơ đồ
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+
+      # drawio:check thuần JS, không cần trình duyệt — chặn thật được.
+      - name: Kiểm 20 file .drawio
+        run: npm run drawio:check
+
+      # diagrams:check dùng @mermaid-js/mermaid-cli, kéo theo Chromium. Lúc dựng
+      # workflow, lo nó hỏng trên runner sạch vì thiếu thư viện hệ thống, nên để
+      # `continue-on-error: true` — chạy để còn thấy, nhưng không chặn.
+      #
+      # Nay gỡ hedge đó, và gỡ dựa trên số chứ không dựa trên cảm giác: 6 lần
+      # chạy gần nhất đều `success` Ở MỨC BƯỚC, không phải chỉ job xanh nhờ
+      # continue-on-error. Đó là phân biệt quan trọng — với cờ ấy bật, một bước
+      # hỏng vẫn cho job màu xanh, nên "job xanh 6 lần" tự nó KHÔNG chứng minh
+      # được gì về bước này. Phải đọc conclusion của từng bước mới biết.
+      #
+      # Từ đây nó là cổng chặn thật. Nếu sau này hỏng vì môi trường runner đổi
+      # chứ không phải vì sơ đồ sai, thì sửa môi trường — đừng bật lại cờ này,
+      # vì bật lại là quay về chỗ không ai biết cổng còn sống hay đã chết.
+      - name: Sinh lại sơ đồ mermaid
+        run: npm run diagrams:check

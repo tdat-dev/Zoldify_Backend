@@ -1,0 +1,11 @@
+# Vì sao file này tồn tại.
+#
+# Máy dev của nhóm chạy Windows với core.autocrlf=true, VPS chạy Linux. Một
+# script .sh commit từ Windows mà mang theo CRLF sẽ chết ngay dòng đầu trên VPS
+# với "bad interpreter: /bin/sh^M" — và nếu nó chạy từ cron thì lỗi ấy rơi vào
+# log cron, nơi không ai đọc cho tới lúc cần bản backup.
+#
+# Dòng dưới ép mọi file .sh nằm trong git ở dạng LF thuần, bất kể máy nào
+# commit. scripts/selfcheck-backup.ts kiểm lại điều này bằng cách đọc thẳng
+# blob trong git chứ không đọc bản trên đĩa.
+*.sh text eol=lf

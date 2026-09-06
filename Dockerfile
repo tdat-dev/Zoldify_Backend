@@ -90,11 +90,17 @@ USER node
 
 EXPOSE 3000
 
-# Healthcheck gọi `GET /` — route duy nhất nằm ngoài prefix `/api/v1`, xem
-# core/routing.config.ts. Nó CHỈ nói tiến trình còn sống; nó không chạm database,
-# nên cụm vẫn báo healthy khi MySQL đã chết. Muốn thật thì cần một route health
-# có ping database, hiện chưa có.
+# Healthcheck gọi `GET /health` — nằm ngoài prefix `/api/v1`, xem
+# core/routing.config.ts.
+#
+# Trước đây nó gọi `GET /`, và chú thích ở đây tự thừa nhận khuyết tật: route đó
+# chỉ nói tiến trình Node còn sống, không chạm database, nên cụm vẫn báo healthy
+# khi MySQL đã chết — đúng cái tình huống cần phát hiện thì lại không phát hiện.
+#
+# `/health` ping thật vào database và trả 503 khi không chạm được. Redis chết
+# thì VẪN 200 (chỉ ghi `redis: "down"`): cache và throttler đều đã fail-open nên
+# API vẫn phục vụ, và để Redis giết container là tự làm hỏng thứ còn chạy được.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/main"]

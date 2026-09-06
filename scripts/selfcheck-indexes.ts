@@ -95,6 +95,50 @@ async function main() {
         'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 20',
       params: [212080],
     },
+    // ─── Đợt rà thứ hai (31/08) ──────────────────────────────────────────────
+    //
+    // Epic 3b chỉ audit BỐN list nặng nhất lúc đó. Bốn mẫu dưới đây cùng hình
+    // dạng "WHERE khoá + ORDER BY thời gian" nhưng nằm ở bảng khác, và không ai
+    // rà lại sau khi mã mới được viết thêm. Đó chính là lý do đợt rà này tồn
+    // tại: sửa xong một lượt không có nghĩa là xong mãi mãi.
+    {
+      name: 'withdrawals.findAll (WHERE user_id ORDER BY created_at)',
+      table: 'withdrawals',
+      filter: ['user_id'],
+      orderCol: 'created_at',
+      explainSql:
+        'SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+      params: [1],
+    },
+    {
+      name: 'payments.findAll (WHERE user_id ORDER BY created_at)',
+      table: 'payments',
+      filter: ['user_id'],
+      orderCol: 'created_at',
+      explainSql:
+        'SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+      params: [1],
+    },
+    {
+      name: 'wallets: lịch sử giao dịch (WHERE wallet_id ORDER BY created_at)',
+      table: 'wallet_transactions',
+      filter: ['wallet_id'],
+      orderCol: 'created_at',
+      explainSql:
+        'SELECT * FROM wallet_transactions WHERE wallet_id = ? ORDER BY created_at DESC LIMIT 20',
+      params: [1],
+    },
+    {
+      // Sắp theo `updated_at` chứ không `created_at`: danh sách chat xếp theo
+      // lần nhắn gần nhất, không phải lần tạo hội thoại.
+      name: 'chat.getMyConversations (WHERE buyer_id ORDER BY updated_at)',
+      table: 'conversations',
+      filter: ['buyer_id'],
+      orderCol: 'updated_at',
+      explainSql:
+        'SELECT * FROM conversations WHERE buyer_id = ? ORDER BY updated_at DESC LIMIT 20',
+      params: [1],
+    },
     {
       name: 'interactions.findAll (reviews toàn bảng ORDER BY created_at) — admin',
       table: 'reviews',
@@ -161,6 +205,11 @@ async function main() {
   const redundants: Array<{ table: string; col: string }> = [
     { table: 'reviews', col: 'product_id' },
     { table: 'messages', col: 'conversation_id' },
+    // Đợt rà 31/08 — hai cái này lọt khỏi lần dọn trước:
+    //   products.idx_seller_id          ⊂ idx_seller_status (seller_id, status)
+    //   order_shipments.idx_shipment_order ⊂ uq_shipment_order_seller (order_id, seller_id)
+    { table: 'products', col: 'seller_id' },
+    { table: 'order_shipments', col: 'order_id' },
   ];
   for (const r of redundants) {
     const idxs = await indexPrefixes(ds, r.table);

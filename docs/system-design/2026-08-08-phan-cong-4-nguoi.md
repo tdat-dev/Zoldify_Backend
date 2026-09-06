@@ -122,7 +122,7 @@ Ba luật giữ cho việc này không vỡ:
 **Ranh giới trong backend do máy canh.** `eslint-plugin-boundaries` chặn `ordering`
 gọi thẳng repository của `money`. Nếu B lỡ tay import `LedgerAccount` vào
 `orders.service.ts`, CI sẽ đỏ chứ không cần ai đi review bắt lỗi. Mốc hiện tại là
-**29 vi phạm cũ**, chỉ được giảm, không được tăng.
+**28 vi phạm cũ**, chỉ được giảm, không được tăng.
 
 ---
 
@@ -148,6 +148,19 @@ develop    ← nhánh tích hợp
 feat/<mã>-<mô-tả-ngắn>     ví dụ feat/A-ledger-escrow-release
 fix/<mã>-<mô-tả-ngắn>
 ```
+
+> **Repo thật đang KHÁC bảng trên ở ba chỗ.** Ghi lại đây để trưởng nhóm chốt
+> lại một lần, chứ không tự sửa quy ước trong một PR dọn dẹp:
+>
+> | Bảng chốt | Repo thật | Hệ quả |
+> |---|---|---|
+> | `develop` là nhánh tích hợp | **`staging`**, không có nhánh `develop` nào | Người mới đọc tài liệu sẽ tạo `develop` và đẩy vào chỗ không ai nhìn |
+> | `main` là thứ đang chạy production | production deploy từ **`chore/soat-cau-hinh-payos-firebase`** (xem `.github/workflows/deploy.yml`), `main` không được deploy đi đâu | Nguy hiểm nhất trong ba: người ta tin merge vào `main` là ra production |
+> | `feat/<mã>-<mô-tả>` với mã là chữ cái người làm | thực tế dùng `feat/epic-N-…` và `feat/task-N-…` theo số việc | Chỉ là quy ước đặt tên, không gây hỏng |
+>
+> Chốt hướng nào cũng được — đổi tài liệu cho khớp repo, hoặc đổi repo cho khớp
+> tài liệu. Nhưng để hai bên nói hai đằng thì mỗi người mới vào sẽ mất một buổi
+> mới hiểu, và có người sẽ merge nhầm chỗ.
 
 - Mỗi PR phải có **một người khác** duyệt. Không tự merge PR của mình.
 - Commit message tiếng Việt cũng được, nhưng phải nói **làm gì**, không phải "update", "fix bug".
