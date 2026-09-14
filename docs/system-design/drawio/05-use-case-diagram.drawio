@@ -324,7 +324,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="1EkHkzGpA_UXhITmOA4N" name="Activity Diagram - Cancel an Order and Refund">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2651" dy="1634" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -454,9 +454,6 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="Dr732kjv7UyW1QPMPvEX-40" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Why the dashed frame — and the bug it replaced&lt;br&gt;&lt;br&gt;The refund, the status change and the stock restore are ONE transaction. If&lt;br&gt;the refund throws, none of the other two happened: the order stays open and&lt;br&gt;the buyer can try again.&lt;br&gt;&lt;br&gt;Until 14 Aug this was three separate writes, and the refund call sat inside a&lt;br&gt;try/catch that only console.error-ed the failure — then saved the order as&lt;br&gt;cancelled anyway. A failed refund left the buyer money in escrow_hold forever&lt;br&gt;with nothing raising an alarm. escrows.refund() was always correct on its own;&lt;br&gt;the defect was the caller swallowing what it threw.&lt;br&gt;&lt;br&gt;Exactly one failure is still swallowed on purpose: an order paid before the&lt;br&gt;escrow system existed has no escrow row to refund. That one logs a warning and&lt;br&gt;lets the cancel through. Every other error rolls the whole thing back." vertex="1">
-          <mxGeometry height="240" width="800" x="600" y="1500" as="geometry" />
-        </mxCell>
         <mxCell id="Dr732kjv7UyW1QPMPvEX-41" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Two safety nets, because voiding the link can fail&lt;br&gt;&lt;br&gt;Voiding runs AFTER the commit and never throws: it is a network call to PayOS,&lt;br&gt;and holding database locks across a network wait is how deadlocks are made.&lt;br&gt;If it fails, the link stays alive and someone can still pay a cancelled order.&lt;br&gt;&lt;br&gt;The second net catches that. The payment webhook now checks the order status&lt;br&gt;first: if the order is cancelled the money is credited to the BUYER WALLET and&lt;br&gt;the order stays cancelled — see 06-activity-diagram. It cannot be ignored,&lt;br&gt;because the money is already in the real bank account; not recording it would&lt;br&gt;put gateway_clearing out of step with the bank.&lt;br&gt;&lt;br&gt;Until 14 Aug neither net existed: the webhook set status = confirmed without&lt;br&gt;looking, so a cancelled order came back to life while its stock had already&lt;br&gt;been returned to the shelf." vertex="1">
           <mxGeometry height="240" width="800" x="1440" y="1500" as="geometry" />
         </mxCell>
@@ -464,7 +461,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="QecsM-tiFaEC0nI-Oe4X" name="Activity Diagram - List an Item for Sale">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2651" dy="1634" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -622,17 +619,11 @@
         <mxCell id="tGW9B6DTG3zimptHfNuc-48" edge="1" parent="1" source="tGW9B6DTG3zimptHfNuc-21" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="tGW9B6DTG3zimptHfNuc-22" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="tGW9B6DTG3zimptHfNuc-49" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Three red boxes, three real defects&lt;br&gt;&lt;br&gt;1. THE URL IS BUILT FROM THE REQUEST. files.controller.ts writes&lt;br&gt;   `${req.protocol}://${req.get(host)}/public/images/...` into the database.&lt;br&gt;   Every photo therefore carries whichever hostname the uploader happened to&lt;br&gt;   reach. Behind a reverse proxy that is http://localhost:3000; after a domain&lt;br&gt;   change every older photo points at the old domain. The stored value should&lt;br&gt;   be the path, and the host should be added when reading.&lt;br&gt;&lt;br&gt;2. THE WHITELIST DROPS FIELDS WITHOUT SAYING SO. products.service.create()&lt;br&gt;   copies a fixed list of fields. A field the DTO accepted but the list forgot&lt;br&gt;   is discarded and the API still answers 201. This already happened once with&lt;br&gt;   `currency`: send USD, get 201, row says VND.&lt;br&gt;&lt;br&gt;3. NOTHING REVIEWS THE LISTING. It is visible the moment it is saved. For a&lt;br&gt;   second-hand marketplace whose selling point is trust, that is the gap a&lt;br&gt;   grader will ask about." vertex="1">
-          <mxGeometry height="300" width="830" x="50" y="1260" as="geometry" />
-        </mxCell>
-        <mxCell id="tGW9B6DTG3zimptHfNuc-50" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Why the loop is drawn instead of one upload step&lt;br&gt;&lt;br&gt;The route uses FileInterceptor(fileUpload) — SINGLE file. The multer config&lt;br&gt;allows files: 10, which reads like ten photos per request, but that limit&lt;br&gt;never applies: the interceptor accepts one field, one file. A client with six&lt;br&gt;photos makes six requests and assembles the URL list itself.&lt;br&gt;&lt;br&gt;Consequence worth saying out loud: those six uploads are not one transaction.&lt;br&gt;If the browser closes after the fourth, four files sit on disk and in `files`&lt;br&gt;with no product pointing at them. Nothing collects them.&lt;br&gt;&lt;br&gt;fileSize is 100MB per file — for a marketplace photo that is roughly fifty&lt;br&gt;times what is needed, and it is the whole VPS disk on the line." vertex="1">
-          <mxGeometry height="300" width="830" x="910" y="1260" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="7tuT0Yyc72yLi96DPDKb" name="Activity Diagram - GHN Shipment">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2320" dy="1430" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -746,17 +737,11 @@
         <mxCell id="viOyjuUb51sducoei_58-35" edge="1" parent="1" source="viOyjuUb51sducoei_58-18" style="endArrow=open;endFill=0;dashed=1;html=1;strokeColor=#666666;fontSize=11;strokeColor=#c62828;" target="viOyjuUb51sducoei_58-19" value="days later">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="viOyjuUb51sducoei_58-36" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="THE HALF THAT DOES NOT EXIST: STATUS SYNC&lt;br&gt;&lt;br&gt;Zoldify calls GHN once, stores order_code, and never speaks to GHN again.&lt;br&gt;There is no webhook route and no polling job. Search the repository for a GHN&lt;br&gt;callback and there is nothing to find.&lt;br&gt;&lt;br&gt;So picked up, in transit, delivered, delivery failed, returned to sender —&lt;br&gt;none of it reaches the order. `status` only moves when a human presses a&lt;br&gt;button in the seller UI.&lt;br&gt;&lt;br&gt;That matters more here than on an ordinary shop, because DELIVERED is the&lt;br&gt;event that releases the escrow. The money is waiting on a fact the system&lt;br&gt;cannot observe. Today a seller can mark their own order delivered and be paid&lt;br&gt;for a parcel that never left the house.&lt;br&gt;&lt;br&gt;Two ways to close it: register a GHN webhook, or poll the tracking endpoint on&lt;br&gt;a schedule. The webhook is cheaper and faster; polling survives a missed call." vertex="1">
-          <mxGeometry height="300" width="800" x="50" y="1090" as="geometry" />
-        </mxCell>
-        <mxCell id="viOyjuUb51sducoei_58-37" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Smaller things this diagram had to be honest about&lt;br&gt;&lt;br&gt;WEIGHT IS INVENTED. Every parcel is declared 500g, every line item 200g. GHN&lt;br&gt;prices by weight, so the quoted fee is fiction for anything heavier — and the&lt;br&gt;buyer already paid the quoted fee. Nothing in the product form asks for weight.&lt;br&gt;&lt;br&gt;THE FAILURE IS SWALLOWED ON PURPOSE, and that part is defensible: a shipment&lt;br&gt;is not money, and a seller can type the code in by hand. But it goes to&lt;br&gt;console.error, not the logger, so it lands nowhere anyone looks.&lt;br&gt;&lt;br&gt;service_type_id = 2 IS HARDCODED. If a district only offers another service&lt;br&gt;type, the order simply gets no shipment.&lt;br&gt;&lt;br&gt;THE CARRIER IS ONE FIXED PICKUP POINT — GHN_FROM_DISTRICT_ID out of the&lt;br&gt;environment. Every parcel is declared as leaving the same address, no matter&lt;br&gt;which seller it belongs to. That is a warehouse model, and Zoldify is a&lt;br&gt;marketplace of individuals." vertex="1">
-          <mxGeometry height="300" width="800" x="880" y="1090" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="lPV9rGajuQYiBNCSX1wS" name="Activity Diagram - Top Up the Wallet">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2651" dy="1634" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -870,17 +855,11 @@
         <mxCell id="ghMxSvpNALkuH9H7qb1N-35" edge="1" parent="1" source="ghMxSvpNALkuH9H7qb1N-15" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="ghMxSvpNALkuH9H7qb1N-16" value="COMMIT">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="ghMxSvpNALkuH9H7qb1N-36" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="THE HOLE THAT WAS HERE UNTIL 14 AUGUST&lt;br&gt;&lt;br&gt;POST /api/v1/payments with body {&quot;amount&quot;: 999999999} called&lt;br&gt;walletsService.topup(user.id, amount) directly. Any signed-in account could&lt;br&gt;credit itself any sum. No bank transfer, no admin, no PayOS — and the ledger&lt;br&gt;entry it produced was indistinguishable from a real top-up.&lt;br&gt;&lt;br&gt;The money was immediately spendable, and withdrawable through&lt;br&gt;POST /withdrawals. Only the admin approval step stood between a fabricated&lt;br&gt;balance and a real bank payout — and the admin sees nothing but a normal&lt;br&gt;looking balance.&lt;br&gt;&lt;br&gt;POST /wallets/topup was worse in a quieter way: WalletsController carried no&lt;br&gt;guard at all, so a route into a function that writes to the ledger was&lt;br&gt;reachable without logging in. It answered 500 rather than 401 only because&lt;br&gt;@User() returned undefined and the code tripped over user.id.&lt;br&gt;&lt;br&gt;Fixed: the /payments branch refuses and names the PayOS route; the wallets&lt;br&gt;controller takes JwtAuthGuard at class level and AdminGuard on topup;&lt;br&gt;route-guards.spec.ts now fails the build if any route loses its guard." vertex="1">
-          <mxGeometry height="330" width="840" x="50" y="1200" as="geometry" />
-        </mxCell>
-        <mxCell id="ghMxSvpNALkuH9H7qb1N-37" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Why the wallet is only credited by the webhook&lt;br&gt;&lt;br&gt;The ledger account `gateway_clearing` represents money that PayOS is holding&lt;br&gt;on our behalf. Every credit to a user wallet is paid for out of it, so the sum&lt;br&gt;of what we have handed out must always match what the gateway actually&lt;br&gt;received. Crediting a wallet without a matching bank event breaks that&lt;br&gt;equality, and it breaks it invisibly — the books still balance to zero because&lt;br&gt;the fake entry has two sides. It only surfaces when someone compares&lt;br&gt;gateway_clearing against the PayOS statement.&lt;br&gt;&lt;br&gt;That is the whole reason the credit lives in the webhook and nowhere else.&lt;br&gt;&lt;br&gt;The idempotency key is payos:{orderCode}:{paymentLinkId}, so PayOS may call&lt;br&gt;the webhook as many times as it likes. The second call finds the transaction&lt;br&gt;already posted and stops — a flow final, not an activity final: the request&lt;br&gt;still returns 200, which is what stops PayOS retrying forever.&lt;br&gt;&lt;br&gt;The same key is used by GET /payos/refresh/:orderId, so whichever arrives&lt;br&gt;first wins and the other becomes a no-op." vertex="1">
-          <mxGeometry height="330" width="840" x="920" y="1200" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="_XKmgmQIdpdxg6yzMjwT" name="Activity Diagram - Login and Token Lifetime">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2651" dy="1634" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1025,17 +1004,11 @@
         <mxCell id="Ca7547AH3OE3_9awGXwS-47" edge="1" parent="1" source="Ca7547AH3OE3_9awGXwS-21" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="Ca7547AH3OE3_9awGXwS-22" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Ca7547AH3OE3_9awGXwS-48" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="THERE IS NO REFRESH ENDPOINT&lt;br&gt;&lt;br&gt;The refresh token is signed at login and written to users.refresh_token, and&lt;br&gt;then nothing ever reads it. AuthController has login, register, OTP, firebase,&lt;br&gt;forgot-password, change-password, logout and profile — and no route that&lt;br&gt;exchanges a refresh token for a new access token.&lt;br&gt;&lt;br&gt;So the second half of the usual pair does not exist. When the access token&lt;br&gt;expires the user is simply logged out and types their password again. The&lt;br&gt;refresh token is a stored credential that buys nothing.&lt;br&gt;&lt;br&gt;Worth stating plainly at the defence, because the diagram of a login flow&lt;br&gt;normally implies a refresh loop, and a grader will look for it. Either build&lt;br&gt;POST /auth/refresh, or stop issuing and storing the token.&lt;br&gt;&lt;br&gt;Storing it is not free: user.entity.ts already notes that a leaked row hands&lt;br&gt;over a valid refresh token, and nothing checks whether the stored one matches&lt;br&gt;the one presented — because nothing presents one." vertex="1">
-          <mxGeometry height="300" width="820" x="50" y="1300" as="geometry" />
-        </mxCell>
-        <mxCell id="Ca7547AH3OE3_9awGXwS-49" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="What token_version buys, and what it costs&lt;br&gt;&lt;br&gt;A JWT cannot be withdrawn once handed out — that is the trade a stateless&lt;br&gt;token makes. token_version buys the withdrawal back: the number is signed into&lt;br&gt;the payload, JwtStrategy compares it against the row on EVERY request, and&lt;br&gt;logout increments it. Every token issued before that moment stops working at&lt;br&gt;once, on every device.&lt;br&gt;&lt;br&gt;That is the right call for a system holding money. A stolen token stops being&lt;br&gt;useful the moment the owner logs out, instead of staying valid until it&lt;br&gt;expires.&lt;br&gt;&lt;br&gt;The cost is one row read per authenticated request, which is exactly the cost&lt;br&gt;a stateless token was supposed to avoid. Worth it here; worth knowing it is&lt;br&gt;the reason `users` is the hottest table in the system.&lt;br&gt;&lt;br&gt;The parallel bars are a real fork: the two tokens are signed independently and&lt;br&gt;the response needs both. UML requires the fork to be closed by a join, and&lt;br&gt;the join is what the response waits on." vertex="1">
-          <mxGeometry height="300" width="820" x="900" y="1300" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="OdSmegjDbqint-qBBQYC" name="Activity Diagram - Ledger Reconciliation (TO BE)">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2062" dy="1271" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1141,17 +1114,11 @@
         <mxCell id="cuk1b9-qM0TlSd5P5Mu3-34" edge="1" parent="1" source="cuk1b9-qM0TlSd5P5Mu3-15" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="cuk1b9-qM0TlSd5P5Mu3-16" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="cuk1b9-qM0TlSd5P5Mu3-35" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="EVERY BOX IS RED. NONE OF THIS EXISTS.&lt;br&gt;&lt;br&gt;Four places in the source already describe this job as though it runs:&lt;br&gt;ledger-account.entity.ts says an hourly job compares the two numbers,&lt;br&gt;orders.service.ts says the reconciliation job will spot the drift, seed.ts&lt;br&gt;says it surfaces in production, r6-state-escrow-lifecycle says an hourly&lt;br&gt;reconciliation job checks it.&lt;br&gt;&lt;br&gt;The only cron in the repository is TasksService.autoCancelOrders. There is no&lt;br&gt;reconciliation job. Comments described an intention and then were read back as&lt;br&gt;a description of the system — which is exactly how a team ends up believing it&lt;br&gt;has a safety net it does not have.&lt;br&gt;&lt;br&gt;This diagram is drawn to the same TO BE convention as the rest of the set: it&lt;br&gt;is the correct flow, drawn in red because it is not built. It is the smallest&lt;br&gt;piece of real work left that would most change what the system can promise." vertex="1">
-          <mxGeometry height="260" width="800" x="50" y="980" as="geometry" />
-        </mxCell>
-        <mxCell id="cuk1b9-qM0TlSd5P5Mu3-36" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Why it must not correct anything by itself&lt;br&gt;&lt;br&gt;A gap between the ledger and the cached balance means one of two things: the&lt;br&gt;ledger is right and the cache drifted, or something wrote money by a path&lt;br&gt;nobody knows about. Those need opposite responses, and the job cannot tell&lt;br&gt;them apart. A job that silently rewrites the balance to match destroys the&lt;br&gt;evidence of the second case — and the second case is the one that matters.&lt;br&gt;&lt;br&gt;So: record, alarm, freeze withdrawals, and let a person look. Freezing is the&lt;br&gt;part that is easy to leave out and expensive to leave out, because a&lt;br&gt;withdrawal is the one operation that turns a number in the database into money&lt;br&gt;that cannot be recalled.&lt;br&gt;&lt;br&gt;CHECK 1 is the invariant the whole double-entry design exists to guarantee, so&lt;br&gt;a failure there means a bug in LedgerService.post itself. CHECK 3 is the one&lt;br&gt;that catches the bugs found on 14 August: an escrow left HOLDING with no money&lt;br&gt;behind it shows up here and nowhere else." vertex="1">
-          <mxGeometry height="260" width="800" x="880" y="980" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="JaulTpiS1fGhIY-FzTbT" name="Class Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1547" dy="953" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1434,14 +1401,11 @@
         <mxCell id="GieNu-ZUdFgrovIQQLjo-93" edge="1" parent="1" source="GieNu-ZUdFgrovIQQLjo-75" style="endArrow=open;endFill=0;dashed=1;html=1;strokeColor=#666666;fontSize=11;" target="GieNu-ZUdFgrovIQQLjo-68" value="«uses»">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="GieNu-ZUdFgrovIQQLjo-94" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="LedgerService has no table of its own — it is the only class&lt;br&gt;allowed to change a balance. That is what a Class Diagram&lt;br&gt;shows and an ERD cannot: behaviour, not just storage." vertex="1">
-          <mxGeometry height="70" width="400" x="1130" y="860" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="lEs1Y7KBi1kcYkNv4Ihh" name="Sequence Diagram - PayOS Webhook">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1856" dy="1144" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1565,14 +1529,11 @@
             <mxPoint x="140" y="840" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="D_lii-HTlHqN7Uhyi5Rq-27" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Steps 4 to 10 are ONE transaction. The idempotency key and the money share a fate:&lt;br&gt;a crash rolls both back, so the retry succeeds cleanly. The old code committed the&lt;br&gt;key first, so a crash silently swallowed the payment.&lt;br&gt;&lt;br&gt;The lower branch is the normal path when PayOS resends the webhook, not an error.&lt;br&gt;LedgerService finds the existing row at step 5, writes nothing, and returns it —&lt;br&gt;so the caller gets the same LedgerTransaction it got the first time. That is what&lt;br&gt;makes the endpoint safe to retry any number of times." vertex="1">
-          <mxGeometry height="130" width="700" x="70" y="1020" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="_E8lh-VAfdR52oSJvmAz" name="Entity Relationship Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1092" dy="673" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1753,14 +1714,11 @@
         <mxCell id="Zx1BPZltRPCAJox-Danl-59" edge="1" parent="1" source="Zx1BPZltRPCAJox-Danl-1" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;html=1;fontSize=11;" target="Zx1BPZltRPCAJox-Danl-46" value="owns">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="Zx1BPZltRPCAJox-Danl-60" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="ledger_entries is append-only: no column may be updated.&lt;br&gt;To reverse a transaction, post the opposite one.&lt;br&gt;idempotency_key is UNIQUE at the database level, not in code." vertex="1">
-          <mxGeometry height="70" width="340" x="50" y="650" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="WDxuixDNrN8zYI5B5CoJ" name="Deployment Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1428" dy="880" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1836,14 +1794,11 @@
         <mxCell id="_DtXcxJaId3ZIzSdQnzo-24" edge="1" parent="1" source="_DtXcxJaId3ZIzSdQnzo-18" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="_DtXcxJaId3ZIzSdQnzo-6" value="SSH  compose pull &amp;&amp; up -d">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="_DtXcxJaId3ZIzSdQnzo-25" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="UML deployment notation: nodes are 3D boxes, artifacts sit inside them.&lt;br&gt;Three API replicas are only possible because every piece of state&lt;br&gt;lives in MySQL, Redis or R2 — never in process memory or on local disk." vertex="1">
-          <mxGeometry height="80" width="620" x="430" y="790" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="o7Hh9jvv6jEzbx_9Lt6l" name="System Context Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1237" dy="763" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1907,14 +1862,11 @@
         <mxCell id="sw-Glh5ToXJGiyam1mT5-20" edge="1" parent="1" source="sw-Glh5ToXJGiyam1mT5-4" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="sw-Glh5ToXJGiyam1mT5-10" value="manual bank transfer">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="sw-Glh5ToXJGiyam1mT5-21" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Payouts are MANUAL: an admin transfers the money and marks it done.&lt;br&gt;A deliberate choice at this scale — bank payout APIs need a registered&lt;br&gt;company. The ledger models it honestly with a withdrawal_pending account." vertex="1">
-          <mxGeometry height="80" width="480" x="430" y="710" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="uxdXyojM9AsREIdBEzCh" name="Container Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2062" dy="1271" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -1984,14 +1936,11 @@
         <mxCell id="59XLJyg0iTgdv8digokF-22" edge="1" parent="1" source="59XLJyg0iTgdv8digokF-6" style="endArrow=open;endFill=0;dashed=1;html=1;strokeColor=#666666;fontSize=11;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="59XLJyg0iTgdv8digokF-11" value="upload  (planned)">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="59XLJyg0iTgdv8digokF-23" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Four things this diagram states:&lt;br&gt;1. The API keeps NO state, so it can be replicated. Everything that used to&lt;br&gt;   live in process memory — cache, rate-limit counters, socket lists — is in Redis.&lt;br&gt;   PARTLY TRUE NOW (Epic 4): the catalog cache IS externalisable to Redis via&lt;br&gt;   REDIS_URL (single-flight + fail-open) and @keyv/redis is a dependency, so a&lt;br&gt;   shared cache across replicas works. STILL IN-PROCESS: ThrottlerModule rate-&lt;br&gt;   limit counters and the websocket socket lists — so the API is not yet fully&lt;br&gt;   stateless and the x3 above remains a target for those two pieces.&lt;br&gt;2. Exactly ONE worker. Cron inside the API would run the reconciliation job&lt;br&gt;   three times; for a job that touches money that is a serious bug.&lt;br&gt;   NOT TRUE YET: TasksModule is imported by AppModule, so the cron runs inside&lt;br&gt;   the API. Harmless while there is one replica — and the exact reason a second&lt;br&gt;   replica cannot simply be started.&lt;br&gt;3. Images ARE on the VPS disk today — multer writes to public/images/{folder},&lt;br&gt;   and there is no R2 or S3 client anywhere in src/. That blocks point 1: a&lt;br&gt;   second API replica cannot serve an image the first one wrote. Moving to R2&lt;br&gt;   is decided, not built.&lt;br&gt;4. Admin is its own deployable on its own hostname, so admin code is never&lt;br&gt;   shipped in the customer bundle. Sessions are per-origin, so an admin who&lt;br&gt;   also sells signs in twice.&lt;br&gt;&lt;br&gt;Checked against the code on 14/08/2026. Red = decided, not built.&lt;br&gt;&lt;br&gt;The box is now buildable. Dockerfile and docker-compose.yml exist in&lt;br&gt;Zoldify_Backend; an earlier mysql+migrate+api stack was brought up from an&lt;br&gt;empty volume and answered on /api/v1/products. Compose now ALSO declares a&lt;br&gt;redis service and passes REDIS_URL=redis://redis:6379 to the api, so Redis&lt;br&gt;backs the catalog cache (Epic 4). Honest caveat: the redis-included compose&lt;br&gt;is config-verified (YAML + wiring) but NOT yet brought up — the author box&lt;br&gt;has no Docker. Still no worker.&lt;br&gt;&lt;br&gt;The uploads question has an answer now: compose mounts a NAMED volume at&lt;br&gt;/app/public/images, and a file written there survives docker compose down and&lt;br&gt;up — measured, not assumed. That keeps uploads across a redeploy but does not&lt;br&gt;unblock point 1: a volume lives on one machine, so it still cannot be shared&lt;br&gt;by two API replicas. Only object storage fixes that.&lt;br&gt;&lt;br&gt;See DEPLOY.md for the commands and for what is still missing." vertex="1">
-          <mxGeometry height="480" width="740" x="70" y="710" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="8AWNGg4pAzxDG96xwLLr" name="Component Diagram - Bounded Contexts">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1428" dy="880" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2065,17 +2014,11 @@
         <mxCell id="aiQKo2CWYi5a2MvuZvO3-16" edge="1" parent="1" source="aiQKo2CWYi5a2MvuZvO3-5" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="aiQKo2CWYi5a2MvuZvO3-6" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="aiQKo2CWYi5a2MvuZvO3-17" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Arrows point DOWNWARD only. Identity is the foundation and depends on nobody.&lt;br&gt;Money depends only on Identity.&lt;br&gt;&lt;br&gt;Money must NOT point at Ordering. Ordering computes the amount and calls Money,&lt;br&gt;passing a reference like {type: order, id: 123}. To Money that reference is an&lt;br&gt;opaque string — it does not know what an order is. That is what makes Money the&lt;br&gt;easiest context to split into its own service later.&lt;br&gt;&lt;br&gt;The rule is enforced by eslint-plugin-boundaries, not by convention. Current&lt;br&gt;debt: 29 legacy violations, allowed to shrink but never to grow." vertex="1">
-          <mxGeometry height="155" width="660" x="90" y="770" as="geometry" />
-        </mxCell>
-        <mxCell id="aiQKo2CWYi5a2MvuZvO3-18" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Money — the protected core.&lt;br&gt;Every balance change goes through LedgerService.post()" vertex="1">
-          <mxGeometry height="70" width="320" x="990" y="590" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="GtVLDnpR6NorvuPy8Tvi" name="Fund Flow Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1428" dy="880" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2127,14 +2070,11 @@
         <mxCell id="m5nynqLc1Hzq-eZqEtPv-16" edge="1" parent="1" source="m5nynqLc1Hzq-eZqEtPv-6" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="m5nynqLc1Hzq-eZqEtPv-7" value="6b · transfer completed">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="m5nynqLc1Hzq-eZqEtPv-17" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="The yellow box is the single most important number in the system. Its balance&lt;br&gt;must always equal the real money sitting in Zoldify&#39;s bank account.&lt;br&gt;&lt;br&gt;It answers the first question any auditor, investor or payment partner asks:&lt;br&gt;&quot;How much of your users&#39; money are you holding, and how do you prove it?&quot;&lt;br&gt;One SQL query. The old architecture could not answer it at all.&lt;br&gt;&lt;br&gt;Steps 5 and 6 are separate because the payout is a human action. Between them&lt;br&gt;the money has left the seller&#39;s wallet but not the system — without a dedicated&lt;br&gt;account for that state, the books cannot be reconciled against the bank." vertex="1">
-          <mxGeometry height="160" width="720" x="70" y="570" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="vNqIbsJhvhht81qGHdw7" name="State Machine - Order Lifecycle">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1547" dy="953" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2213,14 +2153,11 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="31tzUzGOhUYmU4UAErBF-23" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="Every arrow into the final state moves money. That is why authorization on&lt;br&gt;this state machine is a financial control, not a UX detail.&lt;br&gt;&lt;br&gt;Who may make each move — enforced by order-status.policy.ts:&lt;br&gt;  confirmed / processing / shipping ....... seller or admin&lt;br&gt;  delivered ............................... BUYER or admin, and only from shipping&lt;br&gt;  refunded ................................ admin only&lt;br&gt;  cancelled ............................... neither; use /cancel or /cancel-sale,&lt;br&gt;                                            those also restore stock&lt;br&gt;&lt;br&gt;The principle: whoever gains must not be the one who presses the button.&lt;br&gt;A seller marking their own order delivered would be releasing their own escrow." vertex="1">
-          <mxGeometry height="180" width="700" x="50" y="790" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="M5qiORJ-1eDTnCUIl-Pz" name="State Machine - Escrow Lifecycle">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1092" dy="673" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2263,17 +2200,11 @@
         <mxCell id="zOPqZQu0cb4kiWpbOO1H-13" edge="1" parent="1" source="zOPqZQu0cb4kiWpbOO1H-5" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="zOPqZQu0cb4kiWpbOO1H-6" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="zOPqZQu0cb4kiWpbOO1H-14" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="The escrow_hold balance must ALWAYS match the real bank account.&lt;br&gt;An hourly reconciliation job checks it." vertex="1">
-          <mxGeometry height="55" width="340" x="35" y="430" as="geometry" />
-        </mxCell>
-        <mxCell id="zOPqZQu0cb4kiWpbOO1H-15" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="TERMINAL states. There is no way back.&lt;br&gt;To reverse one, post an opposite ledger transaction;&lt;br&gt;never edit the existing rows. ledger_entries is append-only." vertex="1">
-          <mxGeometry height="70" width="360" x="710" y="70" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="5TkFdS6_sC2hUFH1VcU9" name="Screen Navigation Diagram">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1687" dy="1040" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2460,14 +2391,11 @@
         <mxCell id="MVOuu9K8MGcWCc0OaKOU-49" edge="1" parent="1" source="MVOuu9K8MGcWCc0OaKOU-13" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="MVOuu9K8MGcWCc0OaKOU-14" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="MVOuu9K8MGcWCc0OaKOU-50" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="The deep link zoldify://payment/return only navigates the UI. The single source&lt;br&gt;of truth for &quot;this was paid&quot; is the PayOS webhook hitting the backend — a user&lt;br&gt;can close the browser before being redirected, and a URL can be typed by hand.&lt;br&gt;&lt;br&gt;The eight seller screens are roughly half the total app work. They are the&lt;br&gt;first thing to cut if the four-person team runs short: sellers already have&lt;br&gt;the full flow on the web, buyers do not.&lt;br&gt;&lt;br&gt;Screens inside a group box are drawn without arrows between them on purpose —&lt;br&gt;a group is a navigation stack, and every screen in it is reachable from every&lt;br&gt;other. Arrows are only drawn where one stack hands over to another." vertex="1">
-          <mxGeometry height="175" width="640" x="370" y="890" as="geometry" />
-        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
   <diagram id="6z9P0fIUxX4C4kcLD0Dt" name="Deployment Pipeline">
-    <mxGraphModel dx="934" dy="572" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1547" dy="953" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -2568,15 +2496,6 @@
         </mxCell>
         <mxCell id="wzBXlo48OZKu_Q5dPZ6v-31" edge="1" parent="1" source="wzBXlo48OZKu_Q5dPZ6v-17" style="endArrow=block;endFill=1;html=1;strokeColor=#333333;fontSize=11;" target="wzBXlo48OZKu_Q5dPZ6v-19" value="ok">
           <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="wzBXlo48OZKu_Q5dPZ6v-32" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="The three orange gates are what makes the architecture hold over time.&lt;br&gt;&lt;br&gt;boundaries:check turns the context dependency rule from a spoken agreement&lt;br&gt;into a merge blocker. Without it the rule is broken within two weeks.&lt;br&gt;&lt;br&gt;openapi:check guarantees web and mobile never build against a stale contract.&lt;br&gt;&lt;br&gt;diagrams:check means a broken diagram cannot be merged — the report depends&lt;br&gt;on them rendering.&lt;br&gt;&lt;br&gt;NOT BUILT YET: the backend has no .github/workflows at all. This is B, week 1." vertex="1">
-          <mxGeometry height="170" width="620" x="70" y="430" as="geometry" />
-        </mxCell>
-        <mxCell id="wzBXlo48OZKu_Q5dPZ6v-33" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="The red column is a plan, not a description&lt;br&gt;&lt;br&gt;There is no Dockerfile and no compose file in any of the four repositories.&lt;br&gt;The only container in the project is started by scripts/test-db.mjs with a&lt;br&gt;bare `docker run mysql:8` for the test database.&lt;br&gt;&lt;br&gt;Dockerfile and docker-compose.yml now exist, and `docker compose up -d --build`&lt;br&gt;has been run from an empty volume: 25 tables migrated, both containers healthy,&lt;br&gt;/api/v1/products answering. So the migration step is real and is drawn black.&lt;br&gt;&lt;br&gt;The two boxes still red need things that do not exist: there is no&lt;br&gt;.github/workflows anywhere, so nothing builds or pushes an image; and there is&lt;br&gt;no VPS to ssh into. Until then a deploy is `git pull` then `npm run docker:up`&lt;br&gt;on the machine itself, which builds locally and skips GHCR entirely." vertex="1">
-          <mxGeometry height="170" width="620" x="70" y="620" as="geometry" />
-        </mxCell>
-        <mxCell id="wzBXlo48OZKu_Q5dPZ6v-34" parent="1" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=left;spacingLeft=6;fontSize=11;fillColor=#fffbe6;strokeColor=#c8a415;" value="This pipeline runs per repository. Four repositories:&lt;br&gt;&lt;br&gt;Zoldify_Backend    lint · boundaries:check · test · build · openapi:check · diagrams:check&lt;br&gt;Zoldify_Frontend   lint · build · gen:api must match the committed schema&lt;br&gt;Zoldify_Admin      lint · build · check-shared must match Zoldify_Frontend   (planned)&lt;br&gt;Zoldify_Mobile     lint · typecheck · EAS build&lt;br&gt;&lt;br&gt;check-shared is the gate specific to the admin split: the modules copied from&lt;br&gt;the shop repo must stay byte-identical. Without it the two copies drift, which&lt;br&gt;is exactly how the order-status table ended up with four versions." vertex="1">
-          <mxGeometry height="190" width="620" x="70" y="800" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
