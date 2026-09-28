@@ -244,6 +244,11 @@ export class PaymentsService {
 
   async remove(id: number, user: IUser) {
     const payment = await this.findOne(id, user);
+    // Giao dịch đã thành công là chứng từ tiền, khớp với bút toán trong sổ cái.
+    // Xoá nó thì sổ cái còn tiền mà không còn giấy tờ giải thích, kể cả admin.
+    if (payment.status === PaymentStatus.SUCCESS) {
+      throw new BadRequestException('Không thể xoá giao dịch đã thành công');
+    }
     await this.paymentRepository.delete(id);
     return 'Xóa giao dịch thành công';
   }
