@@ -84,6 +84,14 @@ describe('PaymentsService.update: không đánh dấu đã trả tiền được
     expect(result.status).toBe(PaymentStatus.FAILED);
   });
 
+  it('admin không xoá được giao dịch đã thành công (chứng từ tiền)', async () => {
+    const { service, payment } = makeService();
+    payment.status = PaymentStatus.SUCCESS;
+    await expect(service.remove(42, admin)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
   it('PATCH và DELETE /payments/:id chỉ dành cho admin', () => {
     for (const handler of ['update', 'remove'] as const) {
       const guards: unknown[] =
