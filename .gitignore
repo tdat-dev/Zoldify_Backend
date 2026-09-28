@@ -74,3 +74,7 @@ docs/system-design/exports/
 # Khong commit: day la anh nguon ngoai chua ra ban quyen, dung cho du lieu gia —
 # de vao repo cua mot san thuong mai la ruoc rui ro phap ly.
 public/media/demo/
+
+# Bản dump database do service `backup` ghi ra (xem DEPLOY.md). Không bao giờ
+# vào git: chứa toàn bộ dữ liệu người dùng.
+backups/

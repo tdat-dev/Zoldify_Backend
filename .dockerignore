@@ -36,3 +36,6 @@ test
 scripts
 *.spec.ts
 openapi.json
+
+# Bản dump database: không thuộc về ảnh chạy, và chứa dữ liệu người dùng.
+backups

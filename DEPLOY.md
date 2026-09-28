@@ -146,6 +146,46 @@ ai phải xoá database đang làm việc.
 
 ---
 
+## Sao lưu và khôi phục
+
+Service `backup` (ảnh `mysql:8`, chạy `scripts/backup-db.sh`) dump database
+ngay khi khởi động, tức mỗi lần deploy, rồi 24 giờ một lần, vào `./backups`
+cạnh file compose. Giữ 14 ngày (đổi bằng `BACKUP_KEEP_DAYS` trong `.env`).
+File chỉ xuất hiện khi dump chạy hết và kiểm được dòng "Dump completed"; bản
+hỏng giữa chừng bị bỏ, không nằm lẫn với bản tốt.
+
+```bash
+ls -lh backups/                          # các bản đang có
+docker compose -p zoldify logs backup    # lần chạy gần nhất: [backup] OK hay LỖI
+docker compose -p zoldify run --rm -e BACKUP_ONCE=1 backup   # dump ngay một bản
+```
+
+**Khôi phục.** Lệnh này GHI ĐÈ database đang chạy, nên dừng api trước. Mật
+khẩu đọc từ biến có sẵn trong container mysql, không gõ ra dòng lệnh:
+
+```bash
+docker compose -p zoldify stop api
+gunzip -c backups/zoldify-YYYYMMDD-HHMMSS.sql.gz \
+  | docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+docker compose -p zoldify start api
+```
+
+**Thử khôi phục trước khi cần thật.** Một bản sao lưu chưa từng được khôi phục
+thì chưa biết có dùng được không. Làm một lần vào database tạm:
+
+```bash
+docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE restore_test"'
+gunzip -c backups/<file>.sql.gz \
+  | docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" restore_test'
+docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM restore_test.orders; DROP DATABASE restore_test"'
+```
+
+`./backups` vẫn nằm trên cùng VPS: chống được xoá nhầm, migration hỏng, dữ liệu
+bị ghi sai, nhưng **không** chống được mất cả máy. Chép ra ngoài (R2/S3) là
+bước tiếp theo.
+
+---
+
 ## Chưa có, và biết là chưa có
 
 | Thứ | Trạng thái |
@@ -155,7 +195,7 @@ ai phải xoá database đang làm việc.
 | Redis | **không có dòng code nào dùng** — bộ nhớ đệm nằm trong tiến trình Node (`CacheModule.register()`), nên compose cũng không khởi động Redis |
 | Nhân bản API | chặn bởi chỗ để ảnh: volume nằm trên một máy, hai bản API không dùng chung được |
 | Healthcheck thật | `GET /` chỉ nói tiến trình còn sống, **không** chạm database. Cụm vẫn báo healthy khi MySQL đã chết |
-| Sao lưu | chưa có lịch dump `mysql-data` |
+| Sao lưu ra ngoài VPS | đã dump hằng ngày vào `./backups` (service `backup`), nhưng vẫn trên cùng máy; chưa chép ra R2/S3 |
 
 ---
 
