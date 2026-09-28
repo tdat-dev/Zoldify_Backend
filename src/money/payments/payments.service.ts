@@ -9,7 +9,7 @@ import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Payment } from './entities/payment.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import {
@@ -207,7 +207,7 @@ export class PaymentsService {
   async update(id: number, updatePaymentDto: UpdatePaymentDto, user: IUser) {
     // Controller đã gắn AdminGuard; kiểm lại ở đây để service không phụ thuộc
     // vào việc route nào gọi nó.
-    if (user.role !== 'admin') {
+    if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Chỉ admin mới được sửa giao dịch');
     }
     if (updatePaymentDto.status === PaymentStatus.SUCCESS) {
