@@ -198,32 +198,40 @@ export class PaymentsService {
     return payment;
   }
 
+  /**
+   * Sửa tay một giao dịch: CHỈ admin, và KHÔNG BAO GIỜ chuyển sang SUCCESS.
+   *
+   * Tới 28/09 route này chỉ cần đăng nhập: người mua gửi `{"status":"success"}`
+   * cho payment PENDING của chính mình là đơn thành `is_paid = true`, không
+   * đồng nào đi qua sổ cái (audit A-01). SUCCESS nghĩa là tiền đã về, và tiền
+   * chỉ được ghi qua sổ cái: webhook PayOS, hoặc admin xác nhận COD trong
+   * OrdersService.updateStatus. Vì vậy hàm này không còn ghi vào bảng orders.
+   */
   async update(id: number, updatePaymentDto: UpdatePaymentDto, user: IUser) {
+    // Controller đã gắn AdminGuard; kiểm lại ở đây để service không phụ thuộc
+    // vào việc route nào gọi nó.
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Chỉ admin mới được sửa giao dịch');
+    }
+    if (updatePaymentDto.status === PaymentStatus.SUCCESS) {
+      throw new BadRequestException(
+        'Không thể đánh dấu thành công bằng tay. Giao dịch chỉ thành công qua PayOS hoặc xác nhận COD của đơn hàng',
+      );
+    }
+
     const payment = await this.findOne(id, user);
+    if (payment.status === PaymentStatus.SUCCESS) {
+      throw new BadRequestException('Giao dịch đã thành công, không sửa được');
+    }
 
     if (updatePaymentDto.status) {
       payment.status = updatePaymentDto.status;
-      if (updatePaymentDto.status === PaymentStatus.SUCCESS) {
-        payment.paid_at = new Date();
-      }
     }
     if (updatePaymentDto.transaction_code) {
       payment.transaction_code = updatePaymentDto.transaction_code;
     }
 
     await this.paymentRepository.save(payment);
-
-    if (
-      payment.status === PaymentStatus.SUCCESS &&
-      payment.order &&
-      payment.type === PaymentType.ORDER_PAYMENT
-    ) {
-      await this.orderRepository.update(payment.order.id, {
-        is_paid: true,
-        paid_at: new Date(),
-      });
-    }
-
     return this.findOne(id, user);
   }
 
