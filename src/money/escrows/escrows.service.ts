@@ -5,6 +5,14 @@ import { Order } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
+import { IUser } from '@identity/users/users.interface';
+
+/**
+ * Cột của người mua/người bán được phép trả ra ở các API đọc escrow. Không nạp
+ * nguyên bản ghi users: trước 28/09 ba route này lộ email, số điện thoại của
+ * mọi người mua lẫn người bán (audit B-03).
+ */
+const SAFE_PARTY = { id: true, full_name: true, avatar: true } as const;
 import { LedgerService } from '@money/ledger/ledger.service';
 import { PlatformFeeService } from '@money/ledger/platform-fee.service';
 import {
@@ -242,10 +250,21 @@ export class EscrowsService {
     return manager ? run(manager) : this.dataSource.transaction(run);
   }
 
-  async findByOrder(orderId: number) {
+  async findByOrder(orderId: number, viewer: IUser) {
+    const byOrder = { order: { id: orderId } };
+    // Admin thấy mọi khoản của đơn; người khác chỉ thấy khoản mà mình là người
+    // mua hoặc người bán (mảng where = OR).
+    const where =
+      viewer.role === 'admin'
+        ? byOrder
+        : [
+            { ...byOrder, buyer: { id: viewer.id } },
+            { ...byOrder, seller: { id: viewer.id } },
+          ];
     return this.escrowRepository.find({
-      where: { order: { id: orderId } },
+      where,
       relations: ['buyer', 'seller'],
+      select: { buyer: SAFE_PARTY, seller: SAFE_PARTY },
     });
   }
 
@@ -261,6 +280,7 @@ export class EscrowsService {
     const [result, total] = await this.escrowRepository.findAndCount({
       where,
       relations: ['order', 'buyer'],
+      select: { buyer: SAFE_PARTY },
       skip: (page - 1) * limit,
       take: limit,
       order: { created_at: 'DESC' },
@@ -284,6 +304,7 @@ export class EscrowsService {
     const [result, total] = await this.escrowRepository.findAndCount({
       where,
       relations: ['order', 'buyer', 'seller'],
+      select: { buyer: SAFE_PARTY, seller: SAFE_PARTY },
       skip: (page - 1) * limit,
       take: limit,
       order: { created_at: 'DESC' },
