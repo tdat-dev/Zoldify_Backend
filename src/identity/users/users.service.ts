@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { User, UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { compareSync, genSaltSync, hashSync } from 'bcrypt';
 
@@ -78,7 +78,7 @@ export class UsersService {
   }
 
   async register(registerUserDto: RegisterUserDto) {
-    const { full_name, email, password, phone_number, role } = registerUserDto;
+    const { full_name, email, password, phone_number } = registerUserDto;
     const existingUser = await this.userRepository.findOne({ where: { email } });
     if (existingUser) {
       throw new BadRequestException("Tài khoản đã tồn tại!");
@@ -89,7 +89,9 @@ export class UsersService {
       email,
       password: hashPassword,
       phone_number,
-      role,
+      // Gán cứng, không đọc từ tham số: lớp chặn thứ hai cho B-01 nếu có ai
+      // gọi hàm này với một object có sẵn `role`.
+      role: UserRole.BUYER,
     });
     return await this.userRepository.save(newUser);
   }

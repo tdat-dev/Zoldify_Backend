@@ -48,9 +48,8 @@ export class RegisterUserDto {
   @IsString({ message: 'Số điện thoại không hợp lệ' })
   phone_number?: string;
 
-  @IsOptional({ message: 'Vai trò không được để trống' })
-  @IsEnum(UserRole, { message: 'Vai trò không hợp lệ' })
-  role?: UserRole;
+  // KHÔNG có trường `role`. Đăng ký công khai từng nhận role từ body, nên ai
+  // cũng tự tạo được tài khoản admin (audit B-01). Vai trò do server gán.
 }
 
 export class LoginUserDto {
