@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -75,6 +76,13 @@ export class AuthService {
     const dbUser = await this.userRepository.findOne({
       where: { id: user.id },
     });
+    // Không phát token cho tài khoản bị khoá. Mọi đường đăng nhập (mật khẩu,
+    // Google/Firebase, đặt mật khẩu) đều đi qua hàm này (audit B-04).
+    if (dbUser?.is_locked) {
+      throw new UnauthorizedException(
+        'Tài khoản đã bị khóa, vui lòng liên hệ hỗ trợ',
+      );
+    }
     const tokenVersion = dbUser?.token_version || 0;
 
     const { id, full_name, email, role } = user;

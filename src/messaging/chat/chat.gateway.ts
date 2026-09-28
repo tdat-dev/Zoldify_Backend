@@ -67,6 +67,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!token) { client.disconnect(); return; }
       const payload = this.jwtService.verify(token);
       const userId = payload.sub;
+
+      // Cùng điều kiện với JwtStrategy: token đã bị thu hồi hoặc tài khoản bị
+      // khoá thì không cho kết nối. Trước 28/09 chỉ kiểm chữ ký (audit B-04).
+      const dbUser = await this.userRepository.findOne({ where: { id: userId } });
+      if (!dbUser || dbUser.is_locked || payload.token_version !== dbUser.token_version) {
+        client.disconnect();
+        return;
+      }
       client.data.user = { id: userId, email: payload.email, full_name: payload.full_name, role: payload.role };
 
       // Cập nhật last_seen cho user khi vừa kết nối socket
