@@ -4,7 +4,7 @@ import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { IUser } from '@identity/users/users.interface';
 
 /**
@@ -255,7 +255,7 @@ export class EscrowsService {
     // Admin thấy mọi khoản của đơn; người khác chỉ thấy khoản mà mình là người
     // mua hoặc người bán (mảng where = OR).
     const where =
-      viewer.role === 'admin'
+      viewer.role === UserRole.ADMIN
         ? byOrder
         : [
             { ...byOrder, buyer: { id: viewer.id } },
