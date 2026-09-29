@@ -290,8 +290,11 @@ export class ProductsService {
         q: qs.q || '',
         cat: qs.category_id || '',
         seller: qs.seller_id || '',
-        pmin: qs.price_min || '',
-        pmax: qs.price_max || '',
+        pmin: String(qs.price_min ?? ''),
+        pmax: String(qs.price_max ?? ''),
+        // Lọc tình trạng đến từ nhánh prod, gộp vào sau khi cache đã có. Thiếu
+        // dòng này thì ?condition=new nhận nhầm danh sách chưa lọc từ cache.
+        cond: String(qs.condition ?? ''),
       });
     return this.cacheWrap(cacheKey, PRODUCT_LIST_TTL, () =>
       this.queryProductList(numPage, numLimit, offset, qs),
@@ -306,6 +309,8 @@ export class ProductsService {
     offset: number,
     qs: any,
   ) {
+    // Đọc một lần, dùng cho cả hai nhánh truy vấn bên dưới.
+    const condition = qs.condition ? String(qs.condition) : undefined;
     let order: any = { created_at: 'DESC' };
     if (qs.sort === 'price_asc') {
       order = { price: 'ASC' };
@@ -361,8 +366,8 @@ export class ProductsService {
         qb.andWhere('product.price <= :pmax', { pmax: Number(qs.price_max) });
       }
 
-      if (qs.condition) {
-        qb.andWhere('product.condition = :cond', { cond: String(qs.condition) });
+      if (condition) {
+        qb.andWhere('product.condition = :cond', { cond: condition });
       }
 
       const orderField = Object.keys(order)[0];
@@ -382,8 +387,8 @@ export class ProductsService {
       if (qs.seller_id) {
         where.seller = { id: Number(qs.seller_id) };
       }
-      if (qs.condition) {
-        where.condition = String(qs.condition);
+      if (condition) {
+        where.condition = condition;
       }
       if (qs.price_min || qs.price_max) {
         const min = qs.price_min ? Number(qs.price_min) : 0;
