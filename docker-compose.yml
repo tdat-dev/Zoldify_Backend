@@ -236,6 +236,12 @@ services:
       disable: true
     # KHÔNG mount product-images: worker không đụng ảnh. Mount thừa một volume
     # ghi được là mở thêm một đường cho tiến trình nền sửa dữ liệu người dùng.
+    #
+    # Có mount khoá Firebase (chỉ đọc): job huỷ đơn / chốt vận đơn tạo thông
+    # báo, và NotificationsService gửi push FCM qua khoá này. Thiếu file thì
+    # FirebaseService chỉ cảnh báo và bỏ push, worker vẫn chạy.
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
 
 volumes:
   mysql-data:
