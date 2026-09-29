@@ -54,8 +54,8 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Huỷ nhận thông báo đẩy thành công')
   @Delete('push-token')
-  unregisterPushToken(@Body() dto: RegisterPushTokenDto) {
-    return this.notificationsService.unregisterToken(dto.token);
+  unregisterPushToken(@Body() dto: RegisterPushTokenDto, @User() user: IUser) {
+    return this.notificationsService.unregisterToken(dto.token, user.id);
   }
 
   @UseGuards(JwtAuthGuard)

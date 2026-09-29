@@ -56,9 +56,14 @@ export class NotificationsService {
     return { registered: true };
   }
 
-  /** Gỡ token (khi đăng xuất) để thiết bị này thôi nhận push của user. */
-  async unregisterToken(token: string) {
-    await this.pushRepository.delete({ token });
+  /**
+   * Gỡ token (khi đăng xuất) để thiết bị này thôi nhận push của user.
+   *
+   * Xoá theo CẢ token lẫn user: bản đầu chỉ theo token, nên ai biết token FCM
+   * của thiết bị người khác là gỡ được, và thiết bị đó lặng lẽ mất thông báo.
+   */
+  async unregisterToken(token: string, userId: number) {
+    await this.pushRepository.delete({ token, user: { id: userId } });
     return { unregistered: true };
   }
 
