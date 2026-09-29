@@ -230,7 +230,7 @@ export class AuthService {
 
   async changePassword(
     userId: number,
-    oldPassword: string,
+    oldPassword: string | undefined,
     newPassword: string,
   ) {
     const user = await this.usersService.findOneByEmail(
@@ -238,29 +238,122 @@ export class AuthService {
         '',
     );
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
-    if (!this.usersService.isValidPassword(oldPassword, user.password)) {
-      throw new BadRequestException('Mật khẩu cũ không chính xác');
+
+    // Tài khoản social (Google) được tạo với password='' — chưa từng có mật khẩu.
+    // Trường hợp này là ĐẶT mật khẩu lần đầu: không cần (và không có) mật khẩu cũ.
+    const hasPassword = !!user.password;
+    if (hasPassword) {
+      if (
+        !this.usersService.isValidPassword(oldPassword ?? '', user.password)
+      ) {
+        throw new BadRequestException('Mật khẩu cũ không chính xác');
+      }
+      if (oldPassword === newPassword) {
+        throw new BadRequestException(
+          'Mật khẩu mới không được trùng với mật khẩu cũ',
+        );
+      }
     }
-    if (oldPassword === newPassword) {
-      throw new BadRequestException(
-        'Mật khẩu mới không được trùng với mật khẩu cũ',
-      );
-    }
+
     const hashedPassword = this.usersService.hashPassword(newPassword);
     await this.userRepository.update(userId, { password: hashedPassword });
-    return { message: 'Thay đổi mật khẩu thành công' };
+
+    // Thu hồi MỌI phiên khác: tăng token_version → mọi access token cũ (mang
+    // version cũ) bị jwt.strategy từ chối; login() ngay sau đó ghi đè refresh
+    // token trong DB nên refresh token cũ cũng chết. Nếu token bị đánh cắp thì
+    // đổi mật khẩu sẽ đá kẻ gian ra khỏi mọi thiết bị.
+    await this.userRepository.increment({ id: userId }, 'token_version', 1);
+    // Cấp token MỚI (version mới) cho CHÍNH phiên đang thao tác → phiên này vẫn
+    // dùng tiếp liền mạch, chỉ các phiên KHÁC bị đá ra.
+    const tokens = await this.login(user);
+
+    // Cảnh báo qua email: nếu token bị lạm dụng, chính chủ biết ngay có người
+    // đụng mật khẩu. KHÔNG chặn/không làm fail nếu gửi mail hỏng (đổi đã xong).
+    if (user.email) {
+      this.notifyPasswordChanged(user.email, user.full_name, hasPassword).catch(
+        (err) =>
+          this.logger.error(
+            `Gửi mail cảnh báo đổi mật khẩu tới ${user.email} thất bại: ${err?.message || err}`,
+          ),
+      );
+    }
+
+    return {
+      message: hasPassword
+        ? 'Thay đổi mật khẩu thành công'
+        : 'Đặt mật khẩu thành công',
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+    };
   }
 
-  async updateProfile(userId: number, full_name?: string, avatar?: string) {
+  /** Email báo mật khẩu vừa được đặt/đổi (an ninh: phát hiện lạm dụng token). */
+  private async notifyPasswordChanged(
+    to: string,
+    name: string | undefined,
+    wasChange: boolean,
+  ) {
+    const action = wasChange ? 'thay đổi' : 'đặt';
+    const subject = `Zoldify — Mật khẩu của bạn vừa được ${action}`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;font-size:15px;color:#1b2733;line-height:1.6">
+        <p>Xin chào ${name || 'bạn'},</p>
+        <p>Mật khẩu tài khoản Zoldify của bạn <b>vừa được ${action}</b>.</p>
+        <p>Nếu <b>chính bạn</b> thực hiện, bỏ qua email này.</p>
+        <p>Nếu <b>không phải bạn</b>, hãy đổi lại mật khẩu ngay và kiểm tra bảo mật tài khoản
+        (đăng xuất khỏi các thiết bị lạ).</p>
+        <p style="color:#64748b;font-size:13px">Email tự động từ Zoldify — vui lòng không trả lời.</p>
+      </div>`;
+    await this.send(to, subject, html);
+  }
+
+  /**
+   * Hồ sơ đầy đủ để màn "Sửa hồ sơ" điền sẵn. JWT payload chỉ có
+   * id/full_name/email/role, thiếu avatar/phone/gender — nên đọc thẳng từ DB.
+   */
+  async getProfile(userId: number) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Người dùng không tồn tại');
+    return {
+      id: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      phone_number: user.phone_number,
+      gender: user.gender,
+      email_verified: user.email_verified,
+      // Có mật khẩu chưa? Tài khoản Google/social ban đầu chưa có → client hiện
+      // "Đặt mật khẩu" thay vì "Đổi mật khẩu".
+      has_password: !!user.password,
+    };
+  }
+
+  async updateProfile(
+    userId: number,
+    full_name?: string,
+    avatar?: string,
+    phone_number?: string,
+    gender?: string,
+  ) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
 
     // Cập nhật CÓ CHỌN LỌC: chỉ đụng field được gửi lên, để đổi avatar không
     // vô tình xoá tên và ngược lại.
-    const patch: { full_name?: string; avatar?: string } = {};
+    const patch: {
+      full_name?: string;
+      avatar?: string;
+      phone_number?: string;
+      gender?: string;
+    } = {};
     if (typeof full_name === 'string' && full_name.trim())
       patch.full_name = full_name.trim();
     if (typeof avatar === 'string') patch.avatar = avatar;
+    // phone/gender cho phép chuỗi rỗng = xoá field (khác full_name bắt buộc).
+    if (typeof phone_number === 'string')
+      patch.phone_number = phone_number.trim();
+    if (typeof gender === 'string') patch.gender = gender;
     if (Object.keys(patch).length)
       await this.userRepository.update(userId, patch);
 
@@ -270,6 +363,8 @@ export class AuthService {
       email: user.email,
       role: user.role,
       avatar: patch.avatar ?? user.avatar,
+      phone_number: patch.phone_number ?? user.phone_number,
+      gender: patch.gender ?? user.gender,
     };
   }
 }

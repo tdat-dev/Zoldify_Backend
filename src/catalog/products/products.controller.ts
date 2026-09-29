@@ -44,6 +44,7 @@ export class ProductsController {
     @Query('seller_id') seller_id: string,
     @Query('price_min') price_min: string,
     @Query('price_max') price_max: string,
+    @Query('condition') condition: string,
     @Query('sort') sort: string,
     @Query() qs: any,
   ) {
@@ -52,6 +53,7 @@ export class ProductsController {
     qs.seller_id = seller_id;
     qs.price_min = price_min;
     qs.price_max = price_max;
+    qs.condition = condition;
     qs.sort = sort;
     return this.productsService.findAll(currentPage, limit, qs);
   }

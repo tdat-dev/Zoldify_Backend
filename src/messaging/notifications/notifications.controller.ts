@@ -1,6 +1,17 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { AdminGuard } from '@common/guards/admin.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
@@ -8,7 +19,10 @@ import { SkipCheckPermissions } from '@common/decorators/public.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { Notification } from './entities/notification.entity';
-import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
+import {
+  ApiPaginated,
+  ApiShape,
+} from '@common/decorators/api-response.decorator';
 
 @SkipCheckPermissions()
 @Controller('notifications')
@@ -23,6 +37,25 @@ export class NotificationsController {
   @Post()
   create(@Body() createNotificationDto: CreateNotificationDto) {
     return this.notificationsService.create(createNotificationDto);
+  }
+
+  // Đặt TRƯỚC các route ':id' để 'push-token' không bị bắt làm param id.
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Đăng ký nhận thông báo đẩy thành công')
+  @Post('push-token')
+  registerPushToken(@Body() dto: RegisterPushTokenDto, @User() user: IUser) {
+    return this.notificationsService.registerToken(
+      user,
+      dto.token,
+      dto.platform,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Huỷ nhận thông báo đẩy thành công')
+  @Delete('push-token')
+  unregisterPushToken(@Body() dto: RegisterPushTokenDto) {
+    return this.notificationsService.unregisterToken(dto.token);
   }
 
   @UseGuards(JwtAuthGuard)

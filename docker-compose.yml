@@ -14,14 +14,27 @@
 # fail-open); @keyv/redis đã nằm trong dependencies nên image có sẵn client. Vì
 # vậy Redis giờ là thật, không còn là container trang trí.
 #
+# Cộng thêm `backup`: chỉ chờ mysql healthy rồi chạy song song, api không phụ
+# thuộc vào nó (sao lưu hỏng không được làm sập ứng dụng).
+#
 # KHÔNG đặt `name:` ở đây — tên project truyền lúc chạy bằng cờ `-p`
 # (prod: `-p zoldify`, staging: `-p zoldify-staging`) để CÙNG một file compose
 # này chạy được cả hai môi trường; khác biệt cổng/URL nằm ở .env mỗi bên.
+
+# Giới hạn log cho MỌI service. Driver json-file mặc định của Docker không có
+# trần: log của api cứ thế phình ra tới khi đầy ổ đĩa VPS. 5 file x 10 MB là
+# đủ đọc lại vài ngày gần nhất bằng `docker compose logs`.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
 
 services:
   mysql:
     image: mysql:8
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # `:?` làm compose DỪNG kèm thông báo khi biến trống, thay vì dựng một
       # database có mật khẩu rỗng rồi để đó.
@@ -54,6 +67,7 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
+    logging: *default-logging
     command: ['redis-server', '--save', '', '--appendonly', 'no']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
@@ -64,6 +78,34 @@ services:
     # Không mở cổng ra máy chủ: chỉ container trong mạng compose gọi được.
     # ports:
     #   - '6379:6379'
+
+  # Sao lưu database mỗi ngày vào ./backups trên VPS (xem scripts/backup-db.sh).
+  #
+  # Trước 29/09 không có bản sao lưu nào: toàn bộ đơn, tiền, sổ cái nằm trong
+  # một volume trên một máy. Chạy một bản ngay khi service khởi động (tức mỗi
+  # lần deploy), sau đó 24 giờ một lần; giữ 14 ngày.
+  #
+  # ./backups VẪN nằm trên cùng VPS: chống được xoá nhầm, migration hỏng, dữ
+  # liệu bị ghi sai; KHÔNG chống được mất cả máy. Chép ra ngoài (R2/S3) là bước
+  # tiếp theo. Cách khôi phục: DEPLOY.md, mục "Sao lưu và khôi phục".
+  backup:
+    image: mysql:8
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD đang trống, điền vào .env trước khi chạy}
+      DB_DATABASE: ${DB_DATABASE:-zoldify}
+      DB_HOST: mysql
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    # Thay entrypoint của ảnh mysql: không khởi động một MySQL thứ hai, chỉ
+    # mượn mysqldump/gzip có sẵn trong ảnh.
+    entrypoint: ['sh', '/backup-db.sh']
+    volumes:
+      - ./scripts/backup-db.sh:/backup-db.sh:ro
+      - ./backups:/backups
+    logging: *default-logging
 
   # Chạy migration NHƯ MỘT BƯỚC RIÊNG, không nhét vào lúc api khởi động.
   #
@@ -77,6 +119,7 @@ services:
       target: runtime
     image: zoldify-backend:latest
     restart: 'no'
+    logging: *default-logging
     depends_on:
       mysql:
         condition: service_healthy
@@ -99,6 +142,7 @@ services:
       target: runtime
     image: zoldify-backend:latest
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -165,6 +209,7 @@ services:
     # đường cho api và worker chạy lệch phiên bản mã.
     image: zoldify-backend:latest
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
