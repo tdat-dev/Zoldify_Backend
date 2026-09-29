@@ -376,9 +376,7 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {
-                      "type": "object"
-                    }
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
@@ -1406,6 +1404,14 @@
             }
           },
           {
+            "name": "condition",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "sort",
             "required": false,
             "in": "query",
@@ -2069,6 +2075,94 @@
         ]
       }
     },
+    "/api/v1/notifications/push-token": {
+      "post": {
+        "operationId": "NotificationsController_registerPushToken_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "delete": {
+        "operationId": "NotificationsController_unregisterPushToken_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/api/v1/notifications/unread-count": {
       "get": {
         "operationId": "NotificationsController_getUnreadCount_v1",
@@ -2638,6 +2732,52 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/sim-ghn": {
+      "patch": {
+        "operationId": "OrdersController_simGhn_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -7072,15 +7212,6 @@
           },
           "phone_number": {
             "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "buyer",
-              "seller",
-              "admin",
-              "moderator"
-            ]
           }
         },
         "required": [
@@ -7134,7 +7265,6 @@
           }
         },
         "required": [
-          "oldPassword",
           "newPassword"
         ]
       },
@@ -7524,6 +7654,20 @@
           "data",
           "is_read",
           "created_at"
+        ]
+      },
+      "RegisterPushTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ]
       },
       "CreateOrderDto": {
@@ -8567,6 +8711,15 @@
           "street": {
             "type": "string"
           },
+          "ghn_province_id": {
+            "type": "number"
+          },
+          "ghn_district_id": {
+            "type": "number"
+          },
+          "ghn_ward_code": {
+            "type": "string"
+          },
           "is_default": {
             "type": "boolean"
           },
@@ -8590,6 +8743,9 @@
           "district",
           "ward",
           "street",
+          "ghn_province_id",
+          "ghn_district_id",
+          "ghn_ward_code",
           "is_default",
           "created_at",
           "updated_at"
@@ -8617,6 +8773,15 @@
             "type": "string"
           },
           "street": {
+            "type": "string"
+          },
+          "ghn_province_id": {
+            "type": "number"
+          },
+          "ghn_district_id": {
+            "type": "number"
+          },
+          "ghn_ward_code": {
             "type": "string"
           },
           "is_default": {
@@ -8653,6 +8818,15 @@
             "type": "string"
           },
           "street": {
+            "type": "string"
+          },
+          "ghn_province_id": {
+            "type": "number"
+          },
+          "ghn_district_id": {
+            "type": "number"
+          },
+          "ghn_ward_code": {
             "type": "string"
           },
           "is_default": {
