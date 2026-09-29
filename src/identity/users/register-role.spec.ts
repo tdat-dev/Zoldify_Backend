@@ -15,6 +15,10 @@ import { UserRole } from './entities/user.entity';
  * Hai lớp chặn, kiểm cả hai: DTO từ chối trường `role` (400 ngay ở
  * ValidationPipe), và service luôn gán BUYER dù có ai gọi nó với role khác.
  */
+interface SavedUser {
+  role?: string;
+}
+
 describe('Đăng ký công khai không được tự chọn vai trò', () => {
   const body = {
     full_name: 'Kẻ thử lách',
@@ -42,16 +46,19 @@ describe('Đăng ký công khai không được tự chọn vai trò', () => {
   );
 
   it('service luôn lưu vai trò BUYER, kể cả khi bị gọi kèm role khác', async () => {
-    let saved: any;
+    let saved: SavedUser | undefined;
     const repo = {
-      findOne: async () => null,
-      create: (x: any) => x,
-      save: async (x: any) => (saved = x),
+      findOne: () => Promise.resolve(null),
+      create: (x: SavedUser) => x,
+      save: (x: SavedUser) => {
+        saved = x;
+        return Promise.resolve(x);
+      },
     };
     const service = new UsersService(repo as never);
 
     await service.register({ ...body, role: UserRole.ADMIN } as never);
 
-    expect(saved.role).toBe(UserRole.BUYER);
+    expect(saved?.role).toBe(UserRole.BUYER);
   });
 });

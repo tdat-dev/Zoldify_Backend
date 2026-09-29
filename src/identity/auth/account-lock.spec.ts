@@ -14,14 +14,37 @@ import { ChatGateway } from '@messaging/chat/chat.gateway';
  * Bốn chỗ phải chặn: phát token mới, mọi request HTTP, phiên đang có (thu hồi
  * bằng token_version), và kết nối socket.
  */
-const lockedUser = { id: 5, role: 'buyer', is_locked: true, token_version: 2 };
-const activeUser = { ...lockedUser, is_locked: false };
+interface FakeUser {
+  id: number;
+  role: string;
+  is_locked: boolean;
+  token_version: number;
+}
+
+interface FakeClient {
+  id: string;
+  data: { user?: { id: number } };
+  handshake: { auth: { token: string }; query: Record<string, string> };
+  disconnect: jest.Mock;
+}
+
+const lockedUser: FakeUser = {
+  id: 5,
+  role: 'buyer',
+  is_locked: true,
+  token_version: 2,
+};
+const activeUser: FakeUser = { ...lockedUser, is_locked: false };
+
+const repoReturning = (user: FakeUser) => ({
+  findOne: () => Promise.resolve(user),
+});
 
 describe('B-04: tài khoản bị khoá không dùng được hệ thống', () => {
   it('JwtStrategy từ chối request của tài khoản bị khoá', async () => {
     const strategy = new JwtStrategy(
       { get: () => 'test-secret' } as never,
-      { findOne: async () => lockedUser } as never,
+      repoReturning(lockedUser) as never,
     );
     await expect(
       strategy.validate({ sub: 5, token_version: 2, role: 'buyer' }),
@@ -31,7 +54,7 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
   it('JwtStrategy vẫn cho tài khoản bình thường qua', async () => {
     const strategy = new JwtStrategy(
       { get: () => 'test-secret' } as never,
-      { findOne: async () => activeUser } as never,
+      repoReturning(activeUser) as never,
     );
     await expect(
       strategy.validate({ sub: 5, token_version: 2, role: 'buyer' }),
@@ -44,7 +67,7 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
       { updateUserToken: jest.fn() } as never,
       { sign } as never,
       { get: () => '1d' } as never,
-      { findOne: async () => lockedUser } as never,
+      repoReturning(lockedUser) as never,
       {} as never,
       {} as never,
     );
@@ -55,9 +78,12 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
   });
 
   it('khoá tài khoản thì tăng token_version để thu hồi phiên đang có', async () => {
-    const user = { ...activeUser };
+    const user: FakeUser = { ...activeUser };
     const service = new AdminService(
-      { findOne: async () => user, save: async (u: unknown) => u } as never,
+      {
+        findOne: () => Promise.resolve(user),
+        save: (u: FakeUser) => Promise.resolve(u),
+      } as never,
       {} as never,
       {} as never,
       {} as never,
@@ -70,17 +96,23 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
   });
 
   describe('socket chat', () => {
-    const connect = async (dbUser: object, tokenVersion = 2) => {
+    const connect = async (
+      dbUser: FakeUser,
+      tokenVersion = 2,
+    ): Promise<FakeClient> => {
       const gateway = new ChatGateway(
         {} as never,
         { verify: () => ({ sub: 5, token_version: tokenVersion }) } as never,
         {} as never,
-        { findOne: async () => dbUser, update: async () => undefined } as never,
+        {
+          findOne: () => Promise.resolve(dbUser),
+          update: () => Promise.resolve(),
+        } as never,
       );
-      (gateway as any).server = { emit: jest.fn() };
-      const client = {
+      Object.assign(gateway, { server: { emit: jest.fn() } });
+      const client: FakeClient = {
         id: 's1',
-        data: {} as any,
+        data: {},
         handshake: { auth: { token: 't' }, query: {} },
         disconnect: jest.fn(),
       };

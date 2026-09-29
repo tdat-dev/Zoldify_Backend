@@ -16,8 +16,18 @@ import { UserRole } from '@identity/users/entities/user.entity';
  * B-02: `POST /notifications` nhận user_id tuỳ ý và bắn push FCM thật, nên ai
  * cũng gửi được thông báo giả danh Zoldify tới bất kỳ ai.
  */
-const guardsOf = (cls: any, handler: string): unknown[] =>
-  Reflect.getMetadata('__guards__', cls.prototype[handler]) ?? [];
+const guardsOf = (cls: { prototype: object }, handler: string): unknown[] =>
+  (Reflect.getMetadata(
+    '__guards__',
+    (cls.prototype as Record<string, object>)[handler],
+  ) as unknown[] | undefined) ?? [];
+
+/** Tham số find/findAndCount mà service truyền cho repository giả. */
+interface FindOpts {
+  where?: unknown;
+  relations?: string[];
+  select?: Record<string, unknown>;
+}
 
 const SAFE_USER = { id: true, full_name: true, avatar: true };
 
@@ -41,8 +51,8 @@ describe('B-03: /escrows theo quyền sở hữu', () => {
   describe('controller', () => {
     const calls: string[] = [];
     const service = {
-      findBySeller: async () => calls.push('findBySeller'),
-      getHeldBalance: async () => calls.push('getHeldBalance'),
+      findBySeller: () => Promise.resolve(calls.push('findBySeller')),
+      getHeldBalance: () => Promise.resolve(calls.push('getHeldBalance')),
     } as never;
     const controller = new EscrowsController(service);
 
@@ -74,10 +84,16 @@ describe('B-03: /escrows theo quyền sở hữu', () => {
   });
 
   describe('service', () => {
-    const captured: any[] = [];
+    const captured: FindOpts[] = [];
     const repo = {
-      find: async (opts: any) => (captured.push(opts), []),
-      findAndCount: async (opts: any) => (captured.push(opts), [[], 0]),
+      find: (opts: FindOpts) => {
+        captured.push(opts);
+        return Promise.resolve([]);
+      },
+      findAndCount: (opts: FindOpts) => {
+        captured.push(opts);
+        return Promise.resolve([[], 0]);
+      },
     };
     const service = new EscrowsService(
       repo as never,

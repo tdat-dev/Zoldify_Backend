@@ -41,8 +41,8 @@ describe('PaymentsService.update: không đánh dấu đã trả tiền được
       user: { id: buyer.id },
     };
     const paymentRepo = {
-      findOne: async () => payment,
-      save: async (x: unknown) => x,
+      findOne: () => Promise.resolve(payment),
+      save: (x: unknown) => Promise.resolve(x),
     };
     const orderRepo = {
       update: () => {
@@ -76,11 +76,11 @@ describe('PaymentsService.update: không đánh dấu đã trả tiền được
 
   it('admin vẫn đổi được sang trạng thái không mang tiền (failed)', async () => {
     const { service } = makeService();
-    const result: any = await service.update(
+    const result = (await service.update(
       42,
       { status: PaymentStatus.FAILED },
       admin,
-    );
+    )) as { status: PaymentStatus };
     expect(result.status).toBe(PaymentStatus.FAILED);
   });
 
@@ -94,11 +94,11 @@ describe('PaymentsService.update: không đánh dấu đã trả tiền được
 
   it('PATCH và DELETE /payments/:id chỉ dành cho admin', () => {
     for (const handler of ['update', 'remove'] as const) {
-      const guards: unknown[] =
-        Reflect.getMetadata(
+      const guards =
+        (Reflect.getMetadata(
           '__guards__',
           PaymentsController.prototype[handler],
-        ) ?? [];
+        ) as unknown[] | undefined) ?? [];
       expect(guards).toContain(AdminGuard);
     }
   });
