@@ -154,6 +154,11 @@ cạnh file compose. Giữ 14 ngày (đổi bằng `BACKUP_KEEP_DAYS` trong `.en
 File chỉ xuất hiện khi dump chạy hết và kiểm được dòng "Dump completed"; bản
 hỏng giữa chừng bị bỏ, không nằm lẫn với bản tốt.
 
+**Đừng cài thêm cron `scripts/backup-mysql.sh`.** Script đó (task #24) là cách
+sao lưu trước đây, chạy bằng crontab trên máy chủ, nhưng chưa từng được cài lên
+VPS (29/09: crontab không có dòng nào, không có thư mục backup nào). Service
+`backup` thay thế nó; cài cả hai thì mỗi đêm có hai bản dump chồng nhau.
+
 ```bash
 ls -lh backups/                          # các bản đang có
 docker compose -p zoldify logs backup    # lần chạy gần nhất: [backup] OK hay LỖI
