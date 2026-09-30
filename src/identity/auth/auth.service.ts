@@ -314,6 +314,11 @@ export class AuthService {
   async getProfile(userId: number) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Người dùng không tồn tại');
+    // Cột password là `select: false` nên findOne ở trên KHÔNG có nó; đọc lại
+    // qua findOneByEmail (có addSelect password), đúng đường changePassword
+    // dùng để quyết định có đòi mật khẩu cũ không. Trước 30/09 dùng thẳng
+    // user.password nên has_password luôn false với mọi người (lỗi H-05).
+    const withPassword = await this.usersService.findOneByEmail(user.email);
     return {
       id: user.id,
       full_name: user.full_name,
@@ -325,7 +330,7 @@ export class AuthService {
       email_verified: user.email_verified,
       // Có mật khẩu chưa? Tài khoản Google/social ban đầu chưa có → client hiện
       // "Đặt mật khẩu" thay vì "Đổi mật khẩu".
-      has_password: !!user.password,
+      has_password: !!withPassword?.password,
     };
   }
 
