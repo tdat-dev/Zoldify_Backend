@@ -13,7 +13,10 @@ import { Address } from './entities/address.entity';
  * Không cần database: dựng metadata offline rồi kiểm transformer của cột.
  */
 describe('Address.is_default: tinyint <-> boolean', () => {
-  let transformer: { from: (v: unknown) => unknown; to: (v: unknown) => unknown };
+  let transformer: {
+    from: (v: unknown) => unknown;
+    to: (v: unknown) => unknown;
+  };
 
   beforeAll(async () => {
     const ds = new DataSource({
@@ -22,8 +25,12 @@ describe('Address.is_default: tinyint <-> boolean', () => {
       entities: [__dirname + '/../../**/*.entity.ts'],
     });
     // buildMetadatas là protected; gọi thẳng để có metadata mà không kết nối DB.
-    await (ds as unknown as { buildMetadatas(): Promise<void> }).buildMetadatas();
-    const col = ds.getMetadata(Address).findColumnWithPropertyName('is_default');
+    await (
+      ds as unknown as { buildMetadatas(): Promise<void> }
+    ).buildMetadatas();
+    const col = ds
+      .getMetadata(Address)
+      .findColumnWithPropertyName('is_default');
     transformer = col?.transformer as typeof transformer;
   });
 
