@@ -86,8 +86,8 @@ services:
   # lần deploy), sau đó 24 giờ một lần; giữ 14 ngày.
   #
   # ./backups VẪN nằm trên cùng VPS: chống được xoá nhầm, migration hỏng, dữ
-  # liệu bị ghi sai; KHÔNG chống được mất cả máy. Chép ra ngoài (R2/S3) là bước
-  # tiếp theo. Cách khôi phục: DEPLOY.md, mục "Sao lưu và khôi phục".
+  # liệu bị ghi sai; KHÔNG chống được mất cả máy. Service `offsite` bên dưới
+  # chép nó ra R2. Cách khôi phục: DEPLOY.md, mục "Sao lưu và khôi phục".
   backup:
     image: mysql:8
     restart: unless-stopped
@@ -105,6 +105,30 @@ services:
     volumes:
       - ./scripts/backup-db.sh:/backup-db.sh:ro
       - ./backups:/backups
+    logging: *default-logging
+
+  # Chép ./backups lên Cloudflare R2 mỗi 6 giờ, giữ 30 ngày trên R2 (xem
+  # scripts/offsite-backup.sh). Không phụ thuộc mysql hay api: nó chỉ đọc thư
+  # mục, và hỏng thì chỉ log lỗi, không kéo gì khác xuống.
+  #
+  # Token R2 RIÊNG (BACKUP_R2_*), không dùng R2_ACCESS_KEY_ID của ứng dụng: token
+  # ứng dụng ghi được mọi bucket. Thiếu biến thì service nằm chờ và báo trong
+  # log, không làm hỏng lần deploy.
+  offsite:
+    image: rclone/rclone:1
+    restart: unless-stopped
+    environment:
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      BACKUP_R2_ACCESS_KEY_ID: ${BACKUP_R2_ACCESS_KEY_ID:-}
+      BACKUP_R2_SECRET_ACCESS_KEY: ${BACKUP_R2_SECRET_ACCESS_KEY:-}
+      BACKUP_R2_BUCKET: ${BACKUP_R2_BUCKET:-zoldify-backups}
+      BACKUP_R2_PREFIX: ${BACKUP_R2_PREFIX:-}
+      OFFSITE_KEEP_DAYS: ${OFFSITE_KEEP_DAYS:-30}
+    entrypoint: ['sh', '/offsite-backup.sh']
+    volumes:
+      - ./scripts/offsite-backup.sh:/offsite-backup.sh:ro
+      # Chỉ đọc: service này không bao giờ được sửa hay xoá bản local.
+      - ./backups:/backups:ro
     logging: *default-logging
 
   # Chạy migration NHƯ MỘT BƯỚC RIÊNG, không nhét vào lúc api khởi động.
