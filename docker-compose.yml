@@ -112,8 +112,9 @@ services:
   # mục, và hỏng thì chỉ log lỗi, không kéo gì khác xuống.
   #
   # Token R2 RIÊNG (BACKUP_R2_*), không dùng R2_ACCESS_KEY_ID của ứng dụng: token
-  # ứng dụng ghi được mọi bucket. Thiếu biến thì service nằm chờ và báo trong
-  # log, không làm hỏng lần deploy.
+  # đó chỉ vào được bucket ảnh, và tách riêng thì lỗ hổng ở api không chạm được
+  # bản sao lưu. Thiếu biến thì service nằm chờ và báo trong log, không làm hỏng
+  # lần deploy.
   offsite:
     image: rclone/rclone:1
     restart: unless-stopped

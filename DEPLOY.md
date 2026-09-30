@@ -205,8 +205,9 @@ Cần 4 biến trong `.env` (cùng với `R2_ACCOUNT_ID` đã có):
 | `BACKUP_R2_BUCKET` | `zoldify-backups` |
 | `BACKUP_R2_PREFIX` | `prod` hoặc `staging` |
 
-Đừng dùng lại `R2_ACCESS_KEY_ID` của ứng dụng: token đó ghi được mọi bucket,
-lộ nó là lộ cả bản sao lưu. Đổi IP VPS thì phải sửa bộ lọc IP của token trên
+Đừng dùng lại hay nới quyền `R2_ACCESS_KEY_ID` của ứng dụng: token đó chỉ vào
+được bucket ảnh `zoldify-images` (vào `zoldify-backups` bị 403), và nới nó ra
+thì một lỗ hổng ở api là đủ để đọc hay xoá bản sao lưu. Đổi IP VPS thì phải sửa bộ lọc IP của token trên
 Cloudflare (R2, Manage API tokens), nếu không `offsite` báo lỗi 403.
 
 ```bash

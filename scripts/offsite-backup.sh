@@ -6,9 +6,11 @@
 # máy (VPS bị xoá, ổ hỏng, nhà cung cấp khoá tài khoản) là mất luôn mọi bản sao
 # lưu cùng database. Bản trên R2 nằm ngoài VPS.
 #
-# Token R2 dùng ở đây KHÁC token của ứng dụng (R2_ACCESS_KEY_ID): token ứng dụng
-# đọc/ghi được MỌI bucket, lộ nó là lộ cả bản sao lưu. Token này chỉ có quyền
-# Object Read & Write trên bucket zoldify-backups, và chỉ dùng được từ IP của VPS.
+# Token R2 dùng ở đây KHÁC token của ứng dụng (R2_ACCESS_KEY_ID). Token ứng dụng
+# chỉ vào được bucket ảnh zoldify-images (thử 30/09: đọc zoldify-backups bị 403);
+# giữ hai token tách nhau thì một lỗ hổng ở api không đọc hay xoá được bản sao
+# lưu. Token này chỉ có quyền Object Read & Write trên bucket zoldify-backups, và
+# chỉ dùng được từ IP của VPS.
 #
 # Mỗi vòng: `rclone copy` (chỉ thêm file mới, không bao giờ xoá theo nguồn: bản
 # local bị xoá nhầm thì bản trên R2 vẫn còn), rồi xoá trên R2 các bản cũ hơn
