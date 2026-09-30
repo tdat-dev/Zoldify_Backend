@@ -53,6 +53,7 @@ function makeService(ghn: Partial<Record<keyof GhnService, jest.Mock>>) {
     findOne: jest.fn().mockResolvedValue(null),
     save: jest.fn((x: unknown) => Promise.resolve(x)),
     create: jest.fn((x: unknown) => x),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
   });
   const orderRepo = repo();
   const shipmentRepo = repo();
@@ -221,6 +222,29 @@ describe('H-07: vận đơn lỗi phải giữ lý do của GHN và tạo lại 
         error: expect.stringContaining(LY_DO_GHN) as unknown,
       }),
     );
+  });
+
+  it('hai lần tạo lại cùng lúc (bấm đúp) chỉ gọi GHN MỘT lần', async () => {
+    // Cả hai yêu cầu cùng đọc thấy một dòng FAILED. Không có chốt thì cả hai
+    // cùng gọi GHN: GHN tạo HAI vận đơn thật, dòng của ta chỉ giữ một mã, vận
+    // đơn kia mồ côi mà vẫn đi lấy hàng, thu hộ. Chốt là câu UPDATE có điều
+    // kiện: chỉ một yêu cầu đổi được dòng, yêu cầu kia thấy affected = 0.
+    const createOrder = jest.fn().mockResolvedValue({ order_code: 'L8NABC' });
+    const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
+    orderRepo.findOne.mockResolvedValue(confirmedOrder());
+    shipmentRepo.find.mockResolvedValue([
+      { id: 3, seller: SELLER, status: ShipmentStatus.FAILED, error: 'x' },
+    ]);
+    shipmentRepo.update
+      .mockResolvedValueOnce({ affected: 1 })
+      .mockResolvedValueOnce({ affected: 0 });
+
+    await Promise.all([
+      svc.retryGhnShipments(7, SELLER as never),
+      svc.retryGhnShipments(7, SELLER as never),
+    ]);
+
+    expect(createOrder).toHaveBeenCalledTimes(1);
   });
 });
 
