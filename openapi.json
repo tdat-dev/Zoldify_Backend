@@ -8040,7 +8040,8 @@
             ]
           },
           "error": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "delivered_at": {
             "format": "date-time",

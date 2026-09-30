@@ -29,6 +29,7 @@ import {
   IsNull,
   LessThan,
 } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { GhnService, ghnErrorMessage } from '@ordering/ghn/ghn.service';
@@ -1139,6 +1140,28 @@ export class OrdersService {
     for (const [sellerId, { seller, items }] of bySeller) {
       const previous = existingBySeller.get(sellerId);
       if (previous && previous.status !== ShipmentStatus.FAILED) continue;
+
+      // Chốt dòng FAILED TRƯỚC khi gọi GHN (review 30/09). Hai yêu cầu tạo lại
+      // cùng lúc (bấm đúp) đều đọc thấy dòng FAILED; không chốt thì cả hai gọi
+      // GHN và GHN tạo HAI vận đơn thật cho một lô hàng, một cái mồ côi mà vẫn
+      // đi lấy hàng, thu hộ. UPDATE có điều kiện trên `error` vừa đọc chỉ đổi
+      // được dòng cho một yêu cầu (InnoDB khoá dòng, yêu cầu sau thấy error đã
+      // khác): nó được đi tiếp, yêu cầu kia nhận affected = 0 và bỏ qua.
+      // Sập giữa chừng thì dòng vẫn FAILED với error là mã chốt, lần tạo lại
+      // sau chốt lại được bình thường.
+      if (previous) {
+        const claim = `Đang tạo lại vận đơn (${randomUUID()})`;
+        const res = await this.shipmentRepository.update(
+          {
+            id: previous.id,
+            status: ShipmentStatus.FAILED,
+            error: previous.error ?? IsNull(),
+          },
+          { error: claim },
+        );
+        if (!res.affected) continue;
+        previous.error = claim;
+      }
 
       const shop = shopByUser.get(sellerId);
       const from =
