@@ -31,7 +31,7 @@ import {
 } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
-import { GhnService } from '@ordering/ghn/ghn.service';
+import { GhnService, ghnErrorMessage } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { PayosService } from '@money/payos/payos.service';
 import { assertTransitionAllowed, OrderActor } from './order-status.policy';
@@ -190,22 +190,30 @@ export class OrdersService {
 
     // Phí ship do SERVER tính, không tin số client gửi lên. Khi người mua đã
     // chọn địa chỉ chuẩn GHN, tính phí theo từng người bán (from = pickup của
-    // họ) rồi cộng lại. Lỗi GHN KHÔNG chặn đặt hàng — rơi về số client gửi
-    // (hoặc 0), điền/đối soát sau.
+    // họ) rồi cộng lại.
+    //
+    // Không tính được thì TỪ CHỐI đặt, không rơi về 0 (lỗi H-07, test E2E
+    // 30/09). Trước đây GHN lỗi thì đơn vẫn tạo với phí 0đ, app hiện "Miễn
+    // phí", rồi tới lúc người bán xác nhận GHN mới từ chối tạo vận đơn và hàng
+    // kẹt giữa chừng. Đổi địa chỉ lúc đặt dễ hơn nhiều so với lúc đơn đã chốt.
     let shippingFee = Number(createOrderDto.shipping_fee ?? 0);
     if (createOrderDto.ghn_district_id && createOrderDto.ghn_ward_code) {
-      try {
-        const quote = await this.quoteShippingBySellerFromCart(
-          cartItems,
-          createOrderDto.ghn_district_id,
-          createOrderDto.ghn_ward_code,
+      const quote = await this.quoteShippingBySellerFromCart(
+        cartItems,
+        createOrderDto.ghn_district_id,
+        createOrderDto.ghn_ward_code,
+      );
+      if (!quote.ok) {
+        const reason = quote.items.find((i) => i.error)?.error;
+        this.logger.warn(
+          `Từ chối đơn của user ${user.id}: không tính được phí ship (${reason})`,
         );
-        shippingFee = quote.total;
-      } catch (err) {
-        this.logger.error(
-          `Tính phí ship thất bại (đơn của user ${user.id}): ${(err as Error).message}`,
+        throw new BadRequestException(
+          `Chưa tính được phí vận chuyển tới địa chỉ này (${reason}). ` +
+            'Chọn địa chỉ khác giúp mình.',
         );
       }
+      shippingFee = quote.total;
     }
     const discountAmount = 0;
     const finalAmount = totalAmount + shippingFee - discountAmount;
@@ -738,6 +746,11 @@ export class OrdersService {
           "Chi gia lap dang giao cho don da xac nhan hoac dang chuan bi",
         );
       }
+      // GHN chỉ "đang giao" được lô hàng nó đã nhận vận đơn. Trước đây nhánh
+      // này đẩy đơn sang shipping kể cả khi vận đơn FAILED (lỗi H-08, đơn
+      // ORD-20260930-785): app hiện "Đang giao", người mua bấm "Đã nhận hàng"
+      // thì bị từ chối, đơn kẹt ở đó. Mọi người bán trong đơn phải có vận đơn.
+      await this.assertAllSellersShipped(order);
       order.status = OrderStatus.SHIPPING;
       await this.orderRepository.save(order);
       return { order_id: order.id, status: order.status };
@@ -757,6 +770,78 @@ export class OrdersService {
     return { order_id: order.id, delivered_shipments: shipments.length };
   }
 
+
+  /**
+   * Mỗi người bán trong đơn phải có một vận đơn GHN không FAILED. Thiếu hay
+   * lỗi thì ném 400 kèm lý do GHN, để người bán biết phải sửa gì.
+   */
+  private async assertAllSellersShipped(order: Order): Promise<void> {
+    const sellerIds = new Set(
+      (order.items || [])
+        .map((i) => i.product?.seller?.id)
+        .filter((id): id is number => !!id),
+    );
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id: order.id } },
+      relations: ['seller'],
+    });
+    const missing = [...sellerIds].filter(
+      (id) =>
+        !shipments.some(
+          (s) => s.seller?.id === id && s.status !== ShipmentStatus.FAILED,
+        ),
+    );
+    if (sellerIds.size === 0 || missing.length > 0) {
+      const reason = shipments.find(
+        (s) => s.status === ShipmentStatus.FAILED && s.error,
+      )?.error;
+      throw new BadRequestException(
+        'Đơn chưa có vận đơn GHN hợp lệ nên chưa thể chuyển sang đang giao' +
+          (reason ? ` (${reason})` : '') +
+          '. Người bán tạo lại vận đơn trước.',
+      );
+    }
+  }
+
+  /**
+   * Tạo lại vận đơn GHN cho những người bán mà lần trước GHN từ chối.
+   *
+   * Entity OrderShipment ghi FAILED là trạng thái "cho phép tạo lại", nhưng
+   * trước đây không có đường nào làm việc đó: xác nhận đơn chỉ xảy ra một lần,
+   * và lần tạo sau coi dòng FAILED như đã có vận đơn. Người bán sửa địa chỉ
+   * lấy hàng xong vẫn kẹt (lỗi H-07/H-08).
+   */
+  async retryGhnShipments(orderId: number, user: IUser) {
+    const { order, actors } = await this.findOneForActor(orderId, user);
+    if (
+      !actors.includes(OrderActor.SELLER) &&
+      !actors.includes(OrderActor.ADMIN)
+    ) {
+      throw new ForbiddenException(
+        'Chỉ người bán của đơn hoặc admin mới tạo lại được vận đơn',
+      );
+    }
+    if (
+      order.status !== OrderStatus.CONFIRMED &&
+      order.status !== OrderStatus.PROCESSING
+    ) {
+      throw new BadRequestException(
+        'Chỉ tạo lại vận đơn cho đơn đã xác nhận, chưa giao',
+      );
+    }
+    if (!order.ghn_district_id) {
+      throw new BadRequestException(
+        'Đơn này không dùng địa chỉ GHN nên không tạo được vận đơn',
+      );
+    }
+    await this.createGhnShipmentsPerSeller(order);
+    // createGhnShipmentsPerSeller có thể điền order.tracking_code (UI cũ đọc).
+    await this.orderRepository.save(order);
+    return this.shipmentRepository.find({
+      where: { order: { id: orderId } },
+      relations: ['seller'],
+    });
+  }
 
   /**
    * Chạy tay lượt chốt vận đơn (đồng bộ GHN + tự xác nhận) — cho admin/ops khi
@@ -896,13 +981,16 @@ export class OrdersService {
    * để client cảnh báo nếu muốn.
    *
    * Lỗi GHN của một người bán KHÔNG làm hỏng cả báo giá: phần đó tính 0 và kèm
-   * error, các người bán khác vẫn có phí.
+   * error, các người bán khác vẫn có phí. `ok = false` khi có ít nhất một phần
+   * lỗi: số 0 đó nghĩa là "chưa biết", KHÔNG phải "miễn phí", client phải hiện
+   * lỗi thay vì chữ "Miễn phí" (lỗi H-07).
    */
   private async quoteShippingBySellerFromCart(
     cartItems: Cart[],
     toDistrictId: number,
     toWardCode: string,
   ): Promise<{
+    ok: boolean;
     total: number;
     items: Array<{
       seller_id: number;
@@ -958,7 +1046,7 @@ export class OrdersService {
         });
         fee = Number(res?.total || 0);
       } catch (e) {
-        error = (e as Error).message;
+        error = ghnErrorMessage(e);
       }
       total += fee;
       items.push({
@@ -969,7 +1057,7 @@ export class OrdersService {
         error,
       });
     }
-    return { total, items };
+    return { ok: items.every((i) => !i.error), total, items };
   }
 
   /**
@@ -1010,6 +1098,8 @@ export class OrdersService {
    *
    * Nguyên tắc:
    *  - Idempotent: đã có vận đơn cho (đơn, người bán) thì bỏ qua, không tạo lại.
+   *    Riêng dòng FAILED thì THỬ LẠI và cập nhật chính dòng đó (xem
+   *    retryGhnShipments), không sinh dòng thứ hai cho cùng người bán.
    *  - Cô lập lỗi: người bán A hỏng KHÔNG chặn người bán B — mỗi người một
    *    try/catch, lỗi lưu vào shipment để còn nhìn thấy.
    *  - Fallback: người bán chưa khai địa chỉ lấy hàng thì bỏ trống from_*, GHN
@@ -1035,7 +1125,7 @@ export class OrdersService {
       where: { order: { id: order.id } },
       relations: ['seller'],
     });
-    const shippedSellerIds = new Set(existing.map((s) => s.seller?.id));
+    const existingBySeller = new Map(existing.map((s) => [s.seller?.id, s]));
 
     // Địa chỉ lấy hàng của các người bán, tra một lần.
     const shops = await this.shopRepository.find({
@@ -1047,7 +1137,8 @@ export class OrdersService {
     const isCod = order.payment_method === PaymentMethod.COD;
 
     for (const [sellerId, { seller, items }] of bySeller) {
-      if (shippedSellerIds.has(sellerId)) continue;
+      const previous = existingBySeller.get(sellerId);
+      if (previous && previous.status !== ShipmentStatus.FAILED) continue;
 
       const shop = shopByUser.get(sellerId);
       const from =
@@ -1092,33 +1183,44 @@ export class OrdersService {
           })),
           from,
         });
+        // GhnService trả `any` (body GHN); chốt kiểu một lần ở đây.
+        const trackingCode = (ghnOrder as { order_code: string }).order_code;
 
         await this.shipmentRepository.save(
-          this.shipmentRepository.create({
-            order: { id: order.id } as Order,
-            seller: { id: sellerId } as User,
-            tracking_code: ghnOrder.order_code,
-            cod_amount: codAmount,
-            status: ShipmentStatus.CREATED,
-          }),
+          previous
+            ? Object.assign(previous, {
+                tracking_code: trackingCode,
+                cod_amount: codAmount,
+                status: ShipmentStatus.CREATED,
+                error: null,
+              })
+            : this.shipmentRepository.create({
+                order: { id: order.id } as Order,
+                seller: { id: sellerId } as User,
+                tracking_code: trackingCode,
+                cod_amount: codAmount,
+                status: ShipmentStatus.CREATED,
+              }),
         );
 
         // Giữ tương thích: UI cũ đọc order.tracking_code. Đơn một người bán vẫn
         // thấy mã như trước; đơn nhiều người bán lấy mã đầu tiên làm đại diện.
-        if (!order.tracking_code) order.tracking_code = ghnOrder.order_code;
+        if (!order.tracking_code) order.tracking_code = trackingCode;
       } catch (err) {
-        const message = (err as Error).message;
+        const message = ghnErrorMessage(err);
         this.logger.error(
           `Tạo vận đơn GHN thất bại cho người bán ${sellerId} (đơn ${order.id}): ${message}`,
         );
         await this.shipmentRepository.save(
-          this.shipmentRepository.create({
-            order: { id: order.id } as Order,
-            seller: { id: sellerId } as User,
-            cod_amount: codAmount,
-            status: ShipmentStatus.FAILED,
-            error: message,
-          }),
+          previous
+            ? Object.assign(previous, { cod_amount: codAmount, error: message })
+            : this.shipmentRepository.create({
+                order: { id: order.id } as Order,
+                seller: { id: sellerId } as User,
+                cod_amount: codAmount,
+                status: ShipmentStatus.FAILED,
+                error: message,
+              }),
         );
       }
     }

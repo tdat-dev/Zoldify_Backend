@@ -2811,6 +2811,55 @@
         ]
       }
     },
+    "/api/v1/orders/{id}/shipments/retry": {
+      "post": {
+        "operationId": "OrdersController_retryShipments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrderShipment"
+                      }
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
     "/api/v1/orders/admin/settle-shipments": {
       "post": {
         "operationId": "OrdersController_settleShipments_v1",
@@ -3340,9 +3389,7 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {
-                      "type": "object"
-                    }
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
@@ -3386,9 +3433,7 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {
-                      "type": "object"
-                    }
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
@@ -7966,6 +8011,71 @@
             "type": "string"
           }
         }
+      },
+      "OrderShipment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          },
+          "seller": {
+            "$ref": "#/components/schemas/User"
+          },
+          "tracking_code": {
+            "type": "string"
+          },
+          "cod_amount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "failed",
+              "delivered",
+              "received"
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "delivered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "auto_received": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "order",
+          "seller",
+          "tracking_code",
+          "cod_amount",
+          "status",
+          "error",
+          "delivered_at",
+          "received_at",
+          "auto_received",
+          "created_at",
+          "updated_at"
+        ]
       },
       "CreateCartDto": {
         "type": "object",

@@ -116,6 +116,15 @@ export class OrdersController {
     return this.ordersService.simulateGhnStatus(+id, body.phase, user);
   }
 
+  // Người bán tạo lại vận đơn GHN bị từ chối lần trước (sau khi sửa địa chỉ
+  // lấy hàng, hoặc khi GHN chập chờn). Lỗi H-07/H-08, test E2E 30/09.
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Đã tạo lại vận đơn GHN')
+  @Post(':id/shipments/retry')
+  retryShipments(@Param('id') id: string, @User() user: IUser) {
+    return this.ordersService.retryGhnShipments(+id, user);
+  }
+
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Chạy chốt vận đơn thành công')
   @Post('admin/settle-shipments')
