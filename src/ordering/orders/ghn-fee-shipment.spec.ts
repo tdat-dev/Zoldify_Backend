@@ -51,8 +51,8 @@ function makeService(ghn: Partial<Record<keyof GhnService, jest.Mock>>) {
   const repo = () => ({
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(null),
-    save: jest.fn(async (x) => x),
-    create: jest.fn((x) => x),
+    save: jest.fn((x: unknown) => Promise.resolve(x)),
+    create: jest.fn((x: unknown) => x),
   });
   const orderRepo = repo();
   const shipmentRepo = repo();
@@ -83,19 +83,19 @@ function makeService(ghn: Partial<Record<keyof GhnService, jest.Mock>>) {
   };
 
   const svc = new OrdersService(
-    orderRepo as any,
-    repo() as any,
-    shipmentRepo as any,
-    shopRepo as any,
-    cartRepo as any,
-    repo() as any,
-    repo() as any,
-    { create: jest.fn() } as any,
-    ghn as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    dataSource as any,
+    orderRepo as never,
+    repo() as never,
+    shipmentRepo as never,
+    shopRepo as never,
+    cartRepo as never,
+    repo() as never,
+    repo() as never,
+    { create: jest.fn() } as never,
+    ghn as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    dataSource as never,
   );
   return { svc, orderRepo, shipmentRepo, dataSource };
 }
@@ -137,8 +137,8 @@ describe('H-07: phí ship không tính được thì KHÔNG được thành 0đ'
           shipping_address: '12 Đường Test',
           ghn_district_id: 2045,
           ghn_ward_code: '221011',
-        } as any,
-        BUYER as any,
+        },
+        BUYER as never,
       ),
     ).rejects.toThrow(BadRequestException);
     await expect(
@@ -149,8 +149,8 @@ describe('H-07: phí ship không tính được thì KHÔNG được thành 0đ'
           shipping_address: '12 Đường Test',
           ghn_district_id: 2045,
           ghn_ward_code: '221011',
-        } as any,
-        BUYER as any,
+        },
+        BUYER as never,
       ),
     ).rejects.toThrow(/phí vận chuyển/);
     // Chưa mở transaction nào: không có đơn nào được ghi.
@@ -185,10 +185,12 @@ describe('H-07: vận đơn lỗi phải giữ lý do của GHN và tạo lại 
     };
     shipmentRepo.find.mockResolvedValue([failed]);
 
-    await svc.retryGhnShipments(7, SELLER as any);
+    await svc.retryGhnShipments(7, SELLER as never);
 
     expect(createOrder).toHaveBeenCalledTimes(1);
-    const saved = shipmentRepo.save.mock.calls.map((c) => c[0]);
+    const saved = shipmentRepo.save.mock.calls.map(
+      (c) => c[0] as { id: number },
+    );
     expect(saved).toContainEqual(
       expect.objectContaining({
         id: 3,
@@ -207,14 +209,16 @@ describe('H-07: vận đơn lỗi phải giữ lý do của GHN và tạo lại 
       { id: 3, seller: SELLER, status: ShipmentStatus.FAILED, error: 'x' },
     ]);
 
-    await svc.retryGhnShipments(7, SELLER as any);
+    await svc.retryGhnShipments(7, SELLER as never);
 
-    const saved = shipmentRepo.save.mock.calls.map((c) => c[0]);
+    const saved = shipmentRepo.save.mock.calls.map(
+      (c) => c[0] as { id: number },
+    );
     expect(saved).toContainEqual(
       expect.objectContaining({
         id: 3,
         status: ShipmentStatus.FAILED,
-        error: expect.stringContaining(LY_DO_GHN),
+        error: expect.stringContaining(LY_DO_GHN) as unknown,
       }),
     );
   });
@@ -238,7 +242,7 @@ describe('H-08: chưa có vận đơn hợp lệ thì đơn KHÔNG được sang
     ]);
 
     await expect(
-      svc.simulateGhnStatus(7, 'shipping', SELLER as any),
+      svc.simulateGhnStatus(7, 'shipping', SELLER as never),
     ).rejects.toThrow(BadRequestException);
     expect(orderRepo.save).not.toHaveBeenCalled();
   });
@@ -250,7 +254,7 @@ describe('H-08: chưa có vận đơn hợp lệ thì đơn KHÔNG được sang
       { id: 3, seller: SELLER, status: ShipmentStatus.CREATED },
     ]);
 
-    const res = await svc.simulateGhnStatus(7, 'shipping', SELLER as any);
+    const res = await svc.simulateGhnStatus(7, 'shipping', SELLER as never);
     expect(res.status).toBe(OrderStatus.SHIPPING);
   });
 });
@@ -258,7 +262,7 @@ describe('H-08: chưa có vận đơn hợp lệ thì đơn KHÔNG được sang
 describe('GHN: không cho chọn quận/phường mà GHN đã ngừng phục vụ', () => {
   function ghnWith(data: unknown[]) {
     const http = { post: jest.fn(() => of({ data: { data } })) };
-    return new GhnService(http as any);
+    return new GhnService(http as never);
   }
 
   it('bỏ quận Status khác 1 hoặc SupportType 0 (vd 2045 Văn Giang)', async () => {
