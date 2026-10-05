@@ -17,6 +17,11 @@ import { mailerConfig } from '../../common/mailer.config';
   imports: [
     UsersModule,
     TypeOrmModule.forFeature([User]),
+    // Bộ nhớ đệm OTP nằm trong tiến trình (không có store ngoài): mất hết
+    // khi restart, và không chia sẻ được giữa nhiều instance backend. Trước
+    // khi chạy hơn một instance (scale ngang, zero-downtime deploy nhiều
+    // tiến trình), phải đổi sang store chung (ví dụ Redis) kẻo OTP phát ra
+    // ở instance A không xác minh được ở instance B.
     CacheModule.register({ ttl: 300, max: 100 }),
     // AuthService lấy MailerService từ ĐÂY, không phải từ bản khai trong
     // app.module — module nào tự khai thì dùng bản của chính nó. Hai bản từng
