@@ -218,6 +218,10 @@ export class GhnService {
   }
 
   async createOrder(dto: {
+    // Mã của ta cho vận đơn. GHN chống trùng theo mã này: gửi lại cùng mã thì
+    // GHN trả về vận đơn đã tạo thay vì tạo cái mới (đo sandbox 05/10). Nhờ vậy
+    // tạo lại sau một lần timeout không bao giờ sinh hai vận đơn cho một lô.
+    client_order_code?: string;
     to_name: string;
     to_phone: string;
     to_address: string;
@@ -250,6 +254,9 @@ export class GhnService {
       this.httpService.post(
         `${this.baseUrl}/shipping-order/create`,
         {
+          ...(dto.client_order_code
+            ? { client_order_code: dto.client_order_code }
+            : {}),
           to_name: dto.to_name,
           to_phone: dto.to_phone,
           to_address: dto.to_address,

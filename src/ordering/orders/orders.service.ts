@@ -1246,6 +1246,10 @@ export class OrdersService {
 
       try {
         const ghnOrder = await this.ghnService.createOrder({
+          // Cố định theo (đơn, người bán): timeout phía GHN không có nghĩa là
+          // chưa tạo (test máy ảo 05/10: request "vẫn đang xử lý" sau timeout).
+          // Tạo lại với cùng mã thì GHN trả vận đơn cũ, không sinh vận đơn trùng.
+          client_order_code: `${order.order_code}-${sellerId}`,
           to_name: order.receiver_name,
           to_phone: order.receiver_phone,
           to_address: order.shipping_address,
