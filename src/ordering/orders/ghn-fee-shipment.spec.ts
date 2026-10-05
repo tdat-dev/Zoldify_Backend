@@ -339,10 +339,16 @@ describe('GHN: không có tuyến giao thì báo lý do đọc được', () => 
     // Đo live trên staging 05/10: GHN trả { code: 200, data: null } cho quận
     // 2045. Code cũ gọi null.find() và người mua đọc thấy
     // "Cannot read properties of null (reading 'find')".
-    const http = { post: jest.fn(() => of({ data: { code: 200, data: null } })) };
+    const http = {
+      post: jest.fn(() => of({ data: { code: 200, data: null } })),
+    };
     const ghn = new GhnService(http as never);
     await expect(
-      ghn.calculateFee({ to_district_id: 2045, to_ward_code: '221011', weight: 200 }),
+      ghn.calculateFee({
+        to_district_id: 2045,
+        to_ward_code: '221011',
+        weight: 200,
+      }),
     ).rejects.toThrow(/không có tuyến/);
   });
 });
