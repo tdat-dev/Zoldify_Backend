@@ -1,0 +1,14 @@
+UPDATE products SET image = '/images/products/1.png' WHERE id = 1;
+UPDATE products SET image = '/images/products/2.png' WHERE id = 2;
+UPDATE products SET image = '/images/products/3.png' WHERE id = 3;
+UPDATE products SET image = '/images/products/4.png' WHERE id = 4;
+UPDATE products SET image = '/images/products/5.png' WHERE id = 5;
+UPDATE products SET image = '/images/products/6.png' WHERE id = 6;
+UPDATE products SET image = '/images/products/7.png' WHERE id = 7;
+UPDATE products SET image = '/images/products/8.png' WHERE id = 8;
+UPDATE products SET image = '/images/products/9.png' WHERE id = 9;
+UPDATE products SET image = '/images/products/10.png' WHERE id = 10;
+UPDATE products SET image = '/images/products/11.png' WHERE id = 11;
+UPDATE products SET image = '/images/products/12.png' WHERE id = 12;
+UPDATE products SET image = '/images/products/13.png' WHERE id = 13;
+UPDATE products SET image = '/images/products/14.png' WHERE id = 14;

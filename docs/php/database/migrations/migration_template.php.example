@@ -1,0 +1,65 @@
+<?php
+
+/**
+ * Migration Template
+ * 
+ * Copy file này và đổi tên theo format: YYYYMMDD_HHMMSS_description.php
+ * 
+ * @author  Zoldify Team
+ * @date    YYYY-MM-DD
+ * @version 1.0.0
+ */
+
+require_once __DIR__ . '/../BaseMigration.php';
+
+use Database\BaseMigration;
+
+return new class extends BaseMigration {
+
+    /**
+     * Tên bảng chính (để dễ reference)
+     */
+    protected string $table = 'your_table_name';
+
+    /**
+     * Chạy migration
+     */
+    public function up(): void
+    {
+        // ===== CÁCH 1: Tạo bảng mới =====
+        // $this->createTable($this->table, "
+        //     id INT AUTO_INCREMENT PRIMARY KEY,
+        //     name VARCHAR(100) NOT NULL,
+        //     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        // ");
+
+        // ===== CÁCH 2: Thêm cột =====
+        // $this->addColumn('users', 'phone', "VARCHAR(20) DEFAULT NULL", 'email');
+
+        // ===== CÁCH 3: Thêm index =====
+        // $this->addIndex('products', 'idx_category', 'category_id');
+
+        // ===== CÁCH 4: Raw SQL với check =====
+        // if (!$this->tableExists('my_table')) {
+        //     $this->pdo->exec("CREATE TABLE my_table (...)");
+        //     $this->success("Created table 'my_table'");
+        // }
+    }
+
+    /**
+     * Rollback migration
+     */
+    public function down(): void
+    {
+        // Reverse of up()
+
+        // ===== CÁCH 1: Xóa bảng =====
+        // $this->dropTable($this->table);
+
+        // ===== CÁCH 2: Xóa cột =====
+        // $this->dropColumn('users', 'phone');
+
+        // ===== CÁCH 3: Xóa index =====
+        // $this->dropIndex('products', 'idx_category');
+    }
+};

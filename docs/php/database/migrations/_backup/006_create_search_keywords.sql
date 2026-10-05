@@ -1,0 +1,8 @@
+-- Từ khóa tìm kiếm (Tracking search keywords)
+CREATE TABLE IF NOT EXISTS search_keywords (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    keyword VARCHAR(255) NOT NULL UNIQUE,
+    search_count INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;

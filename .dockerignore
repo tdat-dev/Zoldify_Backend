@@ -1,0 +1,38 @@
+# Thứ gì lọt vào build context cũng đi qua daemon và làm chậm mọi lần dựng,
+# kể cả khi Dockerfile không COPY nó.
+
+node_modules
+dist
+build
+coverage
+
+# Bí mật. KHÔNG bao giờ để lọt vào ảnh: ảnh đẩy lên registry và ai kéo về cũng
+# đọc được từng tầng, kể cả tầng đã bị tầng sau xoá đè.
+.env
+.env.*
+!.env.sample
+firebase-service-account.json
+
+.git
+.github
+.vscode
+.idea
+.claude
+
+# Tài liệu và sơ đồ — không có thứ nào chạy trên máy chủ
+docs
+*.md
+!README.md
+
+# Ảnh hàng demo tải về, không thuộc về ảnh chạy
+public/media/demo
+
+# File tạm của draw.io
+.$*
+*.bkp
+
+# Test và công cụ chỉ dùng lúc phát triển
+test
+scripts
+*.spec.ts
+openapi.json

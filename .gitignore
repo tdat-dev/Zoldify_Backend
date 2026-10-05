@@ -1,0 +1,93 @@
+# compiled output
+/dist
+/node_modules
+/build
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# temp directory
+.temp
+.tmp
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+firebase-service-account.json
+# Claude Code
+.claude/
+src/.claude/
+
+# Ảnh sơ đồ sinh ra từ npm run diagrams:export — dựng lại được, không commit
+# Anh so do sinh ra tu diagrams:export — dung lai duoc, khong commit.
+# Bat o moi vi tri vi thu muc nay tung bi di chuyen.
+docs/system-design/**/exports/
+docs/system-design/exports/
+
+# File sao luu tam cua draw.io
+.$*
+*.bkp
+
+# Anh kho tai ve cho hang demo (npm run seed:demo). Script tu tai lai neu thieu.
+# Khong commit: day la anh nguon ngoai chua ra ban quyen, dung cho du lieu gia —
+# de vao repo cua mot san thuong mai la ruoc rui ro phap ly.
+public/media/demo/
+
+# Bản dump database. KHÔNG BAO GIỜ được vào git: một bản dump production
+# chứa email thật, hash mật khẩu và toàn bộ sổ cái tiền. Lọt vào lịch sử repo
+# thì xoá file đi cũng không sạch, phải viết lại lịch sử.
+/backups/
+*.sql.gz
+
+# Project.txt — đề bài của thầy, cố ý không commit
+Project.txt
+
+# Bản máy đọc của bài soi SQL. File .md mới là thứ để người đọc; cái này
+# 232KB toàn SQL sinh tự động, đưa vào git chỉ làm mọi diff sau này thành
+# rác. Sinh lại bằng: npm run sql:audit
+docs/system-design/sql-audit.json
+
+# Chi muc CodeGraph — sinh lai duoc, ~12MB nhi phan, doi moi lan sua ma.
+.codegraph/
