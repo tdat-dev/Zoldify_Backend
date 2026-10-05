@@ -352,6 +352,8 @@ export class OrdersService {
       data: { order_id: savedOrder.id, order_code: orderCode },
     });
 
+    await this.notifySellersOfNewOrder(savedOrder.id, orderCode, cartItems);
+
     const result: any = await this.findOne(savedOrder.id, user);
     // Đánh dấu payment_method để frontend biết cần gọi PayOS
     result.needs_payOS = payment_method === PaymentMethod.PAYOS;
@@ -482,19 +484,63 @@ export class OrdersService {
     };
   }
 
-  async findOne(id: number, user: IUser) {
-    const where: any = { id };
-    if (user.role !== 'admin') {
-      where.user = { id: user.id };
+  /**
+   * Báo cho TỪNG người bán trong đơn vừa đặt (lỗi H-02 test E2E 30/09).
+   *
+   * Trước đây chỉ người mua nhận thông báo: người bán không biết có đơn để xác
+   * nhận, đơn nằm "Chờ xác nhận" tới khi người mua hỏi qua chat.
+   * notificationsService.create tự đẩy push tới mọi thiết bị của người bán;
+   * `view: 'seller'` để app mở màn Đơn bán thay vì màn đơn mua.
+   *
+   * Đơn ĐÃ lưu xong ở đây: thông báo hỏng thì chỉ ghi log, không ném, nếu
+   * không người mua thấy "đặt hàng lỗi" cho một đơn đã tạo và đã trừ kho.
+   */
+  private async notifySellersOfNewOrder(
+    orderId: number,
+    orderCode: string,
+    cartItems: Cart[],
+  ): Promise<void> {
+    const bySeller = new Map<number, { count: number; amount: number }>();
+    for (const ci of cartItems) {
+      const sellerId = ci.product?.seller?.id;
+      if (!sellerId) continue;
+      const g = bySeller.get(sellerId) ?? { count: 0, amount: 0 };
+      g.count += ci.quantity;
+      g.amount += Number(ci.product.price) * ci.quantity;
+      bySeller.set(sellerId, g);
     }
+    for (const [sellerId, { count, amount }] of bySeller) {
+      try {
+        await this.notificationsService.create({
+          user_id: sellerId,
+          type: 'order_status' as any,
+          title: 'Bạn có đơn hàng mới',
+          content: `Đơn ${orderCode}: ${count} món, ${amount.toLocaleString('vi-VN')}đ. Xác nhận để gửi hàng nhé.`,
+          data: { order_id: orderId, order_code: orderCode, view: 'seller' },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Không báo được đơn mới ${orderCode} cho người bán ${sellerId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
 
-    const order = await this.orderRepository.findOne({
-      where,
-      relations: ['user', 'items', 'items.product', 'items.product.seller'],
-    });
-
-    if (!order) {
-      throw new NotFoundException('Không tìm thấy đơn hàng');
+  async findOne(id: number, user: IUser) {
+    // Người mua, admin, VÀ người bán của bất kỳ món nào trong đơn đều xem được
+    // (lỗi H-02). Trước đây lọc cứng theo order.user_id nên người bán mở đơn
+    // của chính mình nhận 404, app không làm được màn Đơn bán. Người không liên
+    // quan vẫn nhận 404 (findOneForActor), không lộ là đơn có tồn tại.
+    const { order, actors } = await this.findOneForActor(id, user);
+    const sellerOnly =
+      actors.length === 1 && actors[0] === OrderActor.SELLER;
+    if (sellerOnly) {
+      // Người bán chỉ cần biết ai nhận (đã có receiver_* trên đơn), không cần
+      // email/hồ sơ tài khoản của người mua.
+      order.user = {
+        id: order.user?.id,
+        full_name: order.user?.full_name,
+      } as User;
     }
 
     // Đính kèm vận đơn theo từng người bán để giao diện hiện trạng thái giao và
@@ -1374,8 +1420,27 @@ export class OrdersService {
     }
   }
 
+  /**
+   * Đơn mà người gọi là NGƯỜI MUA (hoặc admin). Dùng cho thao tác của người mua.
+   *
+   * Tách khỏi findOne vì findOne giờ cho cả người bán XEM (lỗi H-02). cancel()
+   * và remove() từng mượn findOne để kiểm quyền; giữ nguyên thì người bán gọi
+   * được đường huỷ của người mua và xoá mềm được đơn. Người bán huỷ qua
+   * cancelSale, có luật riêng.
+   */
+  private async findOneAsBuyerOrAdmin(id: number, user: IUser) {
+    const { order, actors } = await this.findOneForActor(id, user);
+    if (
+      !actors.includes(OrderActor.BUYER) &&
+      !actors.includes(OrderActor.ADMIN)
+    ) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
+    return order;
+  }
+
   async cancel(id: number, user: IUser) {
-    const order = await this.findOne(id, user);
+    const order = await this.findOneAsBuyerOrAdmin(id, user);
     this.assertCancellable(order, 'hủy đơn hàng');
 
     await this.applyCancellation(order);
@@ -1411,7 +1476,7 @@ export class OrdersService {
   }
 
   async remove(id: number, user: IUser) {
-    const order = await this.findOne(id, user);
+    await this.findOneAsBuyerOrAdmin(id, user);
     await this.orderRepository.softDelete(id);
     return { message: 'Xóa đơn hàng thành công' };
   }
