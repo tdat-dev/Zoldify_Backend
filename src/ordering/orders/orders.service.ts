@@ -541,6 +541,11 @@ export class OrdersService {
         id: order.user?.id,
         full_name: order.user?.full_name,
       } as User;
+      // Đơn nhiều người bán: chỉ trả món của chính người gọi (review 05/10).
+      // Không lọc thì người bán A đọc được món, giá của người bán B cùng đơn.
+      order.items = (order.items || []).filter(
+        (i) => i.product?.seller?.id === user.id,
+      );
     }
 
     // Đính kèm vận đơn theo từng người bán để giao diện hiện trạng thái giao và
@@ -550,7 +555,11 @@ export class OrdersService {
       where: { order: { id } },
       relations: ['seller'],
     });
-    (order as any).shipments = shipments;
+    // Như món ở trên: người bán chỉ thấy vận đơn của mình, không thấy mã vận
+    // đơn và tiền thu hộ (cod_amount) của người bán khác.
+    (order as any).shipments = sellerOnly
+      ? shipments.filter((s) => s.seller?.id === user.id)
+      : shipments;
 
     return order;
   }
