@@ -1,0 +1,62 @@
+{
+  "name": "Email Verification",
+  "title": "Verify email with OTP at sign-up",
+  "lifelines": [
+    {"id": "u", "label": "User", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":AuthController", "kind": "object"},
+    {"id": "auth", "label": ":AuthService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"},
+    {"id": "cache", "label": "«cache»\n:CacheManager", "kind": "object"},
+    {"id": "smtp", "label": "«external»\n:SMTP", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "enter full name, email"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /auth/register/send-otp {email, full_name}"},
+    {"msg": "sync", "from": "ctl", "to": "auth", "label": "sendRegisterOtp(email, full_name)"},
+    {"msg": "sync", "from": "auth", "to": "db", "label": "findOne({email})"},
+    {"msg": "reply", "from": "db", "to": "auth", "label": "User | null"},
+    {"frag": "break", "guardOn": "auth", "operands": [
+      {"guard": "[email already registered]", "steps": [
+        {"msg": "reply", "from": "auth", "to": "ctl", "label": "BadRequestException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "self", "on": "auth", "label": "generate 6-digit OTP"},
+    {"msg": "sync", "from": "auth", "to": "cache", "label": "set(register_otp_{email}, {otp, full_name})"},
+    {"msg": "reply", "from": "cache", "to": "auth", "label": "ok"},
+    {"msg": "sync", "from": "auth", "to": "smtp", "label": "sendMail(email, OTP html)"},
+    {"msg": "reply", "from": "smtp", "to": "auth", "label": "sent | error"},
+    {"frag": "break", "guardOn": "auth", "operands": [
+      {"guard": "[sending failed]", "steps": [
+        {"msg": "reply", "from": "auth", "to": "ctl", "label": "BadRequestException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "reply", "from": "auth", "to": "ctl", "label": "{message}"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {message: OTP sent}"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "show OTP and password form"},
+    {"msg": "async", "from": "smtp", "to": "u", "label": "email with 6-digit OTP"},
+    {"msg": "sync", "from": "u", "to": "app", "label": "enter OTP, password"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /auth/register/verify-otp\n{email, otp, password}"},
+    {"msg": "sync", "from": "ctl", "to": "auth", "label": "verifyRegisterOtp(email, otp, password)"},
+    {"msg": "sync", "from": "auth", "to": "cache", "label": "get(register_otp_{email})"},
+    {"msg": "reply", "from": "cache", "to": "auth", "label": "{otp, full_name} | undefined"},
+    {"frag": "break", "guardOn": "auth", "operands": [
+      {"guard": "[OTP expired or wrong]", "steps": [
+        {"msg": "reply", "from": "auth", "to": "ctl", "label": "BadRequestException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"ref": "Register account", "over": ["auth", "db"]},
+    {"msg": "sync", "from": "auth", "to": "cache", "label": "del(register_otp_{email})"},
+    {"msg": "reply", "from": "cache", "to": "auth", "label": "ok"},
+    {"msg": "reply", "from": "auth", "to": "ctl", "label": "{id, email, full_name, role}"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {id, email, full_name, role}"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "account created, log in"},
+    {"note": "OTP in in-memory cache (no Redis), TTL 300 s.\nAccount row is created only after OTP passes", "over": ["db", "cache"]}
+  ]
+}

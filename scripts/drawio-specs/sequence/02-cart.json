@@ -1,0 +1,50 @@
+{
+  "name": "Cart",
+  "title": "Add product to cart",
+  "lifelines": [
+    {"id": "u", "label": "Buyer", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":CartController", "kind": "object"},
+    {"id": "svc", "label": ":CartService", "kind": "object"},
+    {"id": "prod", "label": ":ProductsService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "tap Add to cart"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /cart {product_id, quantity?} + JWT"},
+    {"msg": "sync", "from": "ctl", "to": "svc", "label": "create(dto, user)"},
+    {"msg": "sync", "from": "svc", "to": "prod", "label": "findOne(product_id)"},
+    {"msg": "sync", "from": "prod", "to": "db", "label": "SELECT product + seller, category"},
+    {"msg": "reply", "from": "db", "to": "prod", "label": "Product | null"},
+    {"frag": "break", "guardOn": "prod", "operands": [{"guard": "[product not found]", "steps": [
+      {"msg": "reply", "from": "prod", "to": "svc", "label": "NotFoundException"},
+      {"msg": "reply", "from": "svc", "to": "ctl", "label": "NotFoundException"},
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "404 Not Found"},
+      {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+    ]}]},
+    {"msg": "reply", "from": "prod", "to": "svc", "label": "Product"},
+    {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[product.seller.id == user.id]", "steps": [
+      {"msg": "reply", "from": "svc", "to": "ctl", "label": "BadRequestException"},
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "400 cannot buy own product"},
+      {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "findOne cart WHERE user, product"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Cart | null"},
+    {"frag": "alt", "guardOn": "svc", "operands": [
+      {"guard": "[cart line exists]", "steps": [
+        {"msg": "sync", "from": "svc", "to": "db", "label": "UPDATE carts SET quantity += qty"},
+        {"msg": "reply", "from": "db", "to": "svc", "label": "Cart"}
+      ]},
+      {"guard": "[else]", "steps": [
+        {"msg": "sync", "from": "svc", "to": "db", "label": "INSERT carts (user, product, qty || 1)"},
+        {"msg": "reply", "from": "db", "to": "svc", "label": "Cart"}
+      ]}
+    ]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT cart + product WHERE id, user"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Cart"},
+    {"msg": "reply", "from": "svc", "to": "ctl", "label": "Cart"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {cart item + product}"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "update cart badge"},
+    {"note": "No stock check here: stock is checked\nonly at checkout (POST /orders)", "over": ["svc", "db"]}
+  ]
+}

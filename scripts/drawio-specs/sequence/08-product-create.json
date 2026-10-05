@@ -1,0 +1,59 @@
+{
+  "name": "Product Create",
+  "title": "Product Create: upload images, then list product",
+  "lifelines": [
+    {"id": "u", "label": "Seller", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "fc", "label": ":FilesController", "kind": "object"},
+    {"id": "ctl", "label": ":ProductsController", "kind": "object"},
+    {"id": "svc", "label": ":ProductsService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"},
+    {"id": "r2", "label": "«external»\n:CloudflareR2", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "fill product info, pick images"},
+    {"frag": "loop", "guardOn": "app", "operands": [{"guard": "[for each picked image]", "steps": [
+      {"msg": "sync", "from": "app", "to": "fc", "label": "POST /files/upload (fileUpload, folder_type)"},
+      {"msg": "self", "on": "fc", "label": "multer: ext whitelist, max 100MB"},
+      {"frag": "break", "guardOn": "fc", "operands": [{"guard": "[no file received]", "steps": [
+        {"msg": "reply", "from": "fc", "to": "app", "label": "400 Bad Request"}
+      ]}]},
+      {"frag": "alt", "guardOn": "fc", "operands": [
+        {"guard": "[R2 configured]", "steps": [
+          {"msg": "sync", "from": "fc", "to": "r2", "label": "storage.upload(): PutObject(key, buffer)"},
+          {"msg": "reply", "from": "r2", "to": "fc", "label": "public URL"}
+        ]},
+        {"guard": "[else]", "steps": [
+          {"msg": "self", "on": "fc", "label": "write public/images/{folder}/{file}"}
+        ]}
+      ]},
+      {"msg": "sync", "from": "fc", "to": "db", "label": "filesService.create(): INSERT files"},
+      {"msg": "reply", "from": "db", "to": "fc", "label": "FileEntity"},
+      {"msg": "reply", "from": "fc", "to": "app", "label": "201 {id, url, ...}"}
+    ]}]},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /products {name, price, category_id, images}"},
+    {"frag": "break", "guardOn": "ctl", "operands": [{"guard": "[DTO invalid (ValidationPipe)]", "steps": [
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"}
+    ]}]},
+    {"msg": "sync", "from": "ctl", "to": "svc", "label": "create(dto, user)"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "findOne shops WHERE user_id"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Shop | null"},
+    {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[pickup address incomplete]", "steps": [
+      {"msg": "reply", "from": "svc", "to": "ctl", "label": "BadRequestException"},
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "INSERT products (images as JSON)"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Product"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT follower_id FROM follows"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "followers[]"},
+    {"frag": "loop", "guardOn": "svc", "operands": [{"guard": "[for each follower]", "steps": [
+      {"msg": "sync", "from": "svc", "to": "db", "label": "notificationsService.create(): INSERT"},
+      {"msg": "reply", "from": "db", "to": "svc", "label": "Notification (+ FCM push)"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "findOne(id) + category, seller"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Product"},
+    {"msg": "reply", "from": "svc", "to": "ctl", "label": "Product"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 Product"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "show product listed"}
+  ]
+}
