@@ -117,10 +117,15 @@ function makeService() {
   const dataSource = {
     transaction: (cb: (em: unknown) => Promise<unknown>) => cb(fakeEm()),
   };
+  const shipmentRepo = repo();
+  shipmentRepo.find.mockResolvedValue([
+    { id: 1, seller: SELLER_A, tracking_code: 'GHN-A', cod_amount: '100000' },
+    { id: 2, seller: SELLER_B, tracking_code: 'GHN-B', cod_amount: '300000' },
+  ]);
   const svc = new OrdersService(
     orderRepo as never,
     repo() as never,
-    repo() as never,
+    shipmentRepo as never,
     repo() as never,
     cartRepo as never,
     repo() as never,
@@ -188,5 +193,30 @@ describe('H-02: mở quyền XEM cho người bán không được mở quyền 
     await expect(svc.remove(77, SELLER_A as never)).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('H-02: người bán chỉ thấy phần của mình trong đơn nhiều người bán', () => {
+  // Review 05/10: findOne mở cho người bán nhưng vẫn trả MỌI món và MỌI vận đơn,
+  // nên người bán A đọc được món, giá, tiền thu hộ và mã vận đơn của người bán B
+  // cùng đơn. Người mua và admin vẫn thấy đủ.
+  it('người bán A không thấy món và vận đơn của người bán B', async () => {
+    const { svc } = makeService();
+    const o = (await svc.findOne(77, SELLER_A as never)) as unknown as {
+      items: Array<{ product: { seller: { id: number } } }>;
+      shipments: Array<{ seller: { id: number } }>;
+    };
+    expect(o.items.map((i) => i.product.seller.id)).toEqual([SELLER_A.id]);
+    expect(o.shipments.map((sh) => sh.seller.id)).toEqual([SELLER_A.id]);
+  });
+
+  it('người mua vẫn thấy đủ món và vận đơn của mọi người bán', async () => {
+    const { svc } = makeService();
+    const o = (await svc.findOne(77, BUYER as never)) as unknown as {
+      items: unknown[];
+      shipments: unknown[];
+    };
+    expect(o.items).toHaveLength(2);
+    expect(o.shipments).toHaveLength(2);
   });
 });
