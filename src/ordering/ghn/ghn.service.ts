@@ -162,7 +162,12 @@ export class GhnService {
       dto.to_district_id,
       fromDistrictId,
     );
-    const defaultService = services.find((s) => s.service_type_id === 2);
+    // GHN trả `data: null` (không phải mảng rỗng) khi không có tuyến, đo live
+    // staging 05/10 với quận 2045. Gọi .find() thẳng trên null thì người mua
+    // đọc thấy "Cannot read properties of null" thay vì lý do bên dưới.
+    const defaultService = (services ?? []).find(
+      (s) => s.service_type_id === 2,
+    );
     // Mảng rỗng (không phải lỗi HTTP) là cách GHN nói "không có tuyến giữa hai
     // quận này", thường vì một bên đã ngừng phục vụ.
     if (!defaultService) {
