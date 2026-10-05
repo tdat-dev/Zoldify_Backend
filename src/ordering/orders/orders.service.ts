@@ -206,58 +206,124 @@ export class OrdersService {
     const now = new Date();
     const orderCode = `ORD-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
 
-    const order = this.orderRepository.create({
-      order_code: orderCode,
-      user: { id: user.id },
-      total_amount: totalAmount,
-      shipping_fee: shippingFee,
-      discount_amount: discountAmount,
-      final_amount: finalAmount,
-      // Chụp lại, không đọc lại từ sản phẩm lúc hiển thị: người bán sửa tiền tệ
-      // của tin đăng sau này thì đơn cũ vẫn phải giữ đúng thứ đã thoả thuận.
-      currency: orderCurrency || 'VND',
-      status: OrderStatus.PENDING,
-      payment_method: payment_method || PaymentMethod.COD,
-      is_paid: false,
-      receiver_name,
-      receiver_phone,
-      shipping_address,
-      province,
-      district,
-      note,
-      ghn_district_id: createOrderDto.ghn_district_id,
-      ghn_ward_code: createOrderDto.ghn_ward_code,
+    /**
+     * Mọi lần GHI (tạo đơn, tạo order_items, trừ kho, xoá giỏ) nằm trong MỘT
+     * transaction, và kho bị KHOÁ trước khi đọc lại để trừ.
+     *
+     * Vì sao cần khoá chứ không chỉ transaction: vòng lặp kiểm tồn kho ở trên
+     * đọc `product.stock` NGOÀI transaction, bằng câu SELECT thường. Hai người
+     * mua bấm đặt hàng cùng lúc cho món còn 1 cái thì cả hai đều đọc thấy
+     * stock = 1, cả hai đều qua được điều kiện `stock < quantity`, và nếu chỉ
+     * bọc transaction mà không khoá dòng, `UPDATE stock = stock - 1` của người
+     * thứ hai vẫn chạy sau khi người thứ nhất đã trừ: kho về -1. Transaction
+     * một mình không ngăn được race này vì nó không chặn đọc-rồi-ghi của
+     * transaction khác chạy song song (đây không phải lost-update trên cùng
+     * một UPDATE, mà là hai luồng cùng ra quyết định dựa trên cùng một lần đọc
+     * cũ).
+     *
+     * Nên bên trong transaction, khoá lại đúng các dòng product sẽ bị trừ bằng
+     * SELECT ... FOR UPDATE (`pessimistic_write`) rồi kiểm tồn kho LẦN HAI trên
+     * giá trị đã khoá. Khoá theo ID TĂNG DẦN (products.id ascending): khoá hai
+     * dòng theo hai thứ tự khác nhau ở hai transaction song song là công thức
+     * chuẩn của deadlock.
+     *
+     * Thông báo và cuộc gọi phí ship GHN cố ý nằm NGOÀI transaction này: GHN đã
+     * được gọi trước đó (ngoài transaction, lỗi không chặn đặt hàng), còn
+     * thông báo chỉ gửi SAU KHI commit: rollback thì không ai nhận được tin
+     * báo "đặt hàng thành công" cho một đơn chưa từng tồn tại.
+     */
+    const lockedProductIds = [
+      ...new Set(orderItemsData.map((item) => item.product.id)),
+    ].sort((a, b) => a - b);
+
+    let savedOrderId = 0;
+
+    await this.dataSource.transaction(async (manager) => {
+      const lockedProducts = new Map<number, Product>();
+      for (const productId of lockedProductIds) {
+        const locked = await manager
+          .getRepository(Product)
+          .createQueryBuilder('product')
+          .setLock('pessimistic_write')
+          .where('product.id = :productId', { productId })
+          .getOne();
+
+        if (!locked) {
+          throw new NotFoundException(
+            `Sản phẩm ID ${productId} không tồn tại`,
+          );
+        }
+        lockedProducts.set(productId, locked);
+      }
+
+      // Kiểm tồn kho LẦN HAI, trên giá trị vừa khoá: cái đọc ở vòng lặp phía
+      // trên chỉ để từ chối sớm cho trường hợp rõ ràng, không đủ để quyết định
+      // trừ kho.
+      for (const item of orderItemsData) {
+        const locked = lockedProducts.get(item.product.id);
+        if (!locked || locked.stock < item.quantity) {
+          throw new BadRequestException(
+            `Sản phẩm "${item.product_name}" chỉ còn ${locked?.stock ?? 0} trong kho`,
+          );
+        }
+      }
+
+      const order = manager.getRepository(Order).create({
+        order_code: orderCode,
+        user: { id: user.id },
+        total_amount: totalAmount,
+        shipping_fee: shippingFee,
+        discount_amount: discountAmount,
+        final_amount: finalAmount,
+        // Chụp lại, không đọc lại từ sản phẩm lúc hiển thị: người bán sửa tiền
+        // tệ của tin đăng sau này thì đơn cũ vẫn phải giữ đúng thứ đã thoả
+        // thuận.
+        currency: orderCurrency || 'VND',
+        status: OrderStatus.PENDING,
+        payment_method: payment_method || PaymentMethod.COD,
+        is_paid: false,
+        receiver_name,
+        receiver_phone,
+        shipping_address,
+        province,
+        district,
+        note,
+        ghn_district_id: createOrderDto.ghn_district_id,
+        ghn_ward_code: createOrderDto.ghn_ward_code,
+      });
+
+      const savedOrder = await manager.getRepository(Order).save(order);
+      savedOrderId = savedOrder.id;
+
+      const orderItems = orderItemsData.map((item) => ({
+        ...item,
+        order: { id: savedOrder.id },
+      }));
+
+      await manager.getRepository(OrderItem).save(orderItems);
+
+      // Trừ kho trên các dòng đang bị khoá: không transaction nào khác chen vào
+      // giữa lần kiểm ở trên và lần trừ này.
+      for (const item of orderItemsData) {
+        await manager
+          .getRepository(Product)
+          .decrement({ id: item.product.id }, 'stock', item.quantity);
+      }
+
+      await manager
+        .getRepository(Cart)
+        .delete(cartItems.map((c) => c.id));
     });
-
-    const savedOrder = await this.orderRepository.save(order);
-
-    const orderItems = orderItemsData.map((item) => ({
-      ...item,
-      order: { id: savedOrder.id },
-    }));
-
-    await this.orderItemRepository.save(orderItems);
-
-    // Decrement product stock
-    for (const item of orderItemsData) {
-      await this.productRepository.decrement(
-        { id: item.product.id },
-        'stock',
-        item.quantity,
-      );
-    }
-
-    await this.cartRepository.delete(cartItems.map((c) => c.id));
 
     await this.notificationsService.create({
       user_id: user.id,
       type: 'order_status' as any,
       title: 'Đặt hàng thành công',
       content: `Đơn hàng ${orderCode} đã được đặt thành công với tổng ${finalAmount.toLocaleString('vi-VN')}đ`,
-      data: { order_id: savedOrder.id, order_code: orderCode },
+      data: { order_id: savedOrderId, order_code: orderCode },
     });
 
-    const result: any = await this.findOne(savedOrder.id, user);
+    const result: any = await this.findOne(savedOrderId, user);
     // Đánh dấu payment_method để frontend biết cần gọi PayOS
     result.needs_payOS = payment_method === PaymentMethod.PAYOS;
     return result;
