@@ -80,7 +80,11 @@ export class UsersService {
     return { message: 'Xóa tài khoản thành công' };
   }
 
-  async register(registerUserDto: RegisterUserDto) {
+  // `emailVerified` mặc định false: giữ nguyên hành vi của đường đăng ký
+  // công khai POST /auth/register (không OTP, chưa chứng minh gì về email).
+  // Chỉ AuthService.verifyRegisterOtp gọi với true, sau khi người dùng đã gõ
+  // đúng mã OTP gửi về chính email đó.
+  async register(registerUserDto: RegisterUserDto, emailVerified = false) {
     const { full_name, email, password, phone_number } = registerUserDto;
     const existingUser = await this.userRepository.findOne({ where: { email } });
     if (existingUser) {
@@ -95,6 +99,7 @@ export class UsersService {
       // Gán cứng, không đọc từ tham số: lớp chặn thứ hai cho B-01 nếu có ai
       // gọi hàm này với một object có sẵn `role`.
       role: UserRole.BUYER,
+      email_verified: emailVerified,
     });
     return await this.userRepository.save(newUser);
   }
