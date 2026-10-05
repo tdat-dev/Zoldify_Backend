@@ -97,7 +97,7 @@ export class User {
    */
   @ApiHideProperty()
   @Column({ type: 'varchar', length: 500, nullable: true, select: false })
-  refresh_token: string;
+  refresh_token: string | null;
 
   // Phiên bản token (tăng mỗi lần đổi token)
   @ApiHideProperty()
