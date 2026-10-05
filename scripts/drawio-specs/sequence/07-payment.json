@@ -1,0 +1,116 @@
+{
+  "name": "Payment",
+  "title": "Pay order with PayOS",
+  "lifelines": [
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":PayosController", "kind": "object"},
+    {"id": "svc", "label": ":PayosService", "kind": "object"},
+    {"id": "esc", "label": ":EscrowsService", "kind": "object"},
+    {"id": "led", "label": ":LedgerService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"},
+    {"id": "po", "label": "«external»\n:PayOS", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /payos/create-link {type: order, order_id}"},
+    {"frag": "break", "guardOn": "ctl", "operands": [{"guard": "[order_id missing]", "steps": [
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"}
+    ]}]},
+    {"msg": "sync", "from": "ctl", "to": "svc", "label": "createOrderPaymentLink(order_id, user.id)"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT order + user WHERE id"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Order | null"},
+    {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[not found / not buyer / already paid]", "steps": [
+      {"msg": "reply", "from": "svc", "to": "ctl", "label": "NotFound / BadRequestException"},
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "404 / 400"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "po", "label": "paymentRequests.create(orderCode, amount)"},
+    {"msg": "reply", "from": "po", "to": "svc", "label": "{checkoutUrl, qrCode, paymentLinkId}"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "INSERT payments (PENDING, payos_order_code)"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Payment"},
+    {"msg": "reply", "from": "svc", "to": "ctl", "label": "{checkoutUrl, qrCode, expiresAt}"},
+    {"msg": "sync", "from": "ctl", "to": "esc", "label": "createOrderEscrows(order_id)"},
+    {"msg": "sync", "from": "esc", "to": "db", "label": "COUNT escrows; INSERT one per seller if 0"},
+    {"msg": "reply", "from": "db", "to": "esc", "label": "Escrow[]"},
+    {"msg": "reply", "from": "esc", "to": "ctl", "label": "Escrow[] (errors ignored)"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {checkoutUrl, qrCode}"},
+    {"msg": "async", "from": "app", "to": "po", "label": "open checkoutUrl, buyer scans QR and pays"},
+    {"msg": "sync", "from": "po", "to": "ctl", "label": "POST /payos/webhook {code, data, signature}"},
+    {"msg": "sync", "from": "ctl", "to": "svc", "label": "handleWebhook(req.body)"},
+    {"msg": "self", "on": "svc", "label": "payos.webhooks.verify(body)"},
+    {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[signature invalid]", "steps": [
+      {"msg": "reply", "from": "svc", "to": "ctl", "label": "{success: false}"},
+      {"msg": "reply", "from": "ctl", "to": "po", "label": "200 OK"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "BEGIN TRANSACTION"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT payment + order WHERE payos_order_code"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Payment | null"},
+    {"frag": "alt", "guardOn": "svc", "operands": [
+      {"guard": "[payment not found]", "steps": [
+        {"msg": "self", "on": "svc", "label": "processed=false (not found)"}
+      ]},
+      {"guard": "[code != 00 or success false]", "steps": [
+        {"msg": "sync", "from": "svc", "to": "db", "label": "UPDATE payments SET status = FAILED"},
+        {"msg": "reply", "from": "db", "to": "svc", "label": "ok"}
+      ]},
+      {"guard": "[payment.status == SUCCESS]", "steps": [
+        {"msg": "self", "on": "svc", "label": "processed=false (already paid)"}
+      ]},
+      {"guard": "[else]", "steps": [
+        {"msg": "self", "on": "svc", "label": "applyPaidPayment(em, payment, key)\nkey = payos:orderCode:paymentLinkId"},
+        {"msg": "sync", "from": "svc", "to": "led", "label": "getOrCreateAccount(GATEWAY_CLEARING, em)"},
+        {"msg": "reply", "from": "led", "to": "svc", "label": "LedgerAccount"},
+        {"frag": "alt", "guardOn": "svc", "operands": [
+          {"guard": "[order.status == CANCELLED]", "steps": [
+            {"msg": "sync", "from": "svc", "to": "led", "label": "getOrCreateAccount(buyer AVAILABLE, em)"},
+            {"msg": "reply", "from": "led", "to": "svc", "label": "LedgerAccount (tx type TOPUP)"}
+          ]},
+          {"guard": "[else]", "steps": [
+            {"msg": "sync", "from": "svc", "to": "led", "label": "getOrCreateAccount(ESCROW_HOLD, em)"},
+            {"msg": "reply", "from": "led", "to": "svc", "label": "LedgerAccount (tx type ORDER_HOLD)"}
+          ]}
+        ]},
+        {"msg": "sync", "from": "svc", "to": "led", "label": "post({idempotencyKey, entries}, em)"},
+        {"msg": "self", "on": "led", "label": "validateInput (>= 2 entries, sum = 0)"},
+        {"msg": "sync", "from": "led", "to": "db", "label": "SELECT ledger_tx WHERE idempotency_key"},
+        {"msg": "reply", "from": "db", "to": "led", "label": "LedgerTransaction | null"},
+        {"frag": "alt", "guardOn": "led", "operands": [
+          {"guard": "[key exists]", "steps": [
+            {"msg": "self", "on": "led", "label": "skip, return existing tx"}
+          ]},
+          {"guard": "[else]", "steps": [
+            {"msg": "sync", "from": "led", "to": "db", "label": "INSERT ledger_transactions (key UNIQUE)"},
+            {"msg": "reply", "from": "db", "to": "led", "label": "LedgerTransaction"},
+            {"msg": "sync", "from": "led", "to": "db", "label": "SELECT accounts FOR UPDATE ORDER BY id"},
+            {"msg": "reply", "from": "db", "to": "led", "label": "LedgerAccount[]"},
+            {"frag": "loop", "guardOn": "led", "operands": [{"guard": "[for each entry]", "steps": [
+              {"msg": "sync", "from": "led", "to": "db", "label": "INSERT ledger_entries; UPDATE balance"},
+              {"msg": "reply", "from": "db", "to": "led", "label": "ok"}
+            ]}]}
+          ]}
+        ]},
+        {"msg": "reply", "from": "led", "to": "svc", "label": "LedgerTransaction"},
+        {"frag": "opt", "guardOn": "svc", "operands": [{"guard": "[order not CANCELLED]", "steps": [
+          {"msg": "sync", "from": "svc", "to": "db", "label": "UPDATE orders SET is_paid, CONFIRMED"},
+          {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+          {"msg": "sync", "from": "svc", "to": "esc", "label": "createOrderEscrows(order.id, em)"},
+          {"msg": "sync", "from": "esc", "to": "db", "label": "COUNT escrows; INSERT one per seller if 0"},
+          {"msg": "reply", "from": "db", "to": "esc", "label": "Escrow[]"},
+          {"msg": "reply", "from": "esc", "to": "svc", "label": "Escrow[]"}
+        ]}]},
+        {"msg": "sync", "from": "svc", "to": "db", "label": "UPDATE payments SET SUCCESS, paid_at"},
+        {"msg": "reply", "from": "db", "to": "svc", "label": "ok"}
+      ]}
+    ]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "COMMIT"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+    {"frag": "opt", "guardOn": "svc", "operands": [{"guard": "[processed]", "steps": [
+      {"msg": "sync", "from": "svc", "to": "db", "label": "notifyPaid: INSERT notifications"},
+      {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+      {"msg": "async", "from": "svc", "to": "app", "label": "push: payment successful"}
+    ]}]},
+    {"msg": "reply", "from": "svc", "to": "ctl", "label": "{success: true, processed}"},
+    {"msg": "reply", "from": "ctl", "to": "po", "label": "200 OK"},
+    {"msg": "async", "from": "po", "to": "app", "label": "redirect returnUrl?orderId"},
+    {"note": "Concurrent duplicate: the UNIQUE idempotency_key makes the\nINSERT fail, the whole transaction rolls back, and the\nPayOS retry then takes [already paid] / [key exists].", "over": ["led", "db"]}
+  ]
+}

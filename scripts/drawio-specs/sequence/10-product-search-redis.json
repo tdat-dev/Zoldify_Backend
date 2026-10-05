@@ -1,0 +1,32 @@
+{
+  "name": "Product Search (with Redis)",
+  "title": "Product Search as built (no Redis cache)",
+  "lifelines": [
+    {"id": "u", "label": "User", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":ProductsController", "kind": "object"},
+    {"id": "svc", "label": ":ProductsService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "search or filter products"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "GET /products?q&category_id&sort&current"},
+    {"msg": "sync", "from": "ctl", "to": "svc", "label": "findAll(current, pageSize, qs)"},
+    {"note": "No cache lookup: the app has no Redis. CacheModule is the\nin-memory store, and ProductsService never calls cacheManager.\nEvery request goes to MySQL.", "over": ["svc", "db"]},
+    {"msg": "self", "on": "svc", "label": "offset = (current - 1) * pageSize; order by sort"},
+    {"frag": "alt", "guardOn": "svc", "operands": [
+      {"guard": "[q given]", "steps": [
+        {"msg": "sync", "from": "svc", "to": "db", "label": "FULLTEXT MATCH or LIKE + filters\nLIMIT/OFFSET, getManyAndCount()"},
+        {"msg": "reply", "from": "db", "to": "svc", "label": "[products + category], total"}
+      ]},
+      {"guard": "[else]", "steps": [
+        {"msg": "sync", "from": "svc", "to": "db", "label": "findAndCount(category, seller, price, condition)"},
+        {"msg": "reply", "from": "db", "to": "svc", "label": "[products + seller{id, name, avatar}], total"}
+      ]}
+    ]},
+    {"msg": "self", "on": "svc", "label": "pages = ceil(total / pageSize)"},
+    {"msg": "reply", "from": "svc", "to": "ctl", "label": "{meta, result}"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "200 {data: {meta, result}}"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "render results"}
+  ]
+}

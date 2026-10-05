@@ -8,6 +8,19 @@ chỉ `--force` mới đè, và nó sẽ xoá mọi chỉnh tay.
 
 Kiểm trước khi giao: `npm run drawio:check`.
 
+### Class và Sequence: sinh từ script, không sửa tay
+
+Hai file này vẽ theo ký pháp UML 2.5 của uml-diagrams.org (đen trắng, khung `class` / `sd`,
+multiplicity hai đầu, thanh kích hoạt, `alt`/`opt`/`loop`/`break`), đối chiếu từng luồng với code.
+Muốn sửa thì sửa nguồn rồi sinh lại, đừng kéo thả trong draw.io vì lần sinh sau sẽ đè:
+
+| File | Nguồn | Lệnh |
+|---|---|---|
+| `08-class-diagram.drawio` | `scripts/drawio-class.mjs` (toạ độ, thuộc tính, quan hệ) | `node scripts/drawio-class.mjs` |
+| `Sequence-Diagrams.drawio` | `scripts/drawio-specs/sequence/NN-*.json`, mỗi file một trang | `node scripts/drawio-sequence.mjs` |
+
+Script class tự từ chối ghi file nếu có đường nối xiên, cắt nhau, hay đi xuyên qua lớp khác.
+
 ---
 
 ## Sáu sơ đồ có slide riêng trong mẫu
@@ -24,8 +37,8 @@ Thứ tự lấy đúng theo `3. Project Templates/Project Presentation Template
 | `06e-activity-topup.drawio` | 6 *(cùng slide)* | II |
 | `06f-activity-login.drawio` | 6 *(cùng slide)* | II |
 | `06g-activity-ledger-reconcile.drawio` | 6 *(cùng slide)* | II |
-| `08-class-diagram.drawio` | 8 | III — Design Details |
-| `09-sequence-diagram.drawio` | 9 | III |
+| `08-class-diagram.drawio` *(3 trang: Domain Model, Enumerations, Money Services)* | 8 | III: Design Details |
+| `Sequence-Diagrams.drawio` *(14 trang, slide 9 dùng trang Payment)* | 9 | III |
 | `10-entity-relationship-diagram.drawio` | 10 | III |
 | `11-deployment-diagram.drawio` | 11 | VI — Installation Instructions |
 
