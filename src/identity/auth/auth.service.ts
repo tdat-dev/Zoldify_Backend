@@ -149,11 +149,16 @@ export class AuthService {
     if (data.otp !== otp)
       throw new BadRequestException('Mã OTP không chính xác');
 
-    const newUser = await this.usersService.register({
-      full_name: data.full_name,
-      email,
-      password,
-    });
+    // true: tài khoản này vừa chứng minh quyền sở hữu email bằng mã OTP,
+    // khác với POST /auth/register thường (không OTP, chưa chứng minh gì).
+    const newUser = await this.usersService.register(
+      {
+        full_name: data.full_name,
+        email,
+        password,
+      },
+      true,
+    );
 
     await this.cacheManager.del(`register_otp_${email}`);
 
