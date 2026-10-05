@@ -346,3 +346,52 @@ describe('GHN: không có tuyến giao thì báo lý do đọc được', () => 
     ).rejects.toThrow(/không có tuyến/);
   });
 });
+
+describe('GHN: tạo lại sau timeout không được sinh vận đơn trùng', () => {
+  // Test máy ảo 05/10: GHN sandbox timeout ở phía họ ("context deadline
+  // exceeded") nhưng request vẫn chạy tiếp; bấm tạo lại thì GHN trả "Too many
+  // request. This request is processing". Timeout KHÔNG có nghĩa là chưa tạo.
+  // Đo trên sandbox: gửi lại cùng client_order_code thì GHN trả ĐÚNG vận đơn
+  // cũ (L8AR8L hai lần), nên mã cố định theo (đơn, người bán) là đủ chống trùng.
+  it('mỗi lần tạo (kể cả tạo lại) gửi cùng client_order_code theo đơn và người bán', async () => {
+    const createOrder = jest.fn().mockResolvedValue({ order_code: 'L8NABC' });
+    const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
+    orderRepo.findOne.mockResolvedValue({
+      ...confirmedOrder(),
+      order_code: 'ORD-20261005-389',
+    });
+    shipmentRepo.find.mockResolvedValue([
+      { id: 3, seller: SELLER, status: ShipmentStatus.FAILED, error: 'x' },
+    ]);
+
+    await svc.retryGhnShipments(7, SELLER as never);
+
+    expect(createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client_order_code: `ORD-20261005-389-${SELLER.id}`,
+      }),
+    );
+  });
+
+  it('GhnService gửi client_order_code trong body tạo vận đơn', async () => {
+    const http = {
+      post: jest.fn(() => of({ data: { data: { order_code: 'L8NABC' } } })),
+    };
+    const ghn = new GhnService(http as never);
+    await ghn.createOrder({
+      client_order_code: 'ORD-1-11',
+      to_name: 'A',
+      to_phone: '0901234567',
+      to_address: 'x',
+      to_ward_code: '220117',
+      to_district_id: 1680,
+      weight: 200,
+      cod_amount: 0,
+      items: [{ name: 'a', quantity: 1, weight: 200, price: 1000 }],
+    });
+    const body = (http.post.mock.calls[0] as unknown[])[1] as {
+      client_order_code?: string;
+    };
+    expect(body.client_order_code).toBe('ORD-1-11');
+  });
+});
