@@ -230,6 +230,15 @@ export class AuthService {
     await this.userRepository.update(user.id, { password: hashedPassword });
     await this.cacheManager.del(`forgot_otp_${email}`);
 
+    // Thu hồi MỌI phiên đã phát trước lúc đặt lại mật khẩu: tăng
+    // token_version để JwtStrategy từ chối access token cũ, và xoá
+    // refresh_token để không làm mới được nữa. Ai đang giữ token bị lộ sẽ bị
+    // đá ra ngay. Không gọi login() như changePassword: người dùng ở đây chưa
+    // đăng nhập, app bảo họ đăng nhập lại, và login() từ chối tài khoản bị
+    // khoá, nên gọi nó sẽ trả 401 SAU KHI mật khẩu đã đổi xong.
+    await this.userRepository.increment({ id: user.id }, 'token_version', 1);
+    await this.userRepository.update(user.id, { refresh_token: null });
+
     return { message: 'Đặt lại mật khẩu thành công' };
   }
 
