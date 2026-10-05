@@ -26,8 +26,18 @@ function order() {
     status: OrderStatus.PENDING,
     user: BUYER,
     items: [
-      { id: 1, quantity: 1, subtotal: '100000', product: { id: 5, seller: SELLER_A } },
-      { id: 2, quantity: 2, subtotal: '300000', product: { id: 6, seller: SELLER_B } },
+      {
+        id: 1,
+        quantity: 1,
+        subtotal: '100000',
+        product: { id: 5, seller: SELLER_A },
+      },
+      {
+        id: 2,
+        quantity: 2,
+        subtotal: '300000',
+        product: { id: 6, seller: SELLER_B },
+      },
     ],
   };
 }
@@ -35,7 +45,14 @@ function order() {
 /** EntityManager giả đủ cho transaction tạo đơn: khoá hàng, lưu, trừ kho, xoá giỏ. */
 function fakeEm() {
   const qb: Record<string, unknown> = {};
-  for (const m of ['setLock', 'where', 'orderBy', 'update', 'set', 'andWhere']) {
+  for (const m of [
+    'setLock',
+    'where',
+    'orderBy',
+    'update',
+    'set',
+    'andWhere',
+  ]) {
     qb[m] = () => qb;
   }
   qb.getMany = () =>
@@ -74,12 +91,26 @@ function makeService() {
     {
       id: 1,
       quantity: 1,
-      product: { id: 5, name: 'Áo', price: '100000', stock: 10, currency: 'VND', seller: SELLER_A },
+      product: {
+        id: 5,
+        name: 'Áo',
+        price: '100000',
+        stock: 10,
+        currency: 'VND',
+        seller: SELLER_A,
+      },
     },
     {
       id: 2,
       quantity: 2,
-      product: { id: 6, name: 'Quần', price: '150000', stock: 10, currency: 'VND', seller: SELLER_B },
+      product: {
+        id: 6,
+        name: 'Quần',
+        price: '150000',
+        stock: 10,
+        currency: 'VND',
+        seller: SELLER_B,
+      },
     },
   ]);
   const notifications = { create: jest.fn().mockResolvedValue({}) };
@@ -118,7 +149,7 @@ describe('H-02: người bán được báo khi có đơn mới', () => {
     );
 
     const toUsers = notifications.create.mock.calls.map(
-      (c) => (c[0] as { user_id: number }).user_id,
+      (c: unknown[]) => (c[0] as { user_id: number }).user_id,
     );
     expect(toUsers).toEqual(expect.arrayContaining([SELLER_A.id, SELLER_B.id]));
     // Người mua vẫn nhận thông báo "Đặt hàng thành công" như cũ.
@@ -136,6 +167,25 @@ describe('H-02: người bán xem được chi tiết đơn có hàng của mìn
   it('người không liên quan vẫn nhận 404', async () => {
     const { svc } = makeService();
     await expect(svc.findOne(77, STRANGER as never)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+});
+
+describe('H-02: mở quyền XEM cho người bán không được mở quyền của người mua', () => {
+  // cancel() (huỷ phía người mua) và remove() (xoá mềm đơn) từng dựa vào
+  // findOne để kiểm quyền. findOne giờ cho người bán xem, nên hai đường này
+  // phải tự kiểm lại: người bán có đường riêng là cancel-sale.
+  it('người bán KHÔNG gọi được đường huỷ của người mua', async () => {
+    const { svc } = makeService();
+    await expect(svc.cancel(77, SELLER_A as never)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('người bán KHÔNG xoá được đơn', async () => {
+    const { svc } = makeService();
+    await expect(svc.remove(77, SELLER_A as never)).rejects.toThrow(
       NotFoundException,
     );
   });
