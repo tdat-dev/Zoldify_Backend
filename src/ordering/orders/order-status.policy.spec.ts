@@ -14,6 +14,19 @@ describe('assertTransitionAllowed', () => {
   const admin = [OrderActor.ADMIN];
 
   describe('chặn khai thác', () => {
+    // "Đang giao" đến từ tracking GHN (b18f742), không phải từ nút của người
+    // bán: tự bấm được thì người bán đẩy đơn tới sát bước nhả tiền mà hàng
+    // chưa hề rời kho.
+    it('người bán không tự chuyển đơn sang đang giao', () => {
+      expect(() =>
+        assertTransitionAllowed(
+          OrderStatus.CONFIRMED,
+          OrderStatus.SHIPPING,
+          seller,
+        ),
+      ).toThrow(ForbiddenException);
+    });
+
     it('người bán KHÔNG tự đánh dấu đã giao để nhả tiền cho mình', () => {
       expect(() =>
         assertTransitionAllowed(
@@ -67,12 +80,12 @@ describe('assertTransitionAllowed', () => {
       ).not.toThrow();
     });
 
-    it('người bán chuyển sang đang giao', () => {
+    it('admin (hoặc job theo dõi GHN) chuyển sang đang giao', () => {
       expect(() =>
         assertTransitionAllowed(
           OrderStatus.CONFIRMED,
           OrderStatus.SHIPPING,
-          seller,
+          admin,
         ),
       ).not.toThrow();
     });
