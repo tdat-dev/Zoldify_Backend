@@ -212,9 +212,14 @@ jobs:
       # và sitemap (8/8 xanh, build sạch, `NestFactory.create` chết vì tham số
       # có giá trị mặc định bị Nest hiểu thành provider tên `Number`).
       #
-      # `test/app.e2e-spec.ts` có dựng AppModule thật, nhưng nó chạy bằng
-      # `npm run test:e2e` mà CI chưa bao giờ gọi. Một cái chốt không chạy thì
-      # không phải là chốt — đúng chuyện đã xảy ra với check:index.
+      # `test/app.e2e-spec.ts` ĐÃ XOÁ ngày 06/10 — lý do: file mẫu NestJS chưa
+      # bao giờ chạy được (thiếu moduleNameMapper trong jest-e2e.json nên alias
+      # @ops/... không phân giải được). `check:boot` là thứ thay thế, và nó MẠNH
+      # HƠN: 19 mục bao gồm GET /, /health, sitemap, request-id, 401 cho route
+      # cần token.
+      #
+      # ĐIỀU KIỆN ĐỂ DÙNG LẠI e2e: khi cần kiểm một luồng nhiều bước qua HTTP thật
+      # (đăng nhập -> dat don -> thanh toan -> giao hang) ma `check:boot` khong phu.
       #
       # Dùng `zoldify_schema` chứ không `zoldify_test`: app chạy
       # `synchronize: false`, nên nó cần lược đồ do migration dựng, không phải
