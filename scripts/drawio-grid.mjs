@@ -3,7 +3,7 @@
  * đặt toạ độ tay chỉ gồm đoạn ngang/dọc, nhãn ở hai đầu, khung UML, và bộ kiểm
  * từ chối ghi file khi có đường xiên, đường cắt nhau hay đường đâm xuyên hộp.
  *
- * Dùng chung cho drawio-class.mjs và drawio-erd.mjs.
+ * Dùng cho drawio-class.mjs.
  */
 import fs from 'node:fs';
 import { esc } from './drawio-lib.mjs';
