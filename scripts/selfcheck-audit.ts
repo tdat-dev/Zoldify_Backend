@@ -23,6 +23,27 @@
  */
 import 'reflect-metadata';
 
+// Trỏ vào DATABASE TEST, giống hệt check:boot (dòng 76-80 của file đó).
+//
+// Thiếu khối này, bài kiểm rơi về DB dev trong .env (cổng 3306) và chết ngay
+// ở NestFactory.create với "Access denied for user root@localhost" — tức cổng
+// chỉ chạy được trên máy nào tình cờ có sẵn MySQL cục bộ đúng mật khẩu dev.
+// Đo ngày 06/10: check:boot XANH còn check:audit ĐỎ trên cùng một máy, và
+// khác biệt duy nhất giữa hai script là khối này.
+//
+// Dùng `??=` nên biến môi trường đặt sẵn ngoài shell vẫn thắng. Và vì ConfigModule
+// nạp .env SAU (dotenv không ghi đè biến đã có), các giá trị dưới đây giữ nguyên.
+//
+// Bài này tạo admin thật và ghi dòng thật, nên trỏ vào DB test là bắt buộc,
+// không chỉ là tiện: chạy nhầm vào DB dev là rải rác dữ liệu kiểm thử.
+const E = process.env;
+E.NODE_ENV ??= 'test';
+E.DB_HOST ??= '127.0.0.1';
+E.DB_PORT ??= '3307';
+E.DB_USERNAME ??= 'root';
+E.DB_PASSWORD ??= 'testpw';
+E.DB_DATABASE ??= 'zoldify_test';
+
 const B = '\x1b[1m';
 const G = '\x1b[32m';
 const R = '\x1b[31m';
