@@ -267,9 +267,9 @@ describe('LedgerService', () => {
       ],
     });
 
-    const [{ total }] = (await dataSource.query(
+    const [{ total }] = await dataSource.query(
       'SELECT COALESCE(SUM(amount), 0) AS total FROM ledger_entries',
-    )) as { total: string }[];
+    );
 
     expect(BigInt(total)).toBe(0n);
   });
