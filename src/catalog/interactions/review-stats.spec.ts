@@ -201,4 +201,24 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
     expect(u.email).toBeUndefined();
     expect(u.phone_number).toBeUndefined();
   });
+
+  // Review 06/10: GET /interactions và GET /interactions/:id chỉ cần đăng nhập,
+  // nhưng cũng trả nguyên User. Một tài khoản bất kỳ gọi GET /interactions (bỏ
+  // `mine`) là gom được email, số điện thoại của mọi người từng đánh giá.
+  it('danh sách đánh giá (đã đăng nhập) cũng không lộ email, số điện thoại', async () => {
+    await viet(buyers[0], 5);
+    const page = await svc.findAll('1', '10', asUser(buyers[1]));
+    const u = page.result[0].user as unknown as Record<string, unknown>;
+    expect(u.full_name).toBe('Người mua 1');
+    expect(u.email).toBeUndefined();
+    expect(u.phone_number).toBeUndefined();
+  });
+
+  it('xem một đánh giá theo id cũng không lộ email, số điện thoại', async () => {
+    const r = await viet(buyers[0], 5);
+    const one = await svc.findOne(r.id);
+    const u = one.user as unknown as Record<string, unknown>;
+    expect(u.email).toBeUndefined();
+    expect(u.phone_number).toBeUndefined();
+  });
 });
