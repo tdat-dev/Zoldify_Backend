@@ -180,7 +180,17 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
     await viet(buyers[0], 5);
     await viet(buyers[1], 4);
     const s = await svc.sellerStats(sellerId);
-    expect(s).toEqual({ rating: 4.5, review_count: 2, sold_count: 7 });
+    // "Đã bán" đếm từ đơn ĐÃ GIAO (2 đơn x 1 món), không đọc products.sold_count:
+    // cột đó không có dòng mã nào ghi (soát 06/10), seed để 7 ở đây cố ý sai.
+    expect(s).toEqual({ rating: 4.5, review_count: 2, sold_count: 2 });
+  });
+
+  it('đơn chưa giao hoặc đã huỷ không tính vào "đã bán"', async () => {
+    await ds.query(`UPDATE orders SET status = 'cancelled' WHERE id = ?`, [
+      orderOf.get(buyers[1]),
+    ]);
+    const s = await svc.sellerStats(sellerId);
+    expect(s.sold_count).toBe(1);
   });
 
   it('API công khai không trả email, số điện thoại của người đánh giá', async () => {
