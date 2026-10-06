@@ -274,7 +274,9 @@ export class LedgerService {
     em: EntityManager,
     accountIds: (string | number)[],
   ): Promise<Map<string, LedgerAccount>> {
-    const sorted = [...new Set(accountIds.map(String))].sort((a, b) => Number(a) - Number(b));
+    const sorted = [...new Set(accountIds.map(String))].sort(
+      (a, b) => Number(a) - Number(b),
+    );
 
     const accounts = await em
       .createQueryBuilder(LedgerAccount, 'account')

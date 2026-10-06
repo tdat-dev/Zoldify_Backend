@@ -3,7 +3,11 @@ import { LedgerAccount } from '@money/ledger/entities/ledger-account.entity';
 import { LedgerEntry } from '@money/ledger/entities/ledger-entry.entity';
 import { LedgerTransaction } from '@money/ledger/entities/ledger-transaction.entity';
 import { LedgerService } from '@money/ledger/ledger.service';
-import { LedgerOwnerType, LedgerPurpose, LedgerTxType } from '@money/ledger/ledger.types';
+import {
+  LedgerOwnerType,
+  LedgerPurpose,
+  LedgerTxType,
+} from '@money/ledger/ledger.types';
 import { LedgerDoiSoatService } from './ledger-doi-soat.service';
 
 /**
@@ -81,8 +85,16 @@ describe('LedgerDoiSoatService — đối soát sổ cái', () => {
 
   it('một giao dịch hợp lệ hai chân → vẫn cân, không tài khoản lệch', async () => {
     // Nạp 100000 vào platform/escrow_hold (hai chân: gateway_clearing -100000, escrow_hold +100000)
-    const gateway = await ledger.getOrCreateAccount(LedgerOwnerType.EXTERNAL, null, LedgerPurpose.GATEWAY_CLEARING);
-    const escrow = await ledger.getOrCreateAccount(LedgerOwnerType.PLATFORM, null, LedgerPurpose.ESCROW_HOLD);
+    const gateway = await ledger.getOrCreateAccount(
+      LedgerOwnerType.EXTERNAL,
+      null,
+      LedgerPurpose.GATEWAY_CLEARING,
+    );
+    const escrow = await ledger.getOrCreateAccount(
+      LedgerOwnerType.PLATFORM,
+      null,
+      LedgerPurpose.ESCROW_HOLD,
+    );
 
     await ledger.post({
       idempotencyKey: `test-topup-${ID_BASE}`,
@@ -104,7 +116,11 @@ describe('LedgerDoiSoatService — đối soát sổ cái', () => {
 
   it('phá có chủ đích UPDATE balance → dò được lệch', async () => {
     // Tạo một tài khoản platform/revenue
-    const revenue = await ledger.getOrCreateAccount(LedgerOwnerType.PLATFORM, null, LedgerPurpose.REVENUE);
+    const revenue = await ledger.getOrCreateAccount(
+      LedgerOwnerType.PLATFORM,
+      null,
+      LedgerPurpose.REVENUE,
+    );
 
     // Phá balance: cộng thêm 1000 vào cột balance, KHÔNG ghi ledger_entries
     await dataSource.query(
@@ -124,8 +140,16 @@ describe('LedgerDoiSoatService — đối soát sổ cái', () => {
   });
 
   it('nạp tiền vào platform/escrow_hold → tong_dang_giu_ho đúng, dạng chuỗi', async () => {
-    const gateway = await ledger.getOrCreateAccount(LedgerOwnerType.EXTERNAL, null, LedgerPurpose.GATEWAY_CLEARING);
-    const escrow = await ledger.getOrCreateAccount(LedgerOwnerType.PLATFORM, null, LedgerPurpose.ESCROW_HOLD);
+    const gateway = await ledger.getOrCreateAccount(
+      LedgerOwnerType.EXTERNAL,
+      null,
+      LedgerPurpose.GATEWAY_CLEARING,
+    );
+    const escrow = await ledger.getOrCreateAccount(
+      LedgerOwnerType.PLATFORM,
+      null,
+      LedgerPurpose.ESCROW_HOLD,
+    );
 
     await ledger.post({
       idempotencyKey: `test-topup-escrow-${ID_BASE + 1}`,
