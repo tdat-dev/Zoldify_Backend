@@ -8,22 +8,19 @@ chỉ `--force` mới đè, và nó sẽ xoá mọi chỉnh tay.
 
 Kiểm trước khi giao: `npm run drawio:check`.
 
-### Class, Sequence, ERD, Deployment: sinh từ script, không sửa tay
+### Class và Sequence: sinh từ script, không sửa tay
 
-Bốn file này vẽ theo ký pháp chuẩn (UML 2.5 của uml-diagrams.org cho class / sequence /
-deployment, crow's foot cho ERD), đen trắng, đối chiếu với code. Muốn sửa thì sửa nguồn
-rồi sinh lại, đừng kéo thả trong draw.io vì lần sinh sau sẽ đè:
+Hai file này vẽ theo ký pháp UML 2.5 của uml-diagrams.org (đen trắng, khung `class` / `sd`,
+multiplicity hai đầu, thanh kích hoạt, `alt`/`opt`/`loop`/`break`), đối chiếu từng luồng với code.
+Muốn sửa thì sửa nguồn rồi sinh lại, đừng kéo thả trong draw.io vì lần sinh sau sẽ đè:
 
 | File | Nguồn | Lệnh |
 |---|---|---|
 | `08-class-diagram.drawio` | `scripts/drawio-class.mjs` (toạ độ, thuộc tính, quan hệ) | `node scripts/drawio-class.mjs` |
 | `Sequence-Diagrams.drawio` | `scripts/drawio-specs/sequence/NN-*.json`, mỗi file một trang | `node scripts/drawio-sequence.mjs` |
-| `10-entity-relationship-diagram.drawio` | cột đọc thẳng từ entity TypeORM (`scripts/drawio-erd-model.mjs`), bố cục ở `scripts/drawio-erd.mjs` | `node scripts/drawio-erd.mjs` |
-| `11-deployment-diagram.drawio` | `scripts/drawio-deployment.mjs` (theo docker-compose của prod) | `node scripts/drawio-deployment.mjs` |
 
-Class, ERD và Deployment dùng chung `scripts/drawio-grid.mjs`: script tự từ chối ghi file
-nếu có đường nối xiên, cắt nhau, hay đi xuyên qua hộp khác. Đổi entity thì chạy lại
-`drawio-erd.mjs` là ERD theo kịp.
+Class dùng `scripts/drawio-grid.mjs`: script tự từ chối ghi file nếu có đường nối xiên,
+cắt nhau, hay đi xuyên qua hộp khác.
 
 ---
 
@@ -37,10 +34,8 @@ Thứ tự lấy đúng theo `3. Project Templates/Project Presentation Template
 | `activity_zoldify.drawio` *(15 trang, nhóm vẽ tay)* | 6 | II |
 | `08-class-diagram.drawio` *(3 trang: Domain Model, Enumerations, Money Services)* | 8 | III: Design Details |
 | `Sequence-Diagrams.drawio` *(14 trang, slide 9 dùng trang Payment)* | 9 | III |
-| `10-entity-relationship-diagram.drawio` *(4 trang theo vùng: Identity & Catalog, Ordering, Money, Messaging & Social)* | 10 | III |
-| `11-deployment-diagram.drawio` *(hệ thống đang chạy trên VPS)* | 11 | VI: Installation Instructions |
 
-Ảnh xem nhanh từng trang nằm ở `renders/` (`05-*`, `08-class-*`, `09-seq-*`, `10-erd-*`, `11-*`).
+Ảnh xem nhanh từng trang nằm ở `renders/` (`05-*`, `08-class-*`, `09-seq-*`).
 
 ## Tám sơ đồ bổ sung
 
