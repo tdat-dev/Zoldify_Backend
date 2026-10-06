@@ -1,134 +1,138 @@
 import { BadRequestException } from '@nestjs/common';
-import type { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Follow } from './entities/follow.entity';
 import { FollowsService } from './follows.service';
+import { User } from '@identity/users/entities/user.entity';
 
 /**
  * THEO DÕI NGƯỜI BÁN — module này trước hôm nay không có bài kiểm nào.
  *
- * VÌ SAO DÙNG REPOSITORY GIẢ Ở ĐÂY, TRONG KHI `wallets` DÙNG MySQL THẬT.
+ * Bất biến thật nằm ở **database** (khoá `UNIQUE(follower_id, following_id)`),
+ * nên bài kiểm phải chạy trên MySQL thật — mock đi thì xanh mà không chứng minh gì.
  *
- * Quy tắc tôi theo: **kiểm ở nơi bất biến thật sự sống**.
+ * Khoá đó **đã có sẵn** ở `src/migrations/1690000000000-InitialSchema.ts:70` và
+ * `@Unique` trong `follow.entity.ts`. B5-2 **không có việc sửa mã** — chỉ có
+ * việc viết bài kiểm.
  *
- * Ở `wallets`, thứ chặn ghi trùng là khoá UNIQUE và transaction của MySQL —
- * mock đi thì bài kiểm xanh mà không chứng minh gì, nên nó chạy trên database
- * thật. Ở đây thì ngược lại: "không được theo dõi chính mình" và "bấm lần hai
- * thì bỏ theo dõi" nằm trọn trong mã TypeScript. Dựng cả MySQL cho hai nhánh
- * `if` chỉ làm bài kiểm chậm và giòn hơn, không làm nó đúng hơn.
- *
- * Entity `Follow` còn có quan hệ tới `User`, nên nạp nó vào một DataSource
- * thật sẽ kéo theo cả chuỗi entity của identity — trả giá lược đồ cho một bài
- * kiểm không đụng tới lược đồ.
- *
- * ĐIỀU NÀY KHÔNG CÒN ĐÚNG nếu sau này thêm khoá UNIQUE(follower, following) để
- * chặn hai request song song cùng tạo một bản ghi. Lúc đó bất biến chuyển
- * xuống database và bài kiểm phải chuyển theo — xem ghi chú ở ca cuối.
+ * Ca đua dùng `Promise.allSettled`: hai `toggle` **song song**, đúng một
+ * `rejected`, đúng một `fulfilled`, và sau đó bảng còn **một** dòng.
+ * Giải thích vì sao gọi tuần tự thì không kiểm được gì (lần hai `toggle`
+ * **xoá** dòng rồi trả về, nó không ném).
  */
+const TEST_DB = {
+  host: process.env.TEST_DB_HOST ?? '127.0.0.1',
+  port: Number(process.env.TEST_DB_PORT ?? 3307),
+  username: process.env.TEST_DB_USER ?? 'root',
+  password: process.env.TEST_DB_PASSWORD ?? 'testpw',
+  database: process.env.TEST_DB_NAME ?? 'zoldify_test',
+};
+
+jest.setTimeout(60_000);
+
 describe('FollowsService', () => {
-  /** Repo giả: giữ dữ liệu trong một mảng, đủ cho hai nhánh của `toggle`. */
-  function repoGia(banDau: Follow[] = []) {
-    let kho = [...banDau];
-    return {
-      kho: () => kho,
-      repo: {
-        findOne: ({ where }: { where: Partial<Follow> }) =>
-          Promise.resolve(
-            kho.find(
-              (f) =>
-                f.follower_id === where.follower_id &&
-                f.following_id === where.following_id,
-            ) ?? null,
-          ),
-        count: ({ where }: { where: Partial<Follow> }) =>
-          Promise.resolve(
-            kho.filter(
-              (f) =>
-                (where.follower_id === undefined ||
-                  f.follower_id === where.follower_id) &&
-                (where.following_id === undefined ||
-                  f.following_id === where.following_id),
-            ).length,
-          ),
-        save: (f: Partial<Follow>) => {
-          kho.push(f as Follow);
-          return Promise.resolve(f);
-        },
-        remove: (f: Follow) => {
-          kho = kho.filter((x) => x !== f);
-          return Promise.resolve(f);
-        },
-      } as unknown as Repository<Follow>,
-    };
-  }
+  let dataSource: DataSource;
+  let service: FollowsService;
+
+  beforeAll(async () => {
+    dataSource = new DataSource({
+      type: 'mysql',
+      ...TEST_DB,
+      entities: [Follow, User],
+      synchronize: true,
+      logging: false,
+    });
+    try {
+      await dataSource.initialize();
+    } catch (err) {
+      throw new Error(
+        `Không kết nối được MySQL cho test tại ${TEST_DB.host}:${TEST_DB.port}. ` +
+          `Chạy: npm run test:db. Lỗi gốc: ${(err as Error).message}`,
+      );
+    }
+    service = new FollowsService(dataSource.getRepository(Follow));
+  });
+
+  afterAll(async () => {
+    if (dataSource?.isInitialized) await dataSource.destroy();
+  });
+
+  beforeEach(async () => {
+    await dataSource.getRepository(Follow).clear();
+  });
+
+  const taoUser = async (id: number) => {
+    const userRepo = dataSource.getRepository(User);
+    await userRepo.save({
+      id,
+      full_name: `User ${id}`,
+      email: `user${id}@test.local`,
+      password: 'x',
+      role: 'buyer',
+    } as User);
+  };
 
   it('không cho theo dõi chính mình', async () => {
     // Không phải chuyện thẩm mỹ: một dòng tự-theo-dõi làm `countFollowers`
     // đếm thêm một người không có thật, và con số đó hiện trên trang shop.
-    const { repo } = repoGia();
-    const s = new FollowsService(repo);
-
-    await expect(s.toggle(7, 7)).rejects.toThrow(BadRequestException);
+    await taoUser(7);
+    await expect(service.toggle(7, 7)).rejects.toThrow(BadRequestException);
   });
 
   it('bấm lần đầu là theo dõi, lần hai là bỏ theo dõi', async () => {
-    const { repo, kho } = repoGia();
-    const s = new FollowsService(repo);
-
-    const lan1 = await s.toggle(1, 2);
+    await taoUser(1);
+    await taoUser(2);
+    const lan1 = await service.toggle(1, 2);
     expect(lan1.followed).toBe(true);
-    expect(kho()).toHaveLength(1);
 
-    const lan2 = await s.toggle(1, 2);
+    const lan2 = await service.toggle(1, 2);
     expect(lan2.followed).toBe(false);
-    expect(kho()).toHaveLength(0);
 
     // Lần ba phải theo dõi lại được — nếu `remove` xoá nhầm nhiều dòng hoặc
     // `findOne` so sai chiều thì ca này mới lộ.
-    const lan3 = await s.toggle(1, 2);
+    const lan3 = await service.toggle(1, 2);
     expect(lan3.followed).toBe(true);
   });
 
   it('theo dõi có CHIỀU: A theo B không có nghĩa B theo A', async () => {
     // `findOne` so cả hai cột. Đảo nhầm chiều thì bấm theo dõi một người sẽ
     // vô tình bỏ theo dõi người đang theo mình — lỗi im lặng, không ai báo.
-    const { repo } = repoGia();
-    const s = new FollowsService(repo);
+    await taoUser(1);
+    await taoUser(2);
+    await service.toggle(1, 2);
 
-    await s.toggle(1, 2);
-
-    expect(await s.isFollowing(1, 2)).toBe(true);
-    expect(await s.isFollowing(2, 1)).toBe(false);
+    expect(await service.isFollowing(1, 2)).toBe(true);
+    expect(await service.isFollowing(2, 1)).toBe(false);
   });
 
   it('đếm đúng hai chiều', async () => {
-    const { repo } = repoGia();
-    const s = new FollowsService(repo);
+    await taoUser(1);
+    await taoUser(2);
+    await taoUser(10);
+    await taoUser(3);
+    await service.toggle(1, 10);
+    await service.toggle(2, 10);
+    await service.toggle(10, 3);
 
-    await s.toggle(1, 10);
-    await s.toggle(2, 10);
-    await s.toggle(10, 3);
-
-    expect(await s.countFollowers(10)).toBe(2);
-    expect(await s.countFollowings(10)).toBe(1);
+    expect(await service.countFollowers(10)).toBe(2);
+    expect(await service.countFollowings(10)).toBe(1);
   });
 
-  it('GHI NHẬN: hai request song song vẫn tạo được hai dòng trùng', async () => {
-    // Bài kiểm này KHÔNG phải để bắt lỗi — nó chốt lại một giới hạn đã biết,
-    // để người đọc sau không tưởng `toggle` là an toàn với truy cập đồng thời.
-    //
-    // `toggle` đọc rồi mới ghi, không khoá dòng và bảng không có
-    // UNIQUE(follower_id, following_id). Hai request cùng lúc đều thấy "chưa
-    // theo dõi" rồi cùng ghi. Hậu quả nhẹ (số đếm lệch 1, không đụng tiền) nên
-    // chưa đáng sửa gấp — nhưng cách sửa đúng là thêm khoá UNIQUE, KHÔNG phải
-    // thêm kiểm tra trong mã.
-    //
-    // Khi nào thêm khoá đó thì bài kiểm này phải đổi thành "lần ghi thứ hai bị
-    // database từ chối", và nó phải chuyển sang chạy trên MySQL thật.
-    const { repo, kho } = repoGia();
-    const s = new FollowsService(repo);
+  it('hai request song song tạo trùng → database từ chối (khoá UNIQUE)', async () => {
+    // Khoá UNIQUE(follower_id, following_id) đã có trong migration
+    // InitialSchema (line 70). Database phải từ chối lần ghi thứ hai.
+    await taoUser(1);
+    await taoUser(2);
 
-    await Promise.all([s.toggle(1, 2), s.toggle(1, 2)]);
+    // Xoá nếu có để đảm bảo trạng thái sạch
+    await dataSource.getRepository(Follow).delete({ follower_id: 1, following_id: 2 });
 
-    expect(kho()).toHaveLength(2);
+    // Hai request song song cùng tạo follow → một sẽ bị DB từ chối do UNIQUE
+    const results = await Promise.allSettled([
+      service.toggle(1, 2),
+      service.toggle(1, 2),
+    ]);
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(rejected.length).toBe(1);
+    expect(rejected[0].reason).toBeInstanceOf(Error);
   });
 });
