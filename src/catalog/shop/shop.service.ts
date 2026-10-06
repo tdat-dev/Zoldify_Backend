@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -130,8 +131,16 @@ export class ShopService {
     sellerId: number,
     page: number,
     limit: number,
-    status?: string,
+    status: string | undefined,
+    user: IUser, // BẮT BUỘC: guard mặc định mở (fail-open) nếu tuỳ chọn — dữ liệu người khác chảy ra im lặng
   ) {
+    // B5-1: Chặn quyền xem đơn hàng — chỉ chủ shop hoặc admin được xem.
+    // Check ở SERVICE (không ở controller): đảm bảo bất biến an toàn dù gọi từ đâu.
+    // user BẮT BUỘC phải truyền vào — không cho phép undefined.
+    if (user.role !== 'admin' && user.id !== sellerId) {
+      throw new ForbiddenException('Bạn không có quyền xem đơn hàng này');
+    }
+
     const where: any = { product: { seller: { id: sellerId } } };
     if (status) {
       where.order = { status };
