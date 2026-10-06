@@ -266,12 +266,15 @@ export class LedgerService {
    * Khoá các tài khoản theo thứ tự id tăng dần.
    * Thứ tự cố định là thứ ngăn deadlock khi hai giao dịch đụng cùng một
    * cặp tài khoản theo chiều ngược nhau.
+   *
+   * TypeORM trả BIGINT id về dạng chuỗi. Dùng chuỗi làm khóa Map để khớp
+   * với entry.accountId (cũng là chuỗi từ entity).
    */
   private async lockAccounts(
     em: EntityManager,
-    accountIds: number[],
-  ): Promise<Map<number, LedgerAccount>> {
-    const sorted = [...new Set(accountIds)].sort((a, b) => a - b);
+    accountIds: (string | number)[],
+  ): Promise<Map<string, LedgerAccount>> {
+    const sorted = [...new Set(accountIds.map(String))].sort((a, b) => Number(a) - Number(b));
 
     const accounts = await em
       .createQueryBuilder(LedgerAccount, 'account')
@@ -280,7 +283,7 @@ export class LedgerService {
       .orderBy('account.id', 'ASC')
       .getMany();
 
-    return new Map(accounts.map((a) => [Number(a.id), a]));
+    return new Map(accounts.map((a) => [String(a.id), a]));
   }
 
   private isDuplicateKey(err: unknown): boolean {
