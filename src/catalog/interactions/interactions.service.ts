@@ -14,6 +14,23 @@ import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 
+/**
+ * Đánh giá trả ra ngoài chỉ kèm id, tên, ảnh của người viết.
+ *
+ * Cả ba route đọc đánh giá (GET /interactions/product/:id là @Public, GET
+ * /interactions và /interactions/:id chỉ cần đăng nhập) từng trả nguyên User:
+ * ai cũng gom được email và số điện thoại của mọi người từng đánh giá (tìm ra
+ * khi soát lỗi H-01 và review 06/10). Một hàm cho cả ba để route sau này thêm
+ * vào không quên lọc.
+ */
+function withPublicUser<T extends { user?: User | null }>(review: T) {
+  const u = review.user;
+  return {
+    ...review,
+    user: u ? { id: u.id, full_name: u.full_name, avatar: u.avatar } : null,
+  };
+}
+
 @Injectable()
 export class InteractionsService {
   constructor(
@@ -157,19 +174,7 @@ export class InteractionsService {
         total: totalItems,
         average_rating: avg ? Number(Number(avg).toFixed(1)) : 0,
       },
-      // Route này @Public: chỉ trả tên và ảnh người đánh giá. Trước đây trả
-      // nguyên User, ai không đăng nhập cũng đọc được email và số điện thoại
-      // của mọi người đã đánh giá (tìm ra khi soát lỗi H-01, 06/10).
-      result: result.map((r) => ({
-        ...r,
-        user: r.user
-          ? {
-              id: r.user.id,
-              full_name: r.user.full_name,
-              avatar: r.user.avatar,
-            }
-          : null,
-      })),
+      result: result.map((r) => withPublicUser(r)),
     };
   }
 
@@ -206,7 +211,7 @@ export class InteractionsService {
         pages: totalPages,
         total: totalItems,
       },
-      result,
+      result: result.map((r) => withPublicUser(r)),
     };
   }
   async findOne(id: number) {
@@ -219,7 +224,7 @@ export class InteractionsService {
       throw new NotFoundException(`Không tìm thấy đánh giá với ID ${id}`);
     }
 
-    return review;
+    return withPublicUser(review);
   }
 
   async update(id: number, UpdateReviewDto: UpdateReviewDto, user: IUser) {
