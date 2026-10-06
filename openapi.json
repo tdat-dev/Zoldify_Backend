@@ -5177,7 +5177,7 @@
                       "type": "string"
                     },
                     "data": {
-                      "$ref": "#/components/schemas/Review"
+                      "type": "object"
                     }
                   },
                   "required": [
