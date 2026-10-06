@@ -7425,15 +7425,6 @@
           },
           "phone_number": {
             "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "buyer",
-              "seller",
-              "admin",
-              "moderator"
-            ]
           }
         },
         "required": [
