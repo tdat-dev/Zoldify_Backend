@@ -55,9 +55,21 @@ export class RegisterUserDto {
   @IsString({ message: 'Số điện thoại không hợp lệ' })
   phone_number?: string;
 
-  @IsOptional({ message: 'Vai trò không được để trống' })
-  @IsEnum(UserRole, { message: 'Vai trò không hợp lệ' })
-  role?: UserRole;
+  // KHÔNG có `role` ở đây, và đó là chủ ý.
+  //
+  // Trước 06/10 lớp này có `@IsOptional() @IsEnum(UserRole) role?: UserRole`.
+  // Route `POST /auth/register` là `@Public()`, nên bất kỳ ai gửi
+  // `{"role":"admin"}` là tạo thẳng một tài khoản quản trị.
+  //
+  // `ValidationPipe` dùng `whitelist: true` KHÔNG cứu được: whitelist chỉ loại
+  // trường không có decorator. `role` có decorator nên nó được giữ nguyên rồi
+  // đi tiếp xuống `UsersService.register`.
+  //
+  // Muốn đổi vai trò thì đi đường riêng có kiểm quyền:
+  // `PATCH /admin/users/:id/role` (AdminGuard + ChangeRoleDto).
+  //
+  // `UsersService.register` còn gán cứng BUYER một lần nữa — hai lớp, vì một
+  // lớp thì lớp kia hỏng là hở. `register-role.spec.ts` gác cả hai.
 }
 
 export class LoginUserDto {

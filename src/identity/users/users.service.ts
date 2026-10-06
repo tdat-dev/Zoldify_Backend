@@ -7,7 +7,7 @@ import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { User, UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { compareSync, genSaltSync, hashSync } from 'bcrypt';
 
@@ -85,7 +85,7 @@ export class UsersService {
   }
 
   async register(registerUserDto: RegisterUserDto) {
-    const { full_name, email, password, phone_number, role } = registerUserDto;
+    const { full_name, email, password, phone_number } = registerUserDto;
     const existingUser = await this.userRepository.findOne({
       where: { email },
     });
@@ -98,7 +98,11 @@ export class UsersService {
       email,
       password: hashPassword,
       phone_number,
-      role,
+      // Gán cứng, KHÔNG đọc từ tham số. Đây là lớp chặn thứ hai: DTO đã bỏ
+      // `role`, nhưng hàm này còn được gọi từ `verifyRegisterOtp`, và có thể
+      // từ script hay controller thêm vào sau. Một chỗ gọi quên là một tài
+      // khoản admin.
+      role: UserRole.BUYER,
     });
     return await this.userRepository.save(newUser);
   }
