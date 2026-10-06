@@ -7,9 +7,13 @@ import { Order } from '@ordering/orders/entities/order.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
 import { Withdrawal } from '@money/withdrawals/entities/withdrawal.entity';
+import { LedgerAccount } from '@money/ledger/entities/ledger-account.entity';
+import { LedgerEntry } from '@money/ledger/entities/ledger-entry.entity';
+import { LedgerTransaction } from '@money/ledger/entities/ledger-transaction.entity';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
 import { AdminActionLog } from './entities/admin-action-log.entity';
 import { AdminAuditService } from './admin-audit.service';
+import { LedgerDoiSoatService } from './ledger-doi-soat.service';
 
 @Module({
   imports: [
@@ -20,10 +24,13 @@ import { AdminAuditService } from './admin-audit.service';
       Setting,
       Withdrawal,
       AdminActionLog,
+      LedgerAccount,
+      LedgerEntry,
+      LedgerTransaction,
     ]),
     WithdrawalsModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, AdminAuditService],
+  providers: [AdminService, AdminAuditService, LedgerDoiSoatService],
 })
 export class AdminModule {}

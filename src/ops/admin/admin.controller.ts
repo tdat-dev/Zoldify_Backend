@@ -19,6 +19,7 @@ import { Withdrawal } from '@money/withdrawals/entities/withdrawal.entity';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
 import { AdminActionLog } from './entities/admin-action-log.entity';
 import { AdminAuditService } from './admin-audit.service';
+import { LedgerDoiSoatService } from './ledger-doi-soat.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 import { ChangeRoleDto } from './dto/change-role.dto';
 
@@ -28,6 +29,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly adminAuditService: AdminAuditService,
+    private readonly ledgerDoiSoatService: LedgerDoiSoatService,
   ) {}
 
   @ApiPaginated(UserEntity)
@@ -111,6 +113,22 @@ export class AdminController {
       target_type: targetType,
       target_id: targetId,
     });
+  }
+
+  /**
+   * Trang đối soát sổ cái (task #35).
+   *
+   * Kiểm tra hai bất biến tiền của sổ cái:
+   *  1. SUM(amount) của TOÀN BỘ ledger_entries = 0
+   *  2. Với MỖI tài khoản: ledger_accounts.balance = SUM(ledger_entries.amount)
+   *
+   * Chỉ có ĐỌC. `GET` nên KHÔNG tự ghi vào nhật ký admin — đúng như getAuditLogs.
+   * Xem comment ở getAuditLogs để hiểu lý do.
+   */
+  @Get('ledger/doi-soat')
+  @ResponseMessage('Đối soát sổ cái thành công')
+  async doiSoatLedger() {
+    return this.ledgerDoiSoatService.doiSoat();
   }
 
   @Get('settings')

@@ -187,7 +187,7 @@ export class LedgerService {
     );
 
     for (const entry of input.entries) {
-      const account = accounts.get(entry.accountId);
+      const account = accounts.get(String(entry.accountId));
       if (!account) {
         throw new BadRequestException(
           `Không tìm thấy tài khoản sổ cái id=${entry.accountId}`,

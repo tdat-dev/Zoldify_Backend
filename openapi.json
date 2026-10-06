@@ -6475,6 +6475,42 @@
         ]
       }
     },
+    "/api/v1/admin/ledger/doi-soat": {
+      "get": {
+        "operationId": "AdminController_doiSoatLedger_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Trang đối soát sổ cái (task #35).\n\nKiểm tra hai bất biến tiền của sổ cái:\n 1. SUM(amount) của TOÀN BỘ ledger_entries = 0\n 2. Với MỖI tài khoản: ledger_accounts.balance = SUM(ledger_entries.amount)\n\nChỉ có ĐỌC. `GET` nên KHÔNG tự ghi vào nhật ký admin — đúng như getAuditLogs.\nXem comment ở getAuditLogs để hiểu lý do.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api/v1/admin/settings": {
       "get": {
         "operationId": "AdminController_getSettings_v1",
