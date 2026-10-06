@@ -72,7 +72,9 @@ export class ProductsService {
     const redisUrl = process.env.REDIS_URL;
     if (!redisUrl) {
       // Fail-open: không có Redis thì bỏ đếm view_count, tuyệt đối không chặn boot
-      console.warn('[ProductsService] REDIS_URL không có — bỏ qua đếm view_count');
+      console.warn(
+        '[ProductsService] REDIS_URL không có — bỏ qua đếm view_count',
+      );
       return;
     }
     this.redis = new Redis(redisUrl, {

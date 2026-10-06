@@ -21,4 +21,4 @@ import { EscrowsModule } from '@money/escrows/escrows.module';
   controllers: [PaymentsController],
   providers: [PaymentsService],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}

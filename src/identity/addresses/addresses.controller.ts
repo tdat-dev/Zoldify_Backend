@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto, UpdateAddressDto } from './dto/create-address.dto';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
@@ -33,7 +42,11 @@ export class AddressesController {
 
   @Patch(':id')
   @ResponseMessage('Cập nhật địa chỉ thành công')
-  update(@Param('id') id: string, @Body() dto: UpdateAddressDto, @User() user: IUser) {
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAddressDto,
+    @User() user: IUser,
+  ) {
     return this.addressesService.update(+id, dto, user);
   }
 

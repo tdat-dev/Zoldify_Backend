@@ -11,4 +11,4 @@ import { User } from '@identity/users/entities/user.entity';
   providers: [NotificationsService],
   exports: [NotificationsService],
 })
-export class NotificationsModule { }
+export class NotificationsModule {}

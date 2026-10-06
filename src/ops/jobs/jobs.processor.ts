@@ -1,4 +1,8 @@
-import { JOB_CHOT_VAN_DON, JOB_HUY_DON_QUA_HAN } from './jobs.constants';
+import {
+  JOB_CHOT_VAN_DON,
+  JOB_HUY_DON_QUA_HAN,
+  JOB_FLUSH_VIEW_COUNT,
+} from './jobs.constants';
 
 /**
  * Phần của `TasksService` mà bộ xử lý thật sự cần.
@@ -10,6 +14,7 @@ import { JOB_CHOT_VAN_DON, JOB_HUY_DON_QUA_HAN } from './jobs.constants';
 export interface CongViecNen {
   autoCancelOrders(): Promise<unknown>;
   settleDeliveredShipments(): Promise<unknown>;
+  flushViewCount(): Promise<unknown>;
 }
 
 /**
@@ -32,6 +37,9 @@ export function taoBoXuLy(tasks: CongViecNen) {
         return;
       case JOB_CHOT_VAN_DON:
         await tasks.settleDeliveredShipments();
+        return;
+      case JOB_FLUSH_VIEW_COUNT:
+        await tasks.flushViewCount();
         return;
       default:
         throw new Error(

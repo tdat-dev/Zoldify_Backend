@@ -11,4 +11,4 @@ import { User } from './entities/user.entity';
   providers: [UsersService],
   exports: [UsersService], // Export để các module khác (auth...) dùng được
 })
-export class UsersModule { }
+export class UsersModule {}

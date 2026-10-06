@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
@@ -7,14 +18,14 @@ import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { Payment } from './entities/payment.entity';
-import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
+import {
+  ApiPaginated,
+  ApiShape,
+} from '@common/decorators/api-response.decorator';
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(
-    private readonly paymentsService: PaymentsService
-  ) {}
-
+  constructor(private readonly paymentsService: PaymentsService) {}
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xử lý thanh toán thành công')
@@ -54,7 +65,11 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật giao dịch thành công')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updatePaymentDto: UpdatePaymentDto, @User() user: IUser) {
+  update(
+    @Param('id') id: string,
+    @Body() updatePaymentDto: UpdatePaymentDto,
+    @User() user: IUser,
+  ) {
     return this.paymentsService.update(+id, updatePaymentDto, user);
   }
 
@@ -65,4 +80,3 @@ export class PaymentsController {
     return this.paymentsService.remove(+id, user);
   }
 }
-

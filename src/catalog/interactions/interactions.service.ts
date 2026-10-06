@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { User } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -14,16 +18,20 @@ import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 export class InteractionsService {
   constructor(
     @InjectRepository(User) private readonly userRepository: Repository<User>,
-    @InjectRepository(Product) private readonly productRepository: Repository<Product>,
-    @InjectRepository(Review) private readonly reviewRepository: Repository<Review>,
-    @InjectRepository(Order) private readonly orderRepository: Repository<Order>,
-
-  ) { }
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
+    @InjectRepository(Review)
+    private readonly reviewRepository: Repository<Review>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
+  ) {}
 
   async create(createInteractionDto: CreateReviewDto, user: IUser) {
-
-    const { product_id, order_id, rating, comment, images } = createInteractionDto;
-    const product = await this.productRepository.findOne({ where: { id: product_id } });
+    const { product_id, order_id, rating, comment, images } =
+      createInteractionDto;
+    const product = await this.productRepository.findOne({
+      where: { id: product_id },
+    });
 
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
@@ -37,11 +45,13 @@ export class InteractionsService {
       .andWhere('item.product_id = :productId', { productId: product_id })
       .getOne();
     if (!hasPurchased) {
-      throw new BadRequestException('Bạn chưa mua sản phẩm này hoặc đơn hàng chưa giao');
+      throw new BadRequestException(
+        'Bạn chưa mua sản phẩm này hoặc đơn hàng chưa giao',
+      );
     }
 
     const existing = await this.reviewRepository.findOne({
-      where: { user: { id: user.id }, product: { id: product_id } }
+      where: { user: { id: user.id }, product: { id: product_id } },
     });
     if (existing) {
       throw new BadRequestException('Bạn đã đánh giá sản phẩm này rồi');
@@ -124,7 +134,7 @@ export class InteractionsService {
   async findOne(id: number) {
     const review = await this.reviewRepository.findOne({
       where: { id },
-      relations: ['user', 'product']
+      relations: ['user', 'product'],
     });
 
     if (!review) {
@@ -137,7 +147,7 @@ export class InteractionsService {
   async update(id: number, UpdateReviewDto: UpdateReviewDto, user: IUser) {
     const review = await this.reviewRepository.findOne({
       where: { id },
-      relations: ['user']
+      relations: ['user'],
     });
 
     if (!review) {
@@ -165,9 +175,12 @@ export class InteractionsService {
   }
 
   async remove(id: number, user: IUser) {
-    const review = await this.reviewRepository.findOne({ where: { id }, relations: ['user'] })
+    const review = await this.reviewRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
     if (!review) {
-      throw new NotFoundException(`Không tìm thấy đánh giá! `)
+      throw new NotFoundException(`Không tìm thấy đánh giá! `);
     }
     if (review.user.id !== user.id && user.role !== 'admin') {
       throw new BadRequestException('Bạn không có quyền xóa đánh giá này');

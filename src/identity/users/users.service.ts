@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -12,11 +16,11 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) { }
+  ) {}
 
   hashPassword(password: string) {
     const salt = genSaltSync(10);
-    const hash = hashSync(password, salt)
+    const hash = hashSync(password, salt);
     return hash;
   }
 
@@ -50,14 +54,14 @@ export class UsersService {
         pages: totalPages,
         total: totalItems,
       },
-      result
+      result,
     };
   }
 
   async findOne(id: number) {
-    const foundUser = await this.userRepository.findOne({ where: { id } })
+    const foundUser = await this.userRepository.findOne({ where: { id } });
     if (!foundUser) {
-      throw new NotFoundException("Tài khoản không tồn tại")
+      throw new NotFoundException('Tài khoản không tồn tại');
     }
     return foundUser;
   }
@@ -72,9 +76,9 @@ export class UsersService {
   }
 
   async remove(id: number) {
-    const foundUser = await this.userRepository.findOne({ where: { id } })
+    const foundUser = await this.userRepository.findOne({ where: { id } });
     if (!foundUser) {
-      throw new NotFoundException("Không tìm thấy tài khoản!");
+      throw new NotFoundException('Không tìm thấy tài khoản!');
     }
     await this.userRepository.softDelete({ id });
     return { message: 'Xóa tài khoản thành công' };
@@ -82,11 +86,13 @@ export class UsersService {
 
   async register(registerUserDto: RegisterUserDto) {
     const { full_name, email, password, phone_number, role } = registerUserDto;
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
     if (existingUser) {
-      throw new BadRequestException("Tài khoản đã tồn tại!");
+      throw new BadRequestException('Tài khoản đã tồn tại!');
     }
-    const hashPassword = this.hashPassword(password)
+    const hashPassword = this.hashPassword(password);
     const newUser = this.userRepository.create({
       full_name,
       email,
@@ -100,7 +106,14 @@ export class UsersService {
   async findOneByEmail(email: string) {
     const query = this.userRepository.createQueryBuilder('user');
     query.where('user.email = :email', { email });
-    query.select(['user.id', 'user.full_name', 'user.email', 'user.password', 'user.phone_number', 'user.role']);
+    query.select([
+      'user.id',
+      'user.full_name',
+      'user.email',
+      'user.password',
+      'user.phone_number',
+      'user.role',
+    ]);
     return await query.getOne();
   }
 
@@ -110,7 +123,7 @@ export class UsersService {
 
   async updateUserToken(refreshToken: string, id: string) {
     return await this.userRepository.update(+id, {
-      refresh_token: refreshToken
+      refresh_token: refreshToken,
     });
   }
 }

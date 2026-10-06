@@ -149,13 +149,13 @@ export class TasksService {
   }
 
   /**
- * Flush view_count tu Redis ve MySQL.
- *
- * Chay moi 5 phut (pattern: mot nguoc 5 * * * *). Redis key: `view_count:{productId}`.
- * Dung SCAN de lay tat ca key `view_count:*`, doc gia tri, cong vao MySQL,
- * roi xoa key trong Redis. Dung pipeline de toi uu.
- * on('error') chỉ bắt sự kiện kết nối — lệnh SCAN/GET/DEL bị reject phải try/catch.
- */
+   * Flush view_count tu Redis ve MySQL.
+   *
+   * Chay moi 5 phut (pattern: mot nguoc 5 * * * *). Redis key: `view_count:{productId}`.
+   * Dung SCAN de lay tat ca key `view_count:*`, doc gia tri, cong vao MySQL,
+   * roi xoa key trong Redis. Dung pipeline de toi uu.
+   * on('error') chỉ bắt sự kiện kết nối — lệnh SCAN/GET/DEL bị reject phải try/catch.
+   */
   async flushViewCount() {
     if (!this.redis) return;
 
@@ -188,7 +188,9 @@ export class TasksService {
       }
       results = (await pipeline.exec()) ?? [];
     } catch (err) {
-      this.logger.error(`flushViewCount GET pipeline lỗi: ${(err as Error).message}`);
+      this.logger.error(
+        `flushViewCount GET pipeline lỗi: ${(err as Error).message}`,
+      );
       return;
     }
 
@@ -200,7 +202,8 @@ export class TasksService {
       if (count) {
         const productId = parseInt(key.replace('view_count:', ''), 10);
         if (!isNaN(productId)) {
-          updates[productId] = (updates[productId] || 0) + parseInt(String(count), 10);
+          updates[productId] =
+            (updates[productId] || 0) + parseInt(String(count), 10);
         }
       }
     }
@@ -210,9 +213,15 @@ export class TasksService {
       const productId = parseInt(productIdStr, 10);
       if (!isNaN(productId)) {
         try {
-          await this.productRepository.increment({ id: productId }, 'view_count', count);
+          await this.productRepository.increment(
+            { id: productId },
+            'view_count',
+            count,
+          );
         } catch (err) {
-          this.logger.error(`flushViewCount increment product ${productId} lỗi: ${(err as Error).message}`);
+          this.logger.error(
+            `flushViewCount increment product ${productId} lỗi: ${(err as Error).message}`,
+          );
         }
       }
     }
@@ -226,10 +235,14 @@ export class TasksService {
         }
         await delPipeline.exec();
       } catch (err) {
-        this.logger.error(`flushViewCount DEL pipeline lỗi: ${(err as Error).message}`);
+        this.logger.error(
+          `flushViewCount DEL pipeline lỗi: ${(err as Error).message}`,
+        );
       }
     }
 
-    this.logger.log(`Flush view_count: cap nhat ${Object.keys(updates).length} san pham.`);
+    this.logger.log(
+      `Flush view_count: cap nhat ${Object.keys(updates).length} san pham.`,
+    );
   }
 }

@@ -124,7 +124,9 @@ describe('FollowsService', () => {
     await taoUser(2);
 
     // Xoá nếu có để đảm bảo trạng thái sạch
-    await dataSource.getRepository(Follow).delete({ follower_id: 1, following_id: 2 });
+    await dataSource
+      .getRepository(Follow)
+      .delete({ follower_id: 1, following_id: 2 });
 
     // Hai request song song cùng tạo follow → một sẽ bị DB từ chối do UNIQUE
     const results = await Promise.allSettled([

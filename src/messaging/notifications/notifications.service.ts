@@ -8,7 +8,6 @@ import { IUser } from '@identity/users/users.interface';
 
 @Injectable()
 export class NotificationsService {
-
   constructor(
     @InjectRepository(Notification)
     private readonly notiRepository: Repository<Notification>,

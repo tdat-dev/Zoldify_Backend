@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ShopService } from './shop.service';
 import { CreateShopDto } from './dto/create-shop.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
@@ -51,11 +61,15 @@ export class ShopController {
     @Query('page') page: string,
     @Query('limit') limit: string,
   ) {
-    return this.shopService.getShopProducts(+sellerId, +page || 1, +limit || 20);
+    return this.shopService.getShopProducts(
+      +sellerId,
+      +page || 1,
+      +limit || 20,
+    );
   }
-
   @UseGuards(JwtAuthGuard)
-  @ResponseMessage('Lấy đơn hàng của shop thành công')  @Get(':sellerId/orders')
+  @ResponseMessage('Lấy đơn hàng của shop thành công')
+  @Get(':sellerId/orders')
   getSellerOrders(
     @Param('sellerId') sellerId: string,
     @Query('page') page: string,
@@ -63,10 +77,12 @@ export class ShopController {
     @Query('status') status: string,
     @User() user: IUser,
   ) {
-    
-    if (+sellerId !== user.id && user.role !== 'admin') {
-      throw new Error('Bạn không có quyền xem đơn hàng này');
-    }
-    return this.shopService.getSellerOrders(+sellerId, +page || 1, +limit || 20, status);
+    return this.shopService.getSellerOrders(
+      +sellerId,
+      +page || 1,
+      +limit || 20,
+      status,
+      user,
+    );
   }
 }

@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
@@ -7,7 +17,10 @@ import { SkipCheckPermissions } from '@common/decorators/public.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { Notification } from './entities/notification.entity';
-import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
+import {
+  ApiPaginated,
+  ApiShape,
+} from '@common/decorators/api-response.decorator';
 
 @SkipCheckPermissions()
 @Controller('notifications')

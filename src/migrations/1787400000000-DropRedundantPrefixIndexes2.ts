@@ -24,9 +24,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * `.catch(()=>{})` cho idempotent — chạy lại trên database đã dọn thì không sao.
  */
-export class DropRedundantPrefixIndexes21787400000000
-  implements MigrationInterface
-{
+export class DropRedundantPrefixIndexes21787400000000 implements MigrationInterface {
   name = 'DropRedundantPrefixIndexes21787400000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -43,9 +41,7 @@ export class DropRedundantPrefixIndexes21787400000000
       .query(`CREATE INDEX idx_seller_id ON products (seller_id)`)
       .catch(() => {});
     await queryRunner
-      .query(
-        `CREATE INDEX idx_shipment_order ON order_shipments (order_id)`,
-      )
+      .query(`CREATE INDEX idx_shipment_order ON order_shipments (order_id)`)
       .catch(() => {});
   }
 }

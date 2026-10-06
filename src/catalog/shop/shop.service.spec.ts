@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@identity/users/entities/user.entity';
@@ -183,9 +187,9 @@ describe('ShopService', () => {
     const { service } = dungService({});
     const nguoiLa = { id: 999, role: 'seller' } as IUser;
 
-    await expect(service.getSellerOrders(7, 1, 20, undefined, nguoiLa)).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      service.getSellerOrders(7, 1, 20, undefined, nguoiLa),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('chủ shop được xem đơn hàng của mình', async () => {

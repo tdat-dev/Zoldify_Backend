@@ -29,9 +29,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *   FROM orders o JOIN escrows e ON e.order_id = o.id
  *   WHERE o.shipping_fee > 0 AND e.shipping_amount = 0;
  */
-export class AddEscrowShippingAmount1787500000000
-  implements MigrationInterface
-{
+export class AddEscrowShippingAmount1787500000000 implements MigrationInterface {
   name = 'AddEscrowShippingAmount1787500000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

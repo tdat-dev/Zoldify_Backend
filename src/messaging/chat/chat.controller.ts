@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -17,7 +27,10 @@ export class ChatController {
 
   @ResponseMessage('Tạo cuộc trò chuyện thành công')
   @Post('conversations')
-  createConversation(@Body() createConversationDto: CreateConversationDto, @User() user: IUser) {
+  createConversation(
+    @Body() createConversationDto: CreateConversationDto,
+    @User() user: IUser,
+  ) {
     return this.chatService.createConversation(createConversationDto, user);
   }
 

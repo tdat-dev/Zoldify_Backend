@@ -112,7 +112,13 @@ export class AdminService {
     // M-01: Chặn ghi các cột nhạy cảm — DTO chỉ là type hint, validation pipe ở
     // controller mới lọc, nhưng service có thể được gọi trực tiếp (test, script).
     // Danh sách cột CẤM: password, role, token_version, is_locked, refresh_token.
-    const cam = ['password', 'role', 'token_version', 'is_locked', 'refresh_token'] as const;
+    const cam = [
+      'password',
+      'role',
+      'token_version',
+      'is_locked',
+      'refresh_token',
+    ] as const;
     for (const k of cam) {
       if (k in dto) throw new BadRequestException(`Không được sửa cột ${k}`);
     }

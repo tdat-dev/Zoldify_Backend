@@ -11,13 +11,16 @@ export class FilesService {
     private readonly fileRepository: Repository<FileEntity>,
   ) {}
 
-  async create(fileData: {
-    file_name: string;
-    url: string;
-    mime_type: string;
-    size: number;
-    folder: string;
-  }, user: IUser) {
+  async create(
+    fileData: {
+      file_name: string;
+      url: string;
+      mime_type: string;
+      size: number;
+      folder: string;
+    },
+    user: IUser,
+  ) {
     const file = this.fileRepository.create({
       ...fileData,
       uploaded_by: { id: user.id },
@@ -37,13 +40,21 @@ export class FilesService {
     });
 
     return {
-      meta: { current: page, pageSize: limit, pages: Math.ceil(total / limit), total },
+      meta: {
+        current: page,
+        pageSize: limit,
+        pages: Math.ceil(total / limit),
+        total,
+      },
       result,
     };
   }
 
   async findOne(id: number) {
-    return this.fileRepository.findOne({ where: { id }, relations: ['uploaded_by'] });
+    return this.fileRepository.findOne({
+      where: { id },
+      relations: ['uploaded_by'],
+    });
   }
 
   async remove(id: number) {

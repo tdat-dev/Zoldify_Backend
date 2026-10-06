@@ -59,15 +59,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly notificationsService: NotificationsService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) { }
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.auth?.token || client.handshake.query?.token as string;
-      if (!token) { client.disconnect(); return; }
+      const token =
+        client.handshake.auth?.token ||
+        (client.handshake.query?.token as string);
+      if (!token) {
+        client.disconnect();
+        return;
+      }
       const payload = this.jwtService.verify(token);
       const userId = payload.sub;
-      client.data.user = { id: userId, email: payload.email, full_name: payload.full_name, role: payload.role };
+      client.data.user = {
+        id: userId,
+        email: payload.email,
+        full_name: payload.full_name,
+        role: payload.role,
+      };
 
       // Cập nhật last_seen cho user khi vừa kết nối socket
       const now = new Date();
@@ -77,7 +87,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // và mọi câu hỏi "ai đang online" đều đi qua userIdsDangOnline().
 
       // Broadcast tới tất cả client rằng user này vừa online
-      this.server.emit('user_presence', { user_id: userId, online: true, last_seen: now });
+      this.server.emit('user_presence', {
+        user_id: userId,
+        online: true,
+        last_seen: now,
+      });
     } catch {
       client.disconnect();
     }
@@ -106,12 +120,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const now = new Date();
       await this.userRepository.update(userId, { last_seen: now });
       // Broadcast offline
-      this.server.emit('user_presence', { user_id: userId, online: false, last_seen: now });
+      this.server.emit('user_presence', {
+        user_id: userId,
+        online: false,
+        last_seen: now,
+      });
     }
   }
 
   @SubscribeMessage('join_conversation')
-  handleJoinConversation(@ConnectedSocket() client: Socket, @MessageBody() conversationId: number) {
+  handleJoinConversation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() conversationId: number,
+  ) {
     client.join(`conv_${conversationId}`);
   }
 
@@ -123,32 +144,53 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('leave_conversation')
-  handleLeaveConversation(@ConnectedSocket() client: Socket, @MessageBody() conversationId: number) {
+  handleLeaveConversation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() conversationId: number,
+  ) {
     client.leave(`conv_${conversationId}`);
   }
 
   @SubscribeMessage('send_message')
-  async handleMessage(@ConnectedSocket() client: Socket, @MessageBody() payload: { conversationId: number; content: string; images?: string[] }) {
+  async handleMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    payload: { conversationId: number; content: string; images?: string[] },
+  ) {
     const user = client.data.user;
     if (!user) return;
     try {
-      const message = await this.chatService.sendMessage(payload.conversationId, { content: payload.content, images: payload.images || [] }, user);
+      const message = await this.chatService.sendMessage(
+        payload.conversationId,
+        { content: payload.content, images: payload.images || [] },
+        user,
+      );
 
       // Cập nhật last_seen (heartbeat khi gửi tin)
       await this.userRepository.update(user.id, { last_seen: new Date() });
-      this.server.to(`conv_${payload.conversationId}`).emit('receive_message', message);
+      this.server
+        .to(`conv_${payload.conversationId}`)
+        .emit('receive_message', message);
 
       // Tạo notification cho người nhận
-      const conversation = await this.chatService.getConversationById(payload.conversationId);
+      const conversation = await this.chatService.getConversationById(
+        payload.conversationId,
+      );
       if (conversation) {
-        const recipientId = conversation.buyer?.id === user.id ? conversation.seller?.id : conversation.buyer?.id;
+        const recipientId =
+          conversation.buyer?.id === user.id
+            ? conversation.seller?.id
+            : conversation.buyer?.id;
         if (recipientId) {
           await this.notificationsService.create({
             user_id: recipientId,
             type: 'message' as any,
             title: 'Tin nhắn mới',
             content: `${user.full_name}: ${payload.content}`,
-            data: { conversation_id: payload.conversationId, sender_id: user.id },
+            data: {
+              conversation_id: payload.conversationId,
+              sender_id: user.id,
+            },
           });
         }
       }

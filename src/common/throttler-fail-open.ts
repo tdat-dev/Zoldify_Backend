@@ -52,7 +52,10 @@ export class ThrottlerStorageFailOpen implements ThrottlerStorage {
       );
     } catch (e) {
       const gio = Date.now();
-      if (gio - this.lanCanhBaoCuoi > ThrottlerStorageFailOpen.KHOANG_CANH_BAO_MS) {
+      if (
+        gio - this.lanCanhBaoCuoi >
+        ThrottlerStorageFailOpen.KHOANG_CANH_BAO_MS
+      ) {
         this.lanCanhBaoCuoi = gio;
         console.warn(
           `[throttler] Redis không dùng được (${(e as Error).message}) — CHO REQUEST ĐI QUA, ` +

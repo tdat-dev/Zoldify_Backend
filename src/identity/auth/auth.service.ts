@@ -272,10 +272,13 @@ export class AuthService {
     let payload: any;
     try {
       payload = this.jwtService.verify(refreshToken, {
-        secret: this.configService.get<string>('JWT_REFRESH_TOKEN_SECRET') || '',
+        secret:
+          this.configService.get<string>('JWT_REFRESH_TOKEN_SECRET') || '',
       });
     } catch {
-      throw new BadRequestException('Refresh token không hợp lệ hoặc đã hết hạn');
+      throw new BadRequestException(
+        'Refresh token không hợp lệ hoặc đã hết hạn',
+      );
     }
 
     const user = await this.userRepository.findOne({
@@ -287,7 +290,9 @@ export class AuthService {
 
     // Check token_version to prevent reuse after logout
     if (user.token_version !== payload.token_version) {
-      throw new BadRequestException('Refresh token đã bị thu hồi (đã đăng xuất)');
+      throw new BadRequestException(
+        'Refresh token đã bị thu hồi (đã đăng xuất)',
+      );
     }
 
     // Create new tokens
@@ -300,7 +305,10 @@ export class AuthService {
     };
 
     const newRefreshToken = this.createRefreshToken(newPayload);
-    await this.usersService.updateUserToken(newRefreshToken, user.id.toString());
+    await this.usersService.updateUserToken(
+      newRefreshToken,
+      user.id.toString(),
+    );
 
     return {
       access_token: this.jwtService.sign({

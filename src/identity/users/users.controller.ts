@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -14,7 +23,7 @@ import { ApiPaginated } from '@common/decorators/api-response.decorator';
 @Controller('users')
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @Post()
   @ResponseMessage('Thêm tài khoản thành công!')
@@ -30,11 +39,11 @@ export class UsersController {
   @Get()
   @ResponseMessage('Lấy danh sách tài khoản thành công!')
   findAll(
-    @Query("current") currentPage: string,
-    @Query("pageSize") limit: string,
-    @Query("q") qs: string
+    @Query('current') currentPage: string,
+    @Query('pageSize') limit: string,
+    @Query('q') qs: string,
   ) {
-    return this.usersService.findAll(currentPage, limit, qs)
+    return this.usersService.findAll(currentPage, limit, qs);
   }
 
   @Get(':id')
@@ -54,6 +63,4 @@ export class UsersController {
   remove(@Param('id') id: string) {
     return this.usersService.remove(+id);
   }
-
-  
 }

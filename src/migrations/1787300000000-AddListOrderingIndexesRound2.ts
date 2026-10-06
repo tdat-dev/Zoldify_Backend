@@ -19,9 +19,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * `.catch(()=>{})` cho idempotent, đồng bộ phong cách hai migration index trước.
  */
-export class AddListOrderingIndexesRound21787300000000
-  implements MigrationInterface
-{
+export class AddListOrderingIndexesRound21787300000000 implements MigrationInterface {
   name = 'AddListOrderingIndexesRound21787300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

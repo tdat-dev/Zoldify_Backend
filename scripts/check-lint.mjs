@@ -24,13 +24,13 @@
 import { ESLint } from 'eslint';
 
 // Đo ngày 2026-09-29, Node 24, trên staging SAU KHI gộp bốn nhánh:
-// fix/luong-mua-ban (916) · task-6 (964) · task-34 (965) · khôi-phục-sơ-đồ.
-//
-// Số dưới đây KHÔNG phải số nhỏ nhất trong bốn nhánh, mà là số ĐO LẠI trên
-// cây đã gộp. Bốn nhánh dọn bốn phần nợ khác nhau, nên gộp xong con số thật
-// không bằng bất kỳ nhánh nào — chọn bừa một trong bốn là dựng một cái mốc
-// chưa ai đo, và nó sẽ đỏ hoặc lỏng ngay lần chạy sau.
-const BASELINE = 910;
+ // fix/luong-mua-ban (916) · task-6 (964) · task-34 (965) · khôi-phục-sơ-đồ.
+ //
+ // Số dưới đây KHÔNG phải số nhỏ nhất trong bốn nhánh, mà là số ĐO LẠI trên
+ // cây đã gộp. Bốn nhánh dọn bốn phần nợ khác nhau, nên gộp xong con số thật
+ // không bằng bất kỳ nhánh nào — chọn bừa một trong bốn là dựng một cái mốc
+ // chưa ai đo, và nó sẽ đỏ hoặc lỏng ngay lần chạy sau.
+ const BASELINE = 508;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);

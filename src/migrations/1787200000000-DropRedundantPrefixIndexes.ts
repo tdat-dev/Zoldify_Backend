@@ -18,9 +18,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `.catch(()=>{})` cho idempotent, đồng bộ phong cách AddListOrderingIndexes. Nếu drop
  * bị chặn (vd MySQL coi index đang đỡ FK) thì selfcheck-indexes vẫn báo ĐỎ — lưới an toàn.
  */
-export class DropRedundantPrefixIndexes1787200000000
-  implements MigrationInterface
-{
+export class DropRedundantPrefixIndexes1787200000000 implements MigrationInterface {
   name = 'DropRedundantPrefixIndexes1787200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

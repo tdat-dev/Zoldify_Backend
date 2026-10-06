@@ -22,6 +22,7 @@ import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
 import {
   ChangePasswordDto,
+  RefreshTokenDto,
   ResetPasswordDto,
   SendOtpDto,
   SendRegisterOtpDto,
@@ -185,5 +186,18 @@ export class AuthController {
     @Body('avatar') avatar?: string,
   ) {
     return this.authService.updateProfile(user.id, full_name, avatar);
+  }
+
+  @Public()
+  @Throttle({
+    short: { limit: 5, ttl: 1000 },
+    medium: { limit: 20, ttl: 60000 },
+  })
+  @ApiEntity(LoginResponseDto)
+  @Post('refresh')
+  @ResponseMessage('Làm mới token thành công')
+  @ApiBody({ type: RefreshTokenDto })
+  async refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshToken(dto.refreshToken);
   }
 }
