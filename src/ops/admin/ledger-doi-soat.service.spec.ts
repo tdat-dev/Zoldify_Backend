@@ -100,8 +100,8 @@ describe('LedgerDoiSoatService — đối soát sổ cái', () => {
       idempotencyKey: `test-topup-${ID_BASE}`,
       type: LedgerTxType.TOPUP,
       entries: [
-        { accountId: gateway.id, amount: -100_000n },
-        { accountId: escrow.id, amount: 100_000n },
+        { accountId: Number(gateway.id), amount: -100_000n },
+        { accountId: Number(escrow.id), amount: 100_000n },
       ],
     });
 
@@ -155,8 +155,8 @@ describe('LedgerDoiSoatService — đối soát sổ cái', () => {
       idempotencyKey: `test-topup-escrow-${ID_BASE + 1}`,
       type: LedgerTxType.TOPUP,
       entries: [
-        { accountId: gateway.id, amount: -50_000n },
-        { accountId: escrow.id, amount: 50_000n },
+        { accountId: Number(gateway.id), amount: -50_000n },
+        { accountId: Number(escrow.id), amount: 50_000n },
       ],
     });
 
