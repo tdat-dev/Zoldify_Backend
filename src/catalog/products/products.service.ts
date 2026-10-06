@@ -19,6 +19,7 @@ import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
+import Redis from 'ioredis';
 
 // TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn.
 const PRODUCT_DETAIL_TTL = 60_000; // 60s
@@ -55,6 +56,8 @@ const DOI_NHO_MS = 1_000;
 
 @Injectable()
 export class ProductsService {
+  private readonly redis: Redis | null = null;
+
   constructor(
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
@@ -65,7 +68,23 @@ export class ProductsService {
     private readonly notificationsService: NotificationsService,
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
-  ) {}
+  ) {
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) {
+      // Fail-open: không có Redis thì bỏ đếm view_count, tuyệt đối không chặn boot
+      console.warn('[ProductsService] REDIS_URL không có — bỏ qua đếm view_count');
+      return;
+    }
+    this.redis = new Redis(redisUrl, {
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+    });
+    this.redis.on('error', (err) => {
+      // on('error') chỉ bắt SỰ KIỆN KẾT NỐI, không bắt lệnh bị từ chối.
+      // Lệnh incr/get/set bị reject là promise rejection riêng, phải try/catch ở chỗ gọi.
+      // Đo được: "Stream isn't writeable and enableOfflineQueue options is false" khi Redis mất.
+    });
+  }
 
   /**
    * Chặn đăng bán khi người bán CHƯA khai địa chỉ lấy hàng.
@@ -500,12 +519,23 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
     }
-    // TODO: re-enable view_count tracking khi có Redis hoặc batch job
-    // Lý do: increment() mỗi lần GET sẽ race condition khi nhiều request đồng thời,
-    // và gây write amplification trên mỗi lượt xem chi tiết sản phẩm.
-    // Giải pháp tương lai: dùng Redis INCR + flush về MySQL theo batch (5-10 phút/lần),
-    // hoặc đẩy vào message queue xử lý async.
-    // await this.productRepository.increment({ id }, 'view_count', 1);
+
+    // Tăng view_count bằng Redis INCR (atomic, không race condition).
+    // Key: `view_count:{productId}`. Flush về MySQL theo batch mỗi 5 phút
+    // bởi job `flush-view-count` trong worker.
+    // BỎ TRƯỚC KHI KIỂM CACHE: TTL 60s khiến chỉ lượt đầu tiên mỗi phút được đếm
+    // nếu để sau `if (cached) return cached;` — phá vỡ sort=most_viewed.
+    const viewCountKey = `view_count:${id}`;
+    if (this.redis) {
+      try {
+        await this.redis.incr(viewCountKey);
+      } catch (err) {
+        // on('error') chỉ bắt sự kiện kết nối, không bắt lệnh bị từ chối.
+        // Đo được: "Stream isn't writeable and enableOfflineQueue options is false"
+        // Fail-open: Redis lỗi không được làm route 500.
+      }
+    }
+
     await this.cacheSet(key, product, PRODUCT_DETAIL_TTL);
     return product;
   }
