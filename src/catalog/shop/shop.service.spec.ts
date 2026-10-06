@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@identity/users/entities/user.entity';
@@ -67,6 +67,10 @@ describe('ShopService', () => {
       },
     } as unknown as Repository<Product>;
 
+    const orderItemRepo = {
+      findAndCount: () => Promise.resolve([[], 0]),
+    } as unknown as Repository<OrderItem>;
+
     const service = new ShopService(
       shopRepo,
       {
@@ -74,7 +78,7 @@ describe('ShopService', () => {
       } as unknown as Repository<User>,
       productRepo,
       { count: () => Promise.resolve(5) } as unknown as Repository<Follow>,
-      {} as Repository<OrderItem>,
+      orderItemRepo,
     );
 
     return { service, daLuu, dieuKienDem, dieuKienTim };
@@ -172,5 +176,33 @@ describe('ShopService', () => {
   it('không có cả shop lẫn tài khoản thì báo lỗi', async () => {
     const { service } = dungService({ shopCuaToi: null, nguoiDung: null });
     await expect(service.getShopInfo(999)).rejects.toThrow(BadRequestException);
+  });
+
+  // ── B5-1: Chỉ chủ shop hoặc admin được xem đơn hàng ──────────────────────
+  it('người lạ (không phải chủ shop, không phải admin) bị ForbiddenException', async () => {
+    const { service } = dungService({});
+    const nguoiLa = { id: 999, role: 'seller' } as IUser;
+
+    await expect(service.getSellerOrders(7, 1, 20, undefined, nguoiLa)).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('chủ shop được xem đơn hàng của mình', async () => {
+    const { service } = dungService({});
+    const chuShop = { id: 7, role: 'seller' } as IUser;
+
+    const result = await service.getSellerOrders(7, 1, 20, undefined, chuShop);
+    expect(result).toHaveProperty('result');
+    expect(result).toHaveProperty('meta');
+  });
+
+  it('admin được xem đơn hàng của bất kỳ shop nào', async () => {
+    const { service } = dungService({});
+    const admin = { id: 999, role: 'admin' } as IUser;
+
+    const result = await service.getSellerOrders(7, 1, 20, undefined, admin);
+    expect(result).toHaveProperty('result');
+    expect(result).toHaveProperty('meta');
   });
 });
