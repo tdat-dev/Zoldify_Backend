@@ -107,7 +107,17 @@ export class LedgerDoiSoatService {
         purpose: r.purpose,
         balance: String(r.balance),
         tong_but_toan: String(r.tong_but_toan),
-        lech: String(Number(r.balance) - Number(r.tong_but_toan)), // lệch = balance - tổng bút toán
+        // Trừ bằng BigInt, KHÔNG phải Number.
+        //
+        // `ledger.types.ts` mở đầu bằng đúng lý do này: "`Number()` của JS mất
+        // chính xác với số lớn mà không báo lỗi gì". Số dư là BIGINT đơn vị
+        // đồng, và `Number` chỉ còn nguyên vẹn tới 2^53 ≈ 9×10¹⁵.
+        //
+        // Dùng `Number` ở đây đặc biệt sai: đây là hàm có việc duy nhất là PHÁT
+        // HIỆN LỆCH. Một phép trừ mất chính xác thì nó sẽ báo "lệch 0" cho một
+        // sổ cái lệch thật, hoặc báo lệch cho một sổ cái cân — đúng cái nó sinh
+        // ra để chặn.
+        lech: String(BigInt(r.balance) - BigInt(r.tong_but_toan)),
       }));
 
     // Danh sách số dư mọi tài khoản platform + external (dùng cho UI hiển thị)
