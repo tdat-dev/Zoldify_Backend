@@ -4969,6 +4969,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "mine",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5004,6 +5012,50 @@
                         "result"
                       ]
                     }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Interactions"
+        ]
+      }
+    },
+    "/api/v1/interactions/seller/{sellerId}/stats": {
+      "get": {
+        "operationId": "InteractionsController_sellerStats_v1",
+        "parameters": [
+          {
+            "name": "sellerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
@@ -7443,6 +7495,12 @@
           "sold_count": {
             "type": "number"
           },
+          "rating_avg": {
+            "type": "number"
+          },
+          "review_count": {
+            "type": "number"
+          },
           "view_count": {
             "type": "number"
           },
@@ -7490,6 +7548,8 @@
           "condition",
           "is_freeship",
           "sold_count",
+          "rating_avg",
+          "review_count",
           "view_count",
           "status",
           "category",

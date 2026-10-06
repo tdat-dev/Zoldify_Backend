@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { User } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -14,16 +18,20 @@ import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 export class InteractionsService {
   constructor(
     @InjectRepository(User) private readonly userRepository: Repository<User>,
-    @InjectRepository(Product) private readonly productRepository: Repository<Product>,
-    @InjectRepository(Review) private readonly reviewRepository: Repository<Review>,
-    @InjectRepository(Order) private readonly orderRepository: Repository<Order>,
-
-  ) { }
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
+    @InjectRepository(Review)
+    private readonly reviewRepository: Repository<Review>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
+  ) {}
 
   async create(createInteractionDto: CreateReviewDto, user: IUser) {
-
-    const { product_id, order_id, rating, comment, images } = createInteractionDto;
-    const product = await this.productRepository.findOne({ where: { id: product_id } });
+    const { product_id, order_id, rating, comment, images } =
+      createInteractionDto;
+    const product = await this.productRepository.findOne({
+      where: { id: product_id },
+    });
 
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
@@ -37,11 +45,13 @@ export class InteractionsService {
       .andWhere('item.product_id = :productId', { productId: product_id })
       .getOne();
     if (!hasPurchased) {
-      throw new BadRequestException('Bạn chưa mua sản phẩm này hoặc đơn hàng chưa giao');
+      throw new BadRequestException(
+        'Bạn chưa mua sản phẩm này hoặc đơn hàng chưa giao',
+      );
     }
 
     const existing = await this.reviewRepository.findOne({
-      where: { user: { id: user.id }, product: { id: product_id } }
+      where: { user: { id: user.id }, product: { id: product_id } },
     });
     if (existing) {
       throw new BadRequestException('Bạn đã đánh giá sản phẩm này rồi');
@@ -56,7 +66,59 @@ export class InteractionsService {
       images,
     });
 
-    return this.reviewRepository.save(review);
+    const saved = await this.reviewRepository.save(review);
+    await this.refreshProductStats(product_id);
+    return saved;
+  }
+
+  /**
+   * Tính lại điểm trung bình và số lượt đánh giá của MỘT sản phẩm từ bảng
+   * reviews (bỏ bản đã xoá mềm). Gọi sau mọi thao tác đổi đánh giá.
+   *
+   * Tính lại toàn phần chứ không cộng trừ dần: cộng trừ thì một lần lỗi giữa
+   * chừng là lệch vĩnh viễn, còn tính lại thì lần sau tự đúng. Một sản phẩm có
+   * vài trăm đánh giá, AVG/COUNT theo index product_id là rẻ.
+   */
+  private async refreshProductStats(productId: number): Promise<void> {
+    await this.productRepository.query(
+      `UPDATE products SET
+         rating_avg = COALESCE((SELECT ROUND(AVG(r.rating), 2) FROM reviews r
+                                WHERE r.product_id = ? AND r.deleted_at IS NULL), 0),
+         review_count = (SELECT COUNT(*) FROM reviews r
+                         WHERE r.product_id = ? AND r.deleted_at IS NULL)
+       WHERE id = ?`,
+      [productId, productId, productId],
+    );
+  }
+
+  /**
+   * Uy tín người bán, dựng từ số THẬT của các sản phẩm họ đăng: điểm trung bình
+   * có trọng số theo số lượt đánh giá, tổng lượt đánh giá, tổng đã bán.
+   *
+   * Thay cho sellerStats() giả ở app (lỗi H-01), vốn còn có "% phản hồi". Chỉ số
+   * đó không có dữ liệu nào đứng sau (không đo thời gian trả lời tin nhắn), nên
+   * KHÔNG trả ra thay vì bịa.
+   */
+  async sellerStats(sellerId: number) {
+    const rows = await this.productRepository.query<
+      Array<{
+        c: string | number | null;
+        s: string | number | null;
+        sold: string | number | null;
+      }>
+    >(
+      `SELECT SUM(review_count) AS c, SUM(rating_avg * review_count) AS s,
+              SUM(sold_count) AS sold
+       FROM products WHERE seller_id = ? AND deleted_at IS NULL`,
+      [sellerId],
+    );
+    const c = Number(rows[0]?.c ?? 0);
+    const s = Number(rows[0]?.s ?? 0);
+    return {
+      rating: c > 0 ? Math.round((s / c) * 10) / 10 : 0,
+      review_count: c,
+      sold_count: Number(rows[0]?.sold ?? 0),
+    };
   }
 
   async findByProduct(productId: number, currentPage: string, limit: string) {
@@ -88,18 +150,37 @@ export class InteractionsService {
         total: totalItems,
         average_rating: avg ? Number(Number(avg).toFixed(1)) : 0,
       },
-      result,
+      // Route này @Public: chỉ trả tên và ảnh người đánh giá. Trước đây trả
+      // nguyên User, ai không đăng nhập cũng đọc được email và số điện thoại
+      // của mọi người đã đánh giá (tìm ra khi soát lỗi H-01, 06/10).
+      result: result.map((r) => ({
+        ...r,
+        user: r.user
+          ? {
+              id: r.user.id,
+              full_name: r.user.full_name,
+              avatar: r.user.avatar,
+            }
+          : null,
+      })),
     };
   }
 
-  async findAll(currentPage: string, limit: string, user: IUser) {
+  async findAll(
+    currentPage: string,
+    limit: string,
+    user: IUser,
+    mine?: boolean,
+  ) {
     const {
       page: numPage,
       size: numLimit,
       offset,
     } = normalizePagination(currentPage, limit);
 
-    const where: any = {};
+    // `mine`: đánh giá của chính người gọi. App cần biết món nào trong đơn đã
+    // được đánh giá; trước đây nó tự nhớ trên máy (mất khi đổi máy, lỗi H-01).
+    const where: any = mine ? { user: { id: user.id } } : {};
 
     const [result, totalItems] = await this.reviewRepository.findAndCount({
       where,
@@ -124,7 +205,7 @@ export class InteractionsService {
   async findOne(id: number) {
     const review = await this.reviewRepository.findOne({
       where: { id },
-      relations: ['user', 'product']
+      relations: ['user', 'product'],
     });
 
     if (!review) {
@@ -137,7 +218,7 @@ export class InteractionsService {
   async update(id: number, UpdateReviewDto: UpdateReviewDto, user: IUser) {
     const review = await this.reviewRepository.findOne({
       where: { id },
-      relations: ['user']
+      relations: ['user', 'product'],
     });
 
     if (!review) {
@@ -161,18 +242,24 @@ export class InteractionsService {
       review.images = images;
     }
 
-    return this.reviewRepository.save(review);
+    const saved = await this.reviewRepository.save(review);
+    if (review.product?.id) await this.refreshProductStats(review.product.id);
+    return saved;
   }
 
   async remove(id: number, user: IUser) {
-    const review = await this.reviewRepository.findOne({ where: { id }, relations: ['user'] })
+    const review = await this.reviewRepository.findOne({
+      where: { id },
+      relations: ['user', 'product'],
+    });
     if (!review) {
-      throw new NotFoundException(`Không tìm thấy đánh giá! `)
+      throw new NotFoundException(`Không tìm thấy đánh giá! `);
     }
     if (review.user.id !== user.id && user.role !== 'admin') {
       throw new BadRequestException('Bạn không có quyền xóa đánh giá này');
     }
     await this.reviewRepository.softDelete(id);
+    if (review.product?.id) await this.refreshProductStats(review.product.id);
     return 'Xóa đánh giá thành công';
   }
 }

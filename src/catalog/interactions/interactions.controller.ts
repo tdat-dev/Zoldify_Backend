@@ -39,12 +39,28 @@ export class InteractionsController {
     @Query('currentPage') currentPage: string,
     @Query('limit') limit: string,
     @User() user: IUser,
+    @Query('mine') mine?: string,
   ) {
-    return this.interactionsService.findAll(currentPage, limit, user);
+    return this.interactionsService.findAll(
+      currentPage,
+      limit,
+      user,
+      mine === '1' || mine === 'true',
+    );
+  }
+
+  // Công khai: trang shop và thẻ người bán đọc được khi chưa đăng nhập. Chỉ là
+  // số tổng hợp từ sản phẩm của người bán, không có dữ liệu riêng của ai.
+  @Public()
+  @ResponseMessage('Lấy thống kê người bán thành công')
+  @Get('seller/:sellerId/stats')
+  sellerStats(@Param('sellerId') sellerId: string) {
+    return this.interactionsService.sellerStats(+sellerId);
   }
 
   // Công khai có chủ ý: trang sản phẩm phải đọc được đánh giá khi chưa đăng
-  // nhập. Route không nhận `@User()` nên không có gì để lộ theo người dùng.
+  // nhập. Service chỉ trả tên và ảnh người đánh giá (từng lộ email, số điện
+  // thoại vì trả nguyên User).
   @Public()
   @ResponseMessage('Lấy đánh giá sản phẩm thành công')
   @ApiPaginated(Review)
