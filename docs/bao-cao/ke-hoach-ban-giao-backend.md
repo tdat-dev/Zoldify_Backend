@@ -207,8 +207,14 @@ thật, nối socket thật, đặt đơn thật, xác nhận socket nhận con 
 Vai B. Chưa bắt đầu. Nội dung theo bảng phân công: *tổng đang giữ hộ · số dư hệ
 thống · kết quả job đối soát*.
 
-Đã có sẵn để dùng: `LedgerService.getBalance()`, job đối soát mỗi giờ (task #32
-của Đạt), và `GET /admin/audit-logs` làm mẫu cho route admin có phân trang.
+Đã có sẵn để dùng: `LedgerService.getBalance()` và `GET /admin/audit-logs` làm
+mẫu cho route admin có phân trang.
+
+> **Sửa 06/10.** Bản trước ghi còn có *"job đối soát mỗi giờ (task #32 của Đạt)"*.
+> Tìm lại thì **job đó không tồn tại** — `grep -rniE "doi.?soat|reconcil"` chỉ ra
+> `orders.service.ts:985 reconcileOrderDelivered`, là việc của MỘT đơn chứ không
+> phải đối soát sổ cái. Nên trang này phải **tự tính tại chỗ**; thiết kế đã chốt
+> nằm ở `docs/lenh/01-xoa-e2e-va-trang-doi-soat.md` việc B.
 
 #### B3. Ba câu SQL mức CAO còn lại
 
