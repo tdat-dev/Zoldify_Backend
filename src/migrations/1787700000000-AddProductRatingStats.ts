@@ -9,7 +9,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * cho biết hai con số đó. Tính AVG/COUNT trên `reviews` mỗi lần hiện một thẻ sản
  * phẩm thì danh sách 20 món là 20 câu tổng hợp; giữ sẵn trên `products` và cập
  * nhật lúc đánh giá thay đổi (InteractionsService.refreshProductStats) thì đọc
- * danh sách không tốn thêm câu nào, giống cách `sold_count` đang làm.
+ * danh sách không tốn thêm câu nào.
  *
  * DECIMAL(3,2): điểm 0.00 đến 5.00, đủ một chữ số lẻ khi hiển thị. Không cho
  * NULL: sản phẩm chưa có đánh giá là 0 điểm, 0 lượt, app dựa vào review_count

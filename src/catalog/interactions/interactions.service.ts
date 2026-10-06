@@ -101,15 +101,22 @@ export class InteractionsService {
    */
   async sellerStats(sellerId: number) {
     const rows = await this.productRepository.query<
-      Array<{
-        c: string | number | null;
-        s: string | number | null;
-        sold: string | number | null;
-      }>
+      Array<{ c: string | number | null; s: string | number | null }>
     >(
-      `SELECT SUM(review_count) AS c, SUM(rating_avg * review_count) AS s,
-              SUM(sold_count) AS sold
+      `SELECT SUM(review_count) AS c, SUM(rating_avg * review_count) AS s
        FROM products WHERE seller_id = ? AND deleted_at IS NULL`,
+      [sellerId],
+    );
+    // "Đã bán" đếm số món trong đơn ĐÃ GIAO, không đọc products.sold_count:
+    // không có dòng mã nào ghi cột đó (soát 06/10), nên nó luôn 0.
+    const sold = await this.productRepository.query<
+      Array<{ n: string | number | null }>
+    >(
+      `SELECT SUM(oi.quantity) AS n
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN products p ON p.id = oi.product_id
+       WHERE p.seller_id = ? AND o.status = 'delivered'`,
       [sellerId],
     );
     const c = Number(rows[0]?.c ?? 0);
@@ -117,7 +124,7 @@ export class InteractionsService {
     return {
       rating: c > 0 ? Math.round((s / c) * 10) / 10 : 0,
       review_count: c,
-      sold_count: Number(rows[0]?.sold ?? 0),
+      sold_count: Number(sold[0]?.n ?? 0),
     };
   }
 
