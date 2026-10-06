@@ -230,9 +230,14 @@ sửa, ghi lại số đo, sửa, `EXPLAIN` lại. Không đoán. `npm run check
 File sinh ngày 21/09, **trước** `bd156de`, nên vẫn liệt kê 5 mức CAO trong khi
 thực tế còn 3. **Đừng trích số từ file này vào báo cáo trước khi chạy lại.**
 
-`npm run sql:audit` **chưa bao giờ chạy trọn** (56 route, quá giờ hai lần). Lý
+`npm run sql:audit` **chưa bao giờ chạy trọn** (56 route, quá giờ hai lần). ~~Lý
 do đã biết: thiếu tài khoản `buyer@zoldify.com`, `seller@zoldify.com`,
-`admin@zoldify.com` mật khẩu `123456` mà seed không tạo. Sửa seed trước.
+`admin@zoldify.com` mật khẩu `123456` mà seed không tạo. Sửa seed trước.~~
+
+> **Sửa 06/10 — ba dòng gạch ngang ở trên tôi viết SAI, đừng làm theo.** Kiểm
+> lại `src/seed.ts`: cả ba tài khoản đều **có** — `seller@` dòng 50, `admin@`
+> dòng 60, `buyer@` dòng 384, đều mật khẩu `123456`. Nên nguyên nhân thật
+> **chưa biết**, phải chẩn đoán lại từ đầu trước khi giao việc này cho ai.
 
 #### B5. Bốn lỗ mà **cả hai** đợt soát xét đều chưa chạm
 
