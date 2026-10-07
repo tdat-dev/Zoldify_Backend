@@ -40,6 +40,7 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
   let productId: number;
   let buyers: number[];
   let orderOf: Map<number, number>;
+  const productCache = { invalidateProductCache: jest.fn() };
 
   beforeAll(async () => {
     ds = new DataSource({
@@ -70,6 +71,7 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
       ds.getRepository(Product),
       ds.getRepository(Review),
       ds.getRepository(Order),
+      productCache as never,
     );
   });
 
@@ -85,6 +87,7 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
   }
 
   beforeEach(async () => {
+    productCache.invalidateProductCache.mockClear();
     await ds.query('SET FOREIGN_KEY_CHECKS = 0');
     for (const t of ['reviews', 'order_items', 'orders', 'products', 'users']) {
       await ds.query(`DELETE FROM ${t}`);
@@ -192,6 +195,20 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
     const r = await viet(buyers[0], 2);
     await svc.update(r.id, { rating: 5 }, asUser(buyers[0]));
     expect(await soLieu()).toEqual({ rating: 5, count: 1 });
+  });
+
+  // Test máy ảo 07/10: viết đánh giá xong, màn sản phẩm vẫn hiện điểm cũ.
+  // GET /products/:id đọc bản nhớ Redis 60 giây, đổi điểm mà không xoá bản
+  // nhớ thì app làm mới cũng chỉ nhận lại số cũ.
+  it('viết, sửa, xoá đánh giá đều xoá bản nhớ của sản phẩm', async () => {
+    const r = await viet(buyers[0], 4);
+    await svc.update(r.id, { rating: 5 }, asUser(buyers[0]));
+    await svc.remove(r.id, asUser(buyers[0]));
+    expect(productCache.invalidateProductCache.mock.calls).toEqual([
+      [productId],
+      [productId],
+      [productId],
+    ]);
   });
 
   it('thống kê người bán: điểm theo lượt đánh giá, số đánh giá, đã bán', async () => {
