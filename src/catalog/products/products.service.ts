@@ -20,6 +20,7 @@ import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import Redis from 'ioredis';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 
 // TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn.
 const PRODUCT_DETAIL_TTL = 60_000; // 60s
@@ -68,6 +69,7 @@ export class ProductsService {
     private readonly notificationsService: NotificationsService,
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
+    private readonly stockEvents: StockEventsService,
   ) {
     const redisUrl = process.env.REDIS_URL;
     if (!redisUrl) {
@@ -696,9 +698,21 @@ export class ProductsService {
     // Về nghiệp vụ thì ném cũng đúng hơn: sản phẩm vừa được UPDATE ở dòng trên
     // mà đọc lại không thấy nghĩa là có người vừa xoá nó giữa chừng — đó là
     // chuyện cần biết, không phải chuyện trả `null` rồi đi tiếp.
-    return this.productRepository.findOneOrFail({
+    const moi = await this.productRepository.findOneOrFail({
       where: { id: productId },
       relations: ['seller'],
     });
+
+    // TỒN KHO REAL-TIME (task #26b) — chỗ phát thứ ba.
+    //
+    // Đặt SAU khi đã đọc lại từ database: `moi.stock` là con số thật sau câu
+    // UPDATE ở trên, còn `stock` truyền vào chỉ là thứ người bán mong muốn —
+    // khoá lạc quan (`expectedStock`) có thể đã từ chối nó.
+    //
+    // `phat()` không bao giờ ném: người bán sửa kho xong không được nhận lỗi
+    // chỉ vì Redis đang hỏng.
+    await this.stockEvents.phat(productId, moi.stock);
+
+    return moi;
   }
 }

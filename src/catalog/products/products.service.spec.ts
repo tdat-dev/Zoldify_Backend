@@ -8,6 +8,7 @@ import { Follow } from '@catalog/follows/entities/follow.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { IUser } from '@identity/users/users.interface';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 
 /**
  * Cache danh sách sản phẩm — bài kiểm viết TRƯỚC.
@@ -147,12 +148,22 @@ describe('ProductsService — cache danh sách phải mới lại sau khi ghi', 
       create: () => Promise.resolve(undefined),
     } as unknown as NotificationsService;
 
+    // Phát tồn kho: BÀI KIỂM NÀY KHÔNG ĐO VIỆC PHÁT. Nó đo logic trừ/hoàn kho và
+    // tiền. Hình dạng gói tin do `stock-events.spec.ts` đo; còn "Redis thật có
+    // chuyển được gói tin không" do `npm run check:stock` đo — app thật, socket
+    // thật, đơn thật. Stub phải `resolve` chứ không `reject`: cả ba chỗ gọi đều
+    // `await` nó, và chúng nằm NGAY SAU khi transaction đã commit.
+    const khoPhat = {
+      phat: () => Promise.resolve(),
+    } as unknown as StockEventsService;
+
     svc = new ProductsService(
       ds.getRepository(Product),
       ds.getRepository(Follow),
       ds.getRepository(Shop),
       thongBaoGia,
       cache,
+      khoPhat,
     );
     dem.dem = 0;
   });

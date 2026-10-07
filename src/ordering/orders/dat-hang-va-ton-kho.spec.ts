@@ -29,6 +29,7 @@ import { User, UserRole } from '@identity/users/entities/user.entity';
 import { IUser } from '@identity/users/users.interface';
 import { PaymentMethod } from '@common/enums/payment.enum';
 import { createCache } from 'cache-manager';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 
 /**
  * BÀI KIỂM ĐỎ — luồng đặt hàng và tồn kho.
@@ -168,6 +169,15 @@ describe('Đặt hàng và tồn kho', () => {
           : Promise.resolve(undefined),
     } as unknown as NotificationsService;
 
+    // Phát tồn kho: BÀI KIỂM NÀY KHÔNG ĐO VIỆC PHÁT. Nó đo logic trừ/hoàn kho và
+    // tiền. Hình dạng gói tin do `stock-events.spec.ts` đo; còn "Redis thật có
+    // chuyển được gói tin không" do `npm run check:stock` đo — app thật, socket
+    // thật, đơn thật. Stub phải `resolve` chứ không `reject`: cả ba chỗ gọi đều
+    // `await` nó, và chúng nằm NGAY SAU khi transaction đã commit.
+    const khoPhat = {
+      phat: () => Promise.resolve(),
+    } as unknown as StockEventsService;
+
     orders = new OrdersService(
       ds.getRepository(Order),
       ds.getRepository(OrderItem),
@@ -186,6 +196,7 @@ describe('Đặt hàng và tồn kho', () => {
         dongBoTatCa: () => Promise.resolve({ checked: 0, delivered: 0 }),
       } as unknown as ShipmentTrackingService,
       ds,
+      khoPhat,
     );
 
     products = new ProductsService(
@@ -194,6 +205,7 @@ describe('Đặt hàng và tồn kho', () => {
       ds.getRepository(Shop),
       notifications,
       createCache({ ttl: 30_000 }),
+      khoPhat,
     );
   });
 

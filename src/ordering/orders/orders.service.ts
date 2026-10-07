@@ -10,6 +10,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ShipmentTrackingService } from './shipment-tracking.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
@@ -89,6 +90,7 @@ export class OrdersService {
     private readonly shipmentTracking: ShipmentTrackingService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly stockEvents: StockEventsService,
   ) {}
 
   async getStats() {
@@ -581,6 +583,21 @@ export class OrdersService {
     }
 
     await this.notifySellersOfNewOrder(savedOrder.id, orderCode, cartItems);
+
+    // TỒN KHO REAL-TIME (task #26b) — phát SAU KHI transaction đã commit.
+    //
+    // Đặt bên trong transaction là phát một con số có thể bị quay lui ngay
+    // sau đó, và người đang xem trang sẽ thấy tồn kho chưa bao giờ tồn tại.
+    // Ở đây đơn đã lưu xong, kho đã trừ xong.
+    //
+    // `phat()` KHÔNG BAO GIỜ NÉM — xem StockEventsService. Đơn đã nằm trong
+    // database rồi; hỏng việc báo không được phép hỏng việc đặt hàng.
+    for (const ci of cartItems) {
+      const conLai = await this.productRepository
+        .findOne({ where: { id: ci.product.id }, select: { stock: true } })
+        .catch(() => null);
+      if (conLai) await this.stockEvents.phat(ci.product.id, conLai.stock);
+    }
 
     const result: any = await this.findOne(savedOrder.id, user);
     // Đánh dấu payment_method để frontend biết cần gọi PayOS
@@ -1642,6 +1659,8 @@ export class OrdersService {
    * được báo — chỉ còn một dòng log không ai đọc.
    */
   private async applyCancellation(order: Order) {
+    // Gom id san pham da hoan kho, de phat SAU khi transaction commit.
+    const daHoan: number[] = [];
     await this.dataSource.transaction(async (em: EntityManager) => {
       // KHOÁ DÒNG ĐƠN TRƯỚC MỌI THỨ, RỒI ĐỌC LẠI TRẠNG THÁI TỪ DATABASE.
       //
@@ -1747,8 +1766,23 @@ export class OrdersService {
           'stock',
           item.quantity,
         );
+        // Nhớ lại để phát SAU khi transaction commit — xem dưới.
+        daHoan.push(item.product.id);
       }
     });
+
+    // TỒN KHO REAL-TIME (task #26b) — phát SAU KHI transaction đã commit.
+    //
+    // Đây là chỗ DUY NHẤT trong ba chỗ phát mà `worker` cũng chạy:
+    // `cancelExpired` gọi xuống đây mỗi giờ. Worker KHÔNG có socket server,
+    // nên `server.emit` ở đây là gọi vào `undefined` — chính lý do cả cơ chế
+    // phải đi qua Redis pub/sub.
+    for (const productId of daHoan) {
+      const p = await this.productRepository
+        .findOne({ where: { id: productId }, select: { stock: true } })
+        .catch(() => null);
+      if (p) await this.stockEvents.phat(productId, p.stock);
+    }
   }
 
   /**
