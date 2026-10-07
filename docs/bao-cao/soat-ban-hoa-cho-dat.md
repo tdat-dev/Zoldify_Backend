@@ -204,3 +204,79 @@ Lệnh này **không viết lại gì**, và gỡ được bằng `git replace -
 **Với anh thì không ảnh hưởng gì**: commit hoà `b14fef5` có hai cha thật, nên
 nội dung chia sẻ bình thường. Chỉ là nếu anh clone mới, phần lịch sử bên tôi
 trước 05/10 sẽ không thấy — nó mất thật, không phải do ref thay thế.
+
+---
+
+# Bổ sung 07/10 — `check:drift` đỏ 7 dòng, và nó là lỗi có sẵn bên anh
+
+Sau khi hoà, tôi dựng được database dev trên máy mình và chạy **sáu cổng chưa
+ai chạy được từ lâu**. Bốn cổng xanh ngay (`check:constraints`, `check:index`,
+`check:race`, `check:cache`). Hai cổng đỏ:
+
+### `check:core` — thiếu dữ liệu, không phải lỗi mã
+
+```
+✗ FAIL  quy mô orders < 500k (chỉ 1)
+```
+
+Cần seed dữ liệu lớn. Môi trường, không tính.
+
+### `check:drift` — 7 dòng lệch, **cần anh quyết**
+
+```
+TypeORM sẽ chạy 7 câu để kéo DB về khớp entity:
+  ALTER TABLE `push_tokens` DROP FOREIGN KEY `fk_push_user`;
+  DROP INDEX `uq_push_token` ON `push_tokens`;
+  ALTER TABLE `push_tokens` ADD UNIQUE INDEX `IDX_869b4a9ba2c9e030aafc4b7dc7` (`token`);
+  ALTER TABLE `push_tokens` CHANGE `created_at` ... timestamp(6) ...;
+  ALTER TABLE `push_tokens` CHANGE `updated_at` ... timestamp(6) ...;
+  ALTER TABLE `addresses` CHANGE `is_default` `is_default` tinyint(1) NOT NULL DEFAULT '0';
+  ALTER TABLE `push_tokens` ADD CONSTRAINT `FK_94c371aff70dedeb89dae39f440` ...;
+```
+
+**Năm dòng là `push_tokens`** — migration `1787670000000-CreatePushTokens.ts`
+của anh khai:
+
+```sql
+`created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+UNIQUE INDEX `uq_push_token` (`token`),
+CONSTRAINT `fk_push_user` FOREIGN KEY (`user_id`) ...
+```
+
+còn entity khai `@CreateDateColumn({ type: 'timestamp' })` và không đặt tên
+index/FK. TypeORM mặc định dùng `timestamp(6)` và tên băm của nó, nên nó muốn
+sửa lại cả năm chỗ.
+
+> **Đây đúng cái bẫy tôi đã dính** khi làm `admin_action_logs` (task #34):
+> migration tạo `timestamp`, `@CreateDateColumn` đợi `timestamp(6)`, và
+> `check:drift` đỏ 5 dòng. Lúc đó tôi sửa migration được vì nó chưa chạy ở đâu.
+
+**Chỗ anh phải quyết:** migration này **đã chạy trên `api-staging` chưa?**
+
+- **Chưa** → sửa thẳng file migration (đổi `timestamp` → `timestamp(6)`, bỏ tên
+  index/FK tự đặt hoặc khai chúng trong entity bằng `@Index('uq_push_token')`).
+- **Rồi** → **không được** sửa file cũ. Phải viết một migration MỚI chạy đúng 5
+  câu `ALTER` ở trên.
+
+Tôi không tự làm vì không biết câu trả lời, và đoán sai ở migration là loại sai
+đắt nhất.
+
+**Dòng thứ sáu** (`addresses.is_default`) đến từ việc hoà: tôi lấy entity của
+anh (có transformer tinyint vá H-04) đặt cạnh migration `InitialSchema` cũ. Hai
+bên mô tả cùng một cột theo hai cách, TypeORM thấy khác nhau.
+
+### Chạy sáu cổng đó thế nào
+
+Chúng đọc `src/data-source.ts` → `.env` `DB_*` (mặc định `zoldify_dev` ở 3306).
+Trên máy không có MySQL dev, dựng tạm trong container test:
+
+```bash
+docker exec zoldify-test-mysql mysql -uroot -ptestpw \
+  -e "CREATE DATABASE IF NOT EXISTS zoldify_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+DB_HOST=127.0.0.1 DB_PORT=3307 DB_USERNAME=root DB_PASSWORD=testpw \
+DB_DATABASE=zoldify_dev npm run migration:run
+
+DB_HOST=127.0.0.1 DB_PORT=3307 DB_USERNAME=root DB_PASSWORD=testpw \
+DB_DATABASE=zoldify_dev npm run check:drift
+```
