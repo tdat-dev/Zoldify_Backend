@@ -37,6 +37,8 @@ import { SitemapModule } from '@catalog/sitemap/sitemap.module';
 import { HealthModule } from '@ops/health/health.module';
 import { RequestIdMiddleware } from '@common/request-id.middleware';
 import { AdminModule } from '@ops/admin/admin.module';
+import { StockEventsModule } from '@catalog/stock/stock-events.module';
+import { StockModule } from '@catalog/stock/stock.module';
 import { SettingsModule } from '@ops/settings/settings.module';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
 import { LedgerModule } from '@money/ledger/ledger.module';
@@ -165,6 +167,11 @@ import { RecommendationsModule } from '@catalog/recommendations/recommendations.
     SitemapModule,
     HealthModule,
     AdminModule,
+
+    // Tồn kho real-time (task #26b). API cần CẢ HAI nửa: nó đổi kho (bên
+    // phát) và phục vụ socket (bên nhận). Worker chỉ nhập nửa phát.
+    StockEventsModule,
+    StockModule,
     SettingsModule,
     WithdrawalsModule,
 

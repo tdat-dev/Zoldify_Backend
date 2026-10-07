@@ -61,10 +61,7 @@ export class StockGateway {
       return;
     }
 
-    if (
-      typeof tin?.product_id !== 'number' ||
-      typeof tin?.stock !== 'number'
-    ) {
+    if (typeof tin?.product_id !== 'number' || typeof tin?.stock !== 'number') {
       this.logger.warn(
         `Gói tin ${KENH_TON_KHO} thiếu product_id hoặc stock, bỏ qua`,
       );

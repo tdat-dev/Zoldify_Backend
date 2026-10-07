@@ -53,8 +53,7 @@ describe('Tồn kho real-time — hình dạng sự kiện', () => {
       // biến "đặt hàng xong nhưng không báo được" thành "đặt hàng lỗi" — trong
       // khi đơn ĐÃ nằm trong database và kho ĐÃ trừ.
       const redis = {
-        publish: () =>
-          Promise.reject(new Error("Stream isn't writeable")),
+        publish: () => Promise.reject(new Error("Stream isn't writeable")),
       };
       const svc = new StockEventsService(redis as never);
 
@@ -69,7 +68,8 @@ describe('Tồn kho real-time — hình dạng sự kiện', () => {
 
   describe('StockGateway — bên nhận', () => {
     function dungGateway() {
-      const daPhat: Array<{ room: string; su_kien: string; data: unknown }> = [];
+      const daPhat: Array<{ room: string; su_kien: string; data: unknown }> =
+        [];
       const server = {
         to: (room: string) => ({
           emit: (su_kien: string, data: unknown) =>
@@ -87,7 +87,11 @@ describe('Tồn kho real-time — hình dạng sự kiện', () => {
       gw.nhanTuRedis(JSON.stringify({ product_id: 42, stock: 7 }));
 
       expect(daPhat).toEqual([
-        { room: 'product_42', su_kien: 'ton-kho', data: { product_id: 42, stock: 7 } },
+        {
+          room: 'product_42',
+          su_kien: 'ton-kho',
+          data: { product_id: 42, stock: 7 },
+        },
       ]);
     });
 
