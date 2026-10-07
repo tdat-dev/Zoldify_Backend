@@ -222,6 +222,42 @@ async function canCaHai(): Promise<string | null> {
   return (await canMySQL()) ?? (await canRedis());
 }
 
+/**
+ * Sáu cổng dưới đây nối vào DATABASE DEV qua `src/data-source.ts` (`.env` DB_*,
+ * mặc định `zoldify` ở cổng 3306) — không phải `zoldify_test`. Chúng cần một
+ * lược đồ do MIGRATION dựng: `check:drift` so entity với database thật,
+ * `check:index` đọc `EXPLAIN`, `check:constraints` kiểm CHECK/UNIQUE.
+ *
+ * Dò bằng một lần BẮT TAY THẬT, không chỉ mở cổng TCP: đo ngày 07/10 trên máy
+ * này thì 3306 CÓ người nghe nhưng trả `Access denied for user root@localhost`
+ * — tức có một MySQL cục bộ khác mật khẩu. Dò bằng TCP thì tưởng đủ điều kiện,
+ * rồi sáu cổng đỏ vì lý do chẳng liên quan tới mã, và "đỏ vì môi trường" lẫn
+ * vào "đỏ vì mã" đúng thứ file này sinh ra để tách.
+ */
+async function canDbDev(): Promise<string | null> {
+  const host = process.env.DB_HOST ?? docEnvFile('DB_HOST') ?? 'localhost';
+  const port = Number(process.env.DB_PORT ?? docEnvFile('DB_PORT') ?? 3306);
+  const user = process.env.DB_USERNAME ?? docEnvFile('DB_USERNAME') ?? 'root';
+  const pass = process.env.DB_PASSWORD ?? docEnvFile('DB_PASSWORD') ?? '';
+  const db = process.env.DB_DATABASE ?? docEnvFile('DB_DATABASE') ?? 'zoldify';
+
+  if (!(await coAiNghe(host, port))) {
+    return `không ai nghe ở ${host}:${port} (database dev, không phải DB test)`;
+  }
+
+  const r = chay(
+    `"${process.execPath}" -e "const m=require('mysql2/promise');` +
+      `m.createConnection({host:'${host}',port:${port},user:'${user}',` +
+      `password:'${pass}',database:'${db}',connectTimeout:3000})` +
+      `.then(c=>c.end()).then(()=>process.exit(0)).catch(e=>{` +
+      `console.error(e.message);process.exit(1)})"`,
+  );
+  if (r.ma !== 0) {
+    return `${host}:${port}/${db} — ${r.ra.trim().split('\n')[0] || 'không nối được'}`;
+  }
+  return null;
+}
+
 const CONG: Cong[] = [
   { ten: 'build', lenh: 'npm run build' },
   { ten: 'lint:check', lenh: 'npm run lint:check', soDo: soDoLint },
@@ -243,6 +279,77 @@ const CONG: Cong[] = [
     ten: 'check:audit',
     lenh: 'npm run check:audit',
     dieuKien: canMySQL,
+    soDo: soDoTuPassFail,
+  },
+  // ── BẢY CỔNG CÒN LẠI TRONG `npm run check` ────────────────────────────────
+  //
+  // Thêm ngày 07/10 sau một lần BÁO SAI.
+  //
+  // Bản đầu của file này chỉ chạy bảy cổng, và `check:worker` không nằm trong
+  // số đó. Hậu quả đo được: `nghiem-thu.md` ghi **ĐẠT** cho commit b14fef5
+  // trong khi `WorkerModule` KHÔNG DỰNG ĐƯỢC — `TasksService` đòi
+  // `ProductRepository` mà `TasksModule` không khai (hỏng từ 06/10, commit
+  // 9882fba). Worker production chết lúc khởi động: không huỷ đơn quá hạn,
+  // không chốt vận đơn, không flush view_count.
+  //
+  // Không cổng nào khác bắt được: `npm test` xanh vì spec tự
+  // `new TasksService(...)`; `check:boot` xanh vì AppModule có sẵn
+  // ProductsModule. Chỉ `check:worker` dựng WorkerModule thật.
+  //
+  // Bài học: một bộ nghiệm thu BỎ SÓT một cổng thì tệ hơn không có bộ nghiệm
+  // thu — nó dán nhãn ĐẠT lên một cây đang hỏng, và người đọc thôi tự kiểm.
+  //
+  // Liệt kê TỪNG cổng chứ không gọi `npm run check` một cục: gộp lại thì một
+  // cổng bỏ qua vì thiếu database sẽ kéo cả cụm thành HỎNG, và "đỏ vì môi
+  // trường" lại lẫn vào "đỏ vì mã".
+  { ten: 'check:ci', lenh: 'npm run check:ci', soDo: soDoTuPassFail },
+  { ten: 'check:backup', lenh: 'npm run check:backup', soDo: soDoTuPassFail },
+  {
+    ten: 'check:redis',
+    lenh: 'npm run check:redis',
+    dieuKien: canRedis,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:worker',
+    lenh: 'npm run check:worker',
+    dieuKien: canCaHai,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:core',
+    lenh: 'npm run check:core',
+    dieuKien: canDbDev,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:index',
+    lenh: 'npm run check:index',
+    dieuKien: canDbDev,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:constraints',
+    lenh: 'npm run check:constraints',
+    dieuKien: canDbDev,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:drift',
+    lenh: 'npm run check:drift',
+    dieuKien: canDbDev,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:race',
+    lenh: 'npm run check:race',
+    dieuKien: canDbDev,
+    soDo: soDoTuPassFail,
+  },
+  {
+    ten: 'check:cache',
+    lenh: 'npm run check:cache',
+    dieuKien: canDbDev,
     soDo: soDoTuPassFail,
   },
 ];
