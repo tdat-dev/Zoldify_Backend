@@ -170,6 +170,22 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
     expect(await soLieu()).toEqual({ rating: 3, count: 1 });
   });
 
+  // Test máy ảo 07/10: xoá đánh giá rồi viết lại thì POST /interactions trả 500.
+  // Khoá UNIQUE idx_user_product vẫn giữ dòng đã xoá mềm, còn bước kiểm "đã
+  // đánh giá chưa" bỏ qua dòng đó, nên INSERT đâm vào khoá (ER_DUP_ENTRY).
+  it('xoá đánh giá rồi viết lại: lưu được, số liệu chỉ tính bản mới', async () => {
+    const r = await viet(buyers[0], 2);
+    await svc.remove(r.id, asUser(buyers[0]));
+    const moi = await viet(buyers[0], 5);
+    expect(moi.rating).toBe(5);
+    expect(await soLieu()).toEqual({ rating: 5, count: 1 });
+  });
+
+  it('đánh giá chưa xoá thì vẫn chặn viết lần hai (400, không phải 500)', async () => {
+    await viet(buyers[0], 4);
+    await expect(viet(buyers[0], 5)).rejects.toThrow('Bạn đã đánh giá sản phẩm này rồi');
+  });
+
   it('sửa số sao thì điểm sản phẩm đổi theo', async () => {
     const r = await viet(buyers[0], 2);
     await svc.update(r.id, { rating: 5 }, asUser(buyers[0]));
