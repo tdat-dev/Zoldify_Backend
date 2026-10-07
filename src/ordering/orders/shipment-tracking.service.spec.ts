@@ -269,6 +269,82 @@ describe('ShipmentTrackingService — webhook GHN', () => {
     expect(kq.delivered).toBe(0);
   });
 
+  // ── "Đang giao" phải đến từ GHN ──────────────────────────────────────────
+  //
+  // Người bán không tự đặt được "Đang giao" (policy SHIPPING chỉ cho ADMIN),
+  // vì trạng thái đó phải là lời GHN: tài xế đã lấy hàng. Trước bản này webhook
+  // và lượt quét chỉ nghe đúng một chữ `delivered`, nên với GHN thật không có
+  // gì đưa đơn sang "Đang giao" cả. Lối duy nhất là nút giả lập, mà nút đó chỉ
+  // chạy ở sandbox.
+  async function datTrangThaiDon(status: string) {
+    await ds.query('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
+  }
+  async function trangThaiDon(): Promise<string> {
+    const rows = await ds.query<Array<{ status: string }>>(
+      'SELECT status FROM orders WHERE id = ?',
+      [orderId],
+    );
+    return rows[0].status;
+  }
+
+  it('GHN báo tài xế đã lấy hàng → đơn đã xác nhận sang Đang giao', async () => {
+    await datTrangThaiDon('confirmed');
+    const lo = await taoLo();
+    ghnTraVe = 'picked';
+
+    const kq = await svc.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
+
+    expect(await trangThaiDon()).toBe('shipping');
+    // Lô vẫn CREATED: "đã lấy hàng" chưa phải "đã giao", không được mở cửa sổ
+    // tự-xác-nhận giải ngân.
+    expect((await doc(lo.id)).status).toBe(ShipmentStatus.CREATED);
+    expect(kq.updated).toBe(true);
+  });
+
+  it('GHN mới chờ lấy hàng → đơn giữ nguyên Đã xác nhận', async () => {
+    await datTrangThaiDon('confirmed');
+    await taoLo();
+
+    for (const st of ['ready_to_pick', 'picking']) {
+      ghnTraVe = st;
+      const kq = await svc.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
+      expect(kq.updated).toBe(false);
+    }
+    expect(await trangThaiDon()).toBe('confirmed');
+  });
+
+  it('đơn đã huỷ thì GHN báo đã lấy hàng cũng KHÔNG kéo về Đang giao', async () => {
+    await datTrangThaiDon('cancelled');
+    await taoLo();
+    ghnTraVe = 'picked';
+
+    await svc.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
+
+    expect(await trangThaiDon()).toBe('cancelled');
+  });
+
+  it('lỡ mất sự kiện lấy hàng, nghe thẳng delivered → đơn vẫn sang Đang giao', async () => {
+    await datTrangThaiDon('confirmed');
+    const lo = await taoLo();
+    ghnTraVe = 'delivered';
+
+    await svc.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
+
+    expect(await trangThaiDon()).toBe('shipping');
+    expect((await doc(lo.id)).status).toBe(ShipmentStatus.DELIVERED);
+  });
+
+  it('đồng bộ định kỳ cũng đưa đơn đang chuẩn bị sang Đang giao', async () => {
+    await datTrangThaiDon('processing');
+    const lo = await taoLo();
+    ghnTraVe = 'transporting';
+
+    await svc.dongBoTatCa();
+
+    expect(await trangThaiDon()).toBe('shipping');
+    expect((await doc(lo.id)).status).toBe(ShipmentStatus.CREATED);
+  });
+
   it('một lô lỗi không làm chết cả lượt đồng bộ', async () => {
     await taoLo(ShipmentStatus.CREATED, 'GHN-HONG');
     await taoLo(ShipmentStatus.CREATED, 'GHN-OK');
