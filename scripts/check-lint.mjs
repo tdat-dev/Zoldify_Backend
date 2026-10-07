@@ -27,7 +27,7 @@ import { ESLint } from 'eslint';
 // Mốc cũ 979 (đo 25/08). Hai PR đó viết lại chat.service.ts nên dọn kèm 13
 // vấn đề; hạ mốc ngay để 13 chỗ ấy không lặng lẽ mọc lại — bánh cóc chỉ có
 // tác dụng khi ai đó chịu vặn nó xuống sau mỗi lần sửa.
-const BASELINE = 966;
+const BASELINE = 943;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);
