@@ -13,6 +13,7 @@ import { IUser } from '@identity/users/users.interface';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
+import { ProductsService } from '@catalog/products/products.service';
 
 /**
  * Đánh giá trả ra ngoài chỉ kèm id, tên, ảnh của người viết.
@@ -41,6 +42,7 @@ export class InteractionsService {
     private readonly reviewRepository: Repository<Review>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    private readonly productsService: ProductsService,
   ) {}
 
   async create(createInteractionDto: CreateReviewDto, user: IUser) {
@@ -127,6 +129,9 @@ export class InteractionsService {
        WHERE id = ?`,
       [productId, productId, productId],
     );
+    // GET /products/:id và danh sách đọc bản nhớ Redis: không xoá thì app làm
+    // mới vẫn nhận điểm cũ tới khi bản nhớ hết hạn.
+    await this.productsService.invalidateProductCache(productId);
   }
 
   /**

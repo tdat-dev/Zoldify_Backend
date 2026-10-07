@@ -201,6 +201,15 @@ export class ProductsService {
     await this.cacheSet(PRODUCT_LIST_GEN_KEY, doi, PRODUCT_LIST_GEN_TTL);
   }
 
+  /**
+   * Bỏ bản nhớ của một sản phẩm và của danh sách, cho nơi khác đổi số liệu
+   * hiển thị của sản phẩm (điểm, lượt đánh giá) mà không đi qua update() ở đây.
+   */
+  async invalidateProductCache(id: number): Promise<void> {
+    await this.cacheDel(this.detailKey(id));
+    await this.moiDanhSach();
+  }
+
   async create(createProductDto: CreateProductDto, user: IUser) {
     await this.assertSellerHasPickup(user.id);
 
