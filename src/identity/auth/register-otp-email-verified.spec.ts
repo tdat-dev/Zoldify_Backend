@@ -14,24 +14,29 @@ import { UserRole } from '@identity/users/entities/user.entity';
  * cũ: email_verified = false.
  */
 describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
+  type DongDaLuu = { email_verified?: boolean; role?: UserRole };
+
   const makeRepo = () => {
-    let saved: any;
+    let saved: DongDaLuu = {};
     const repo = {
-      findOne: async () => null,
-      create: (x: any) => x,
-      save: async (x: any) => (saved = x),
+      findOne: () => Promise.resolve(null),
+      create: (x: DongDaLuu) => x,
+      save: (x: DongDaLuu) => {
+        saved = x;
+        return Promise.resolve(x);
+      },
     };
     return { repo, getSaved: () => saved };
   };
 
-  const makeAuthService = (repo: any, cacheData: unknown) =>
+  const makeAuthService = (repo: unknown, cacheData: unknown) =>
     new AuthService(
       new UsersService(repo as never),
       {} as never,
       {} as never,
       {} as never,
       {
-        get: async () => cacheData,
+        get: () => Promise.resolve(cacheData),
         del: jest.fn(),
       } as never,
       {} as never,
@@ -58,7 +63,7 @@ describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
       full_name: 'Bên mua',
       email: 'c@d.com',
       password: 'matkhau123',
-    } as never);
+    });
 
     expect(getSaved().email_verified).toBe(false);
   });

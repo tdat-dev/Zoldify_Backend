@@ -23,24 +23,26 @@ describe('resetPassword thu hồi phiên cũ', () => {
     const incrementCalls: unknown[] = [];
     const updateCalls: unknown[] = [];
     const userRepository = {
-      findOne: async () => user,
-      update: async (id: number, patch: unknown) => {
+      findOne: () => Promise.resolve(user),
+      update: (id: number, patch: unknown) => {
         updateCalls.push({ id, patch });
+        return Promise.resolve();
       },
-      increment: async (where: { id: number }, col: string, by: number) => {
+      increment: (where: { id: number }, col: 'token_version', by: number) => {
         incrementCalls.push({ where, col, by });
-        (user as any)[col] += by;
+        user[col] += by;
+        return Promise.resolve();
       },
     };
 
-    const updateUserToken = jest.fn(async () => undefined);
+    const updateUserToken = jest.fn(() => Promise.resolve());
     const usersService = {
       hashPassword: (p: string) => `hashed:${p}`,
       updateUserToken,
     };
 
     const cacheManager = {
-      get: jest.fn(async () => '123456'),
+      get: jest.fn(() => Promise.resolve('123456')),
       del: jest.fn(),
     };
 
@@ -74,7 +76,10 @@ describe('resetPassword thu hồi phiên cũ', () => {
 
     await service.resetPassword('a@b.com', '123456', 'matkhaumoi123');
 
-    expect(updateCalls).toContainEqual({ id: 7, patch: { refresh_token: null } });
+    expect(updateCalls).toContainEqual({
+      id: 7,
+      patch: { refresh_token: null },
+    });
   });
 
   it('tài khoản bị khoá vẫn đặt lại được mật khẩu, không nhận 401', async () => {
