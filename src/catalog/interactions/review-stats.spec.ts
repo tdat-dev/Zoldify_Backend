@@ -183,7 +183,9 @@ describe('Đánh giá: số tổng hợp thật cho sản phẩm và người b�
 
   it('đánh giá chưa xoá thì vẫn chặn viết lần hai (400, không phải 500)', async () => {
     await viet(buyers[0], 4);
-    await expect(viet(buyers[0], 5)).rejects.toThrow('Bạn đã đánh giá sản phẩm này rồi');
+    await expect(viet(buyers[0], 5)).rejects.toThrow(
+      'Bạn đã đánh giá sản phẩm này rồi',
+    );
   });
 
   it('sửa số sao thì điểm sản phẩm đổi theo', async () => {

@@ -67,11 +67,32 @@ export class InteractionsService {
       );
     }
 
+    // withDeleted: khoá UNIQUE idx_user_product tính cả dòng đã xoá mềm. Bỏ qua
+    // dòng đó ở đây thì INSERT bên dưới đâm vào khoá và trả 500 (test máy ảo
+    // 07/10: người mua xoá đánh giá rồi viết lại).
     const existing = await this.reviewRepository.findOne({
       where: { user: { id: user.id }, product: { id: product_id } },
+      withDeleted: true,
+      select: { id: true, deleted_at: true },
     });
-    if (existing) {
+    if (existing && !existing.deleted_at) {
       throw new BadRequestException('Bạn đã đánh giá sản phẩm này rồi');
+    }
+    if (existing) {
+      // Dùng lại đúng dòng cũ: ghi đè nội dung, bỏ dấu xoá, tính ngày viết từ
+      // bây giờ để nó đứng đầu danh sách như một đánh giá mới.
+      await this.reviewRepository.restore(existing.id);
+      await this.reviewRepository.update(existing.id, {
+        order: { id: order_id },
+        rating,
+        comment,
+        images: images ?? [],
+        created_at: new Date(),
+      });
+      await this.refreshProductStats(product_id);
+      return this.reviewRepository.findOneOrFail({
+        where: { id: existing.id },
+      });
     }
 
     const review = this.reviewRepository.create({
