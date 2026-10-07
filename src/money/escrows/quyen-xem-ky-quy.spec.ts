@@ -223,9 +223,19 @@ describe('EscrowsService — ai được xem khoản ký quỹ nào', () => {
   });
 
   it('findByOrder — chỉ người trong đơn (mua/bán) hoặc admin mới xem được', async () => {
+    // NGƯỜI NGOÀI NHẬN MẢNG RỖNG, KHÔNG PHẢI LỖI — đổi từ 07/10, lúc gộp nhánh.
+    //
+    // Bản cũ của vai B đọc hết ký quỹ của đơn rồi mới kiểm người gọi có là một
+    // bên nào không, và ném 403. Bản của Đạt lọc ngay trong câu SQL (mảng
+    // `where` = OR), nên người ngoài đơn giản là không khớp dòng nào.
+    //
+    // Lấy bản của Đạt vì nó kín hơn ở HAI chỗ: đơn nhiều người bán thì người
+    // bán A không còn thấy số tiền của B (bản cũ trả về TẤT CẢ sau khi kiểm),
+    // và một lỗi 403 còn xác nhận "đơn này có tồn tại" — mảng rỗng thì không
+    // nói gì cả.
     await expect(
       escrows.findByOrder(orderId, vai(nguoiLaId, UserRole.BUYER)),
-    ).rejects.toThrow();
+    ).resolves.toEqual([]);
 
     for (const u of [
       vai(buyerId, UserRole.BUYER),

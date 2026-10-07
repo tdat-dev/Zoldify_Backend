@@ -1,0 +1,60 @@
+{
+  "name": "Login",
+  "title": "Login with email and password",
+  "lifelines": [
+    {"id": "u", "label": "User", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":AuthController", "kind": "object"},
+    {"id": "strat", "label": ":LocalStrategy", "kind": "object"},
+    {"id": "auth", "label": ":AuthService", "kind": "object"},
+    {"id": "users", "label": ":UsersService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "enter email, password"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /auth/login {email, password}"},
+    {"msg": "sync", "from": "ctl", "to": "strat", "label": "validate(email, password)"},
+    {"note": "LocalAuthGuard runs LocalStrategy\nbefore handleLogin() executes", "over": ["strat", "auth"]},
+    {"msg": "sync", "from": "strat", "to": "auth", "label": "validateUser(email, password)"},
+    {"msg": "sync", "from": "auth", "to": "users", "label": "findOneByEmail(email)"},
+    {"msg": "sync", "from": "users", "to": "db", "label": "SELECT user WHERE email = ?"},
+    {"msg": "reply", "from": "db", "to": "users", "label": "User | null"},
+    {"msg": "reply", "from": "users", "to": "auth", "label": "User | null"},
+    {"frag": "opt", "guardOn": "auth", "operands": [
+      {"guard": "[user found]", "steps": [
+        {"msg": "sync", "from": "auth", "to": "users", "label": "isValidPassword(pass, user.password)"},
+        {"msg": "self", "on": "users", "label": "bcrypt.compareSync(pass, hash)"},
+        {"msg": "reply", "from": "users", "to": "auth", "label": "boolean"}
+      ]}
+    ]},
+    {"msg": "reply", "from": "auth", "to": "strat", "label": "user without password | null"},
+    {"frag": "break", "guardOn": "strat", "operands": [
+      {"guard": "[user not found or password wrong]", "steps": [
+        {"msg": "reply", "from": "strat", "to": "ctl", "label": "UnauthorizedException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "401 Unauthorized"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "reply", "from": "strat", "to": "ctl", "label": "req.user"},
+    {"msg": "sync", "from": "ctl", "to": "auth", "label": "login(req.user)"},
+    {"msg": "sync", "from": "auth", "to": "db", "label": "findOne({id})"},
+    {"msg": "reply", "from": "db", "to": "auth", "label": "User {is_locked, token_version}"},
+    {"frag": "break", "guardOn": "auth", "operands": [
+      {"guard": "[account is locked]", "steps": [
+        {"msg": "reply", "from": "auth", "to": "ctl", "label": "UnauthorizedException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "401 Unauthorized"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "self", "on": "auth", "label": "createRefreshToken(payload)"},
+    {"msg": "sync", "from": "auth", "to": "users", "label": "updateUserToken(refreshToken, id)"},
+    {"msg": "sync", "from": "users", "to": "db", "label": "UPDATE users SET refresh_token"},
+    {"msg": "reply", "from": "db", "to": "users", "label": "UpdateResult"},
+    {"msg": "reply", "from": "users", "to": "auth", "label": "UpdateResult"},
+    {"msg": "self", "on": "auth", "label": "jwtService.sign(payload)"},
+    {"msg": "reply", "from": "auth", "to": "ctl", "label": "{access_token, refresh_token, user}"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {access_token, refresh_token, user}"},
+    {"msg": "self", "on": "app", "label": "store tokens"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "go to home screen"}
+  ]
+}

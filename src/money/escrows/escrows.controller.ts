@@ -1,9 +1,18 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { EscrowsService } from './escrows.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
+import { AdminGuard } from '@common/guards/admin.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
+import { UserRole } from '@identity/users/entities/user.entity';
 import { Escrow } from './entities/escrow.entity';
 import {
   ApiPaginated,
@@ -27,7 +36,9 @@ import {
 export class EscrowsController {
   constructor(private readonly escrowsService: EscrowsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  // Toàn sàn: chỉ admin. Trước 28/09 ai đăng nhập cũng tải được mọi escrow
+  // kèm thông tin người mua/bán (audit B-03).
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiPaginated(Escrow)
   @Get()
   @ResponseMessage('Lấy danh sách escrow thành công')
@@ -51,13 +62,17 @@ export class EscrowsController {
   @ApiPaginated(Escrow)
   @Get('seller/:sellerId')
   @ResponseMessage('Lấy escrow của người bán thành công')
-  findBySeller(
+  async findBySeller(
     @Param('sellerId') sellerId: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('status') status: string,
     @User() user: IUser,
   ) {
+    // Hai lớp. `assertSelfOrAdmin` chặn ngay ở cửa cho lỗi 403 sớm và rõ;
+    // `EscrowsService.findBySeller` chặn lần nữa ở két. Cửa thứ hai mở ra sau
+    // này — một job, một script, một controller khác — sẽ không đi vòng qua được.
+    this.assertSelfOrAdmin(+sellerId, user);
     return this.escrowsService.findBySeller(
       +sellerId,
       +page || 1,
@@ -71,7 +86,18 @@ export class EscrowsController {
   @ApiShape({ held_balance: 'number' })
   @Get('held/:sellerId')
   @ResponseMessage('Lấy số dư đang giữ thành công')
-  getHeldBalance(@Param('sellerId') sellerId: string, @User() user: IUser) {
+  async getHeldBalance(
+    @Param('sellerId') sellerId: string,
+    @User() user: IUser,
+  ) {
+    this.assertSelfOrAdmin(+sellerId, user);
     return this.escrowsService.getHeldBalance(+sellerId, user);
+  }
+
+  /** Người bán chỉ xem tiền của chính mình; admin xem của bất kỳ ai. */
+  private assertSelfOrAdmin(sellerId: number, user: IUser) {
+    if (user.role !== UserRole.ADMIN && user.id !== sellerId) {
+      throw new ForbiddenException('Bạn chỉ xem được escrow của chính mình');
+    }
   }
 }

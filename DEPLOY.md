@@ -154,6 +154,91 @@ ai phải xoá database đang làm việc.
 
 ---
 
+## Sao lưu và khôi phục
+
+Service `backup` (ảnh `mysql:8`, chạy `scripts/backup-db.sh`) dump database
+ngay khi khởi động, tức mỗi lần deploy, rồi 24 giờ một lần, vào `./backups`
+cạnh file compose. Giữ 14 ngày (đổi bằng `BACKUP_KEEP_DAYS` trong `.env`).
+File chỉ xuất hiện khi dump chạy hết và kiểm được dòng "Dump completed"; bản
+hỏng giữa chừng bị bỏ, không nằm lẫn với bản tốt.
+
+**Đừng cài thêm cron `scripts/backup-mysql.sh`.** Script đó (task #24) là cách
+sao lưu trước đây, chạy bằng crontab trên máy chủ, nhưng chưa từng được cài lên
+VPS (29/09: crontab không có dòng nào, không có thư mục backup nào). Service
+`backup` thay thế nó; cài cả hai thì mỗi đêm có hai bản dump chồng nhau.
+
+```bash
+ls -lh backups/                          # các bản đang có
+docker compose -p zoldify logs backup    # lần chạy gần nhất: [backup] OK hay LỖI
+docker compose -p zoldify run --rm -e BACKUP_ONCE=1 backup   # dump ngay một bản
+```
+
+**Khôi phục.** Lệnh này GHI ĐÈ database đang chạy, nên dừng api trước. Mật
+khẩu đọc từ biến có sẵn trong container mysql, không gõ ra dòng lệnh:
+
+```bash
+docker compose -p zoldify stop api
+gunzip -c backups/zoldify-YYYYMMDD-HHMMSS.sql.gz \
+  | docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+docker compose -p zoldify start api
+```
+
+**Thử khôi phục trước khi cần thật.** Một bản sao lưu chưa từng được khôi phục
+thì chưa biết có dùng được không. Làm một lần vào database tạm:
+
+```bash
+docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE restore_test"'
+gunzip -c backups/<file>.sql.gz \
+  | docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" restore_test'
+docker compose -p zoldify exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM restore_test.orders; DROP DATABASE restore_test"'
+```
+
+`./backups` vẫn nằm trên cùng VPS: chống được xoá nhầm, migration hỏng, dữ liệu
+bị ghi sai, nhưng **không** chống được mất cả máy. Vì vậy có thêm service
+`offsite`.
+
+### Bản ngoài VPS (Cloudflare R2)
+
+Service `offsite` (ảnh `rclone/rclone`, chạy `scripts/offsite-backup.sh`) chép
+`./backups` lên bucket `zoldify-backups` mỗi 6 giờ, vào thư mục `prod/` hoặc
+`staging/` theo `BACKUP_R2_PREFIX`. Trên R2 giữ 30 ngày (`OFFSITE_KEEP_DAYS`),
+lâu hơn bản local 14 ngày. Chỉ thêm, không đồng bộ xoá: bản local bị xoá nhầm
+thì bản trên R2 vẫn còn.
+
+Cần 4 biến trong `.env` (cùng với `R2_ACCOUNT_ID` đã có):
+
+| Biến | Giá trị |
+|---|---|
+| `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY` | token R2 **riêng**: tên `zoldify-backup-vps`, quyền Object Read & Write, chỉ bucket `zoldify-backups`, chỉ IP của VPS |
+| `BACKUP_R2_BUCKET` | `zoldify-backups` |
+| `BACKUP_R2_PREFIX` | `prod` hoặc `staging` |
+
+Đừng dùng lại hay nới quyền `R2_ACCESS_KEY_ID` của ứng dụng: token đó chỉ vào
+được bucket ảnh `zoldify-images` (vào `zoldify-backups` bị 403), và nới nó ra
+thì một lỗ hổng ở api là đủ để đọc hay xoá bản sao lưu. Đổi IP VPS thì phải sửa bộ lọc IP của token trên
+Cloudflare (R2, Manage API tokens), nếu không `offsite` báo lỗi 403.
+
+```bash
+docker compose -p zoldify logs offsite   # [offsite] OK r2:zoldify-backups/prod: N bản, mới nhất ...
+docker compose -p zoldify exec -T -e OFFSITE_ONCE=1 offsite sh /offsite-backup.sh   # chép ngay
+```
+
+**Khôi phục khi mất cả VPS.** Trên máy mới, dựng lại theo tài liệu này, rồi
+tải bản cần dùng về `./backups` và làm như mục khôi phục ở trên. Tải bằng
+chính service `offsite` thì không phải cài rclone, nhưng mount `./backups` của
+nó là chỉ đọc, nên tải vào `/tmp` trong container rồi `docker compose cp` ra:
+
+```bash
+docker compose -p zoldify exec offsite sh -c 'export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare RCLONE_CONFIG_R2_ACCESS_KEY_ID="$BACKUP_R2_ACCESS_KEY_ID" RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$BACKUP_R2_SECRET_ACCESS_KEY" RCLONE_CONFIG_R2_ENDPOINT="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true; rclone lsf r2:zoldify-backups/prod; rclone copy r2:zoldify-backups/prod/zoldify-YYYYMMDD-HHMMSS.sql.gz /tmp/'
+docker compose -p zoldify cp offsite:/tmp/zoldify-YYYYMMDD-HHMMSS.sql.gz backups/
+```
+
+Máy mới có IP khác thì token sẽ từ chối (403): sửa bộ lọc IP của token trước,
+hoặc tải file trực tiếp trên dashboard Cloudflare (R2, bucket
+`zoldify-backups`).
+
+---
+
 ## Chưa có, và biết là chưa có
 
 | Thứ | Trạng thái |
@@ -163,7 +248,6 @@ ai phải xoá database đang làm việc.
 | Redis | **không có dòng code nào dùng** — bộ nhớ đệm nằm trong tiến trình Node (`CacheModule.register()`), nên compose cũng không khởi động Redis |
 | Nhân bản API | **đã có** (task #6): ba bản, `API_REPLICAS` chỉnh được. Chỗ để ảnh không còn chặn vì cả ba bản ở **cùng một VPS** nên mount chung `product-images`; trải ra nhiều máy mới cần R2/S3 |
 | Healthcheck thật | `GET /` chỉ nói tiến trình còn sống, **không** chạm database. Cụm vẫn báo healthy khi MySQL đã chết |
-| Sao lưu | chưa có lịch dump `mysql-data` |
 
 ---
 

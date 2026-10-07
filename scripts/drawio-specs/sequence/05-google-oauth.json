@@ -1,0 +1,69 @@
+{
+  "name": "Google OAuth",
+  "title": "Sign in with Google via Firebase",
+  "lifelines": [
+    {"id": "u", "label": "User", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":AuthController", "kind": "object"},
+    {"id": "fbs", "label": ":FirebaseService", "kind": "object"},
+    {"id": "auth", "label": ":AuthService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"},
+    {"id": "g", "label": "«external»\n:Google", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "tap Sign in with Google"},
+    {"msg": "sync", "from": "app", "to": "g", "label": "Google sign-in + Firebase Auth sign-in"},
+    {"msg": "reply", "from": "g", "to": "app", "label": "Firebase user"},
+    {"msg": "sync", "from": "app", "to": "g", "label": "user.getIdToken()"},
+    {"msg": "reply", "from": "g", "to": "app", "label": "Firebase idToken"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /auth/firebase {idToken}"},
+    {"msg": "sync", "from": "ctl", "to": "fbs", "label": "verifyIdToken(idToken)"},
+    {"frag": "break", "guardOn": "fbs", "operands": [
+      {"guard": "[Firebase Admin not initialized]", "steps": [
+        {"msg": "reply", "from": "fbs", "to": "ctl", "label": "UnauthorizedException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "401 Unauthorized"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "sync", "from": "fbs", "to": "g", "label": "admin.auth().verifyIdToken(idToken)"},
+    {"msg": "reply", "from": "g", "to": "fbs", "label": "DecodedIdToken | error"},
+    {"frag": "break", "guardOn": "fbs", "operands": [
+      {"guard": "[token invalid]", "steps": [
+        {"msg": "reply", "from": "fbs", "to": "ctl", "label": "UnauthorizedException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "401 Unauthorized"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "reply", "from": "fbs", "to": "ctl", "label": "{uid, email, phone_number, name, avatar}"},
+    {"msg": "sync", "from": "ctl", "to": "db", "label": "findOne({email} or {phone_number})"},
+    {"msg": "reply", "from": "db", "to": "ctl", "label": "User | null"},
+    {"frag": "alt", "guardOn": "ctl", "operands": [
+      {"guard": "[user not found]", "steps": [
+        {"msg": "sync", "from": "ctl", "to": "db", "label": "INSERT user (password '', email_verified)"},
+        {"msg": "reply", "from": "db", "to": "ctl", "label": "User"}
+      ]},
+      {"guard": "[Google avatar changed]", "steps": [
+        {"msg": "sync", "from": "ctl", "to": "db", "label": "UPDATE users SET avatar"},
+        {"msg": "reply", "from": "db", "to": "ctl", "label": "UpdateResult"}
+      ]}
+    ]},
+    {"msg": "sync", "from": "ctl", "to": "auth", "label": "login(user)"},
+    {"msg": "sync", "from": "auth", "to": "db", "label": "findOne({id})"},
+    {"msg": "reply", "from": "db", "to": "auth", "label": "User {is_locked, token_version}"},
+    {"frag": "break", "guardOn": "auth", "operands": [
+      {"guard": "[account is locked]", "steps": [
+        {"msg": "reply", "from": "auth", "to": "ctl", "label": "UnauthorizedException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "401 Unauthorized"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show error"}
+      ]}
+    ]},
+    {"msg": "self", "on": "auth", "label": "sign access + refresh JWT"},
+    {"msg": "sync", "from": "auth", "to": "db", "label": "UPDATE users SET refresh_token"},
+    {"msg": "reply", "from": "db", "to": "auth", "label": "UpdateResult"},
+    {"msg": "reply", "from": "auth", "to": "ctl", "label": "{access_token, refresh_token, user}"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {access_token, refresh_token, user}"},
+    {"msg": "self", "on": "app", "label": "save session"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "signed in, go to home"},
+    {"note": "No server-side OAuth redirect: the client signs in\nwith Google; backend only verifies the Firebase idToken", "over": ["app", "fbs"]}
+  ]
+}

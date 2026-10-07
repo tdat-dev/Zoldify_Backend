@@ -10,7 +10,7 @@ import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Payment } from './entities/payment.entity';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { DataSource, Repository } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import {
@@ -237,59 +237,39 @@ export class PaymentsService {
   }
 
   /**
-   * Sửa một bản ghi thanh toán. **CHỈ ADMIN.**
+   * Sửa tay một giao dịch: CHỈ admin, và KHÔNG BAO GIỜ chuyển sang SUCCESS.
    *
-   * Tới 24/09 hàm này không kiểm vai một lần nào. `findOne(id, user)` cho phép
-   * CHỦ SỞ HỮU nạp bản ghi — mà chủ sở hữu payment của một đơn chính là người
-   * mua. Nên `PATCH /payments/:id {"status":"success"}` trên payment của chính
-   * mình là đi thẳng xuống nhánh cuối và ghi `orders.is_paid = 1`.
-   *
-   * Không một bút toán nào được sinh ra. Đơn "đã thanh toán" mà sổ cái trống,
-   * rồi người bán nhìn thấy đơn đã trả tiền và gửi hàng.
-   *
-   * Đo được bằng TC-P0-01 (`tu-danh-dau-da-tra-tien.spec.ts`): API trả 200 kèm
-   * `is_paid: 1` trong khi `COUNT(ledger_transactions) = 0`.
-   *
-   * Vì sao chặn ở đây chứ không sửa `findOne`: `findOne` đúng như nó là — người
-   * mua PHẢI xem được giao dịch của mình. Cái sai là ĐỌC được thì GHI được.
-   *
-   * Đường đi bình thường của "đơn đã trả tiền" là webhook PayOS
-   * (`payos.service.ts` → `applyPaidPayment`), nơi tiền và trạng thái đi chung
-   * một transaction. Endpoint này chỉ còn dành cho admin đối soát tay.
+   * Tới 28/09 route này chỉ cần đăng nhập: người mua gửi `{"status":"success"}`
+   * cho payment PENDING của chính mình là đơn thành `is_paid = true`, không
+   * đồng nào đi qua sổ cái (audit A-01). SUCCESS nghĩa là tiền đã về, và tiền
+   * chỉ được ghi qua sổ cái: webhook PayOS, hoặc admin xác nhận COD trong
+   * OrdersService.updateStatus. Vì vậy hàm này không còn ghi vào bảng orders.
    */
   async update(id: number, updatePaymentDto: UpdatePaymentDto, user: IUser) {
-    if (user.role !== 'admin') {
-      throw new ForbiddenException(
-        'Chỉ admin mới được sửa giao dịch thanh toán. Trạng thái thanh toán ' +
-          'do cổng thanh toán quyết định, không do người dùng khai báo.',
+    // Controller đã gắn AdminGuard; kiểm lại ở đây để service không phụ thuộc
+    // vào việc route nào gọi nó.
+    if (user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Chỉ admin mới được sửa giao dịch');
+    }
+    if (updatePaymentDto.status === PaymentStatus.SUCCESS) {
+      throw new BadRequestException(
+        'Không thể đánh dấu thành công bằng tay. Giao dịch chỉ thành công qua PayOS hoặc xác nhận COD của đơn hàng',
       );
     }
 
     const payment = await this.findOne(id, user);
+    if (payment.status === PaymentStatus.SUCCESS) {
+      throw new BadRequestException('Giao dịch đã thành công, không sửa được');
+    }
 
     if (updatePaymentDto.status) {
       payment.status = updatePaymentDto.status;
-      if (updatePaymentDto.status === PaymentStatus.SUCCESS) {
-        payment.paid_at = new Date();
-      }
     }
     if (updatePaymentDto.transaction_code) {
       payment.transaction_code = updatePaymentDto.transaction_code;
     }
 
     await this.paymentRepository.save(payment);
-
-    if (
-      payment.status === PaymentStatus.SUCCESS &&
-      payment.order &&
-      payment.type === PaymentType.ORDER_PAYMENT
-    ) {
-      await this.orderRepository.update(payment.order.id, {
-        is_paid: true,
-        paid_at: new Date(),
-      });
-    }
-
     return this.findOne(id, user);
   }
 
@@ -311,12 +291,12 @@ export class PaymentsService {
    * chảy qua ngân hàng mà không còn dòng nào trỏ tới nó.
    */
   async remove(id: number, user: IUser) {
-    if (user.role !== 'admin') {
-      throw new ForbiddenException(
-        'Chỉ admin mới được xoá giao dịch thanh toán',
-      );
+    const payment = await this.findOne(id, user);
+    // Giao dịch đã thành công là chứng từ tiền, khớp với bút toán trong sổ cái.
+    // Xoá nó thì sổ cái còn tiền mà không còn giấy tờ giải thích, kể cả admin.
+    if (payment.status === PaymentStatus.SUCCESS) {
+      throw new BadRequestException('Không thể xoá giao dịch đã thành công');
     }
-    await this.findOne(id, user);
     await this.paymentRepository.delete(id);
     return 'Xóa giao dịch thành công';
   }

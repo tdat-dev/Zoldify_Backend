@@ -7,6 +7,29 @@ import {
   OrderShipment,
   ShipmentStatus,
 } from './entities/order-shipment.entity';
+import { Order, OrderStatus } from './entities/order.entity';
+
+/**
+ * Trạng thái GHN nghĩa là "tài xế đã cầm hàng đi": từ `picked` trở về sau trên
+ * đường giao xuôi. Gặp một trong số này thì đơn phải là "Đang giao".
+ *
+ * Có cả `delivered`: webhook có thể rơi đúng sự kiện `picked` (deploy, mạng),
+ * lần đầu nghe tin đã là giao xong; đơn khi đó vẫn phải qua "Đang giao".
+ *
+ * Cố ý KHÔNG có `ready_to_pick` / `picking` (tài xế chưa lấy), `cancel`, và
+ * nhánh hoàn `return*` / `waiting_to_return`: hàng quay về người bán không phải
+ * "đang giao cho người mua", xử lý hoàn hàng là việc riêng chưa làm.
+ */
+const GHN_DA_LAY_HANG = new Set([
+  'picked',
+  'storing',
+  'transporting',
+  'sorting',
+  'delivering',
+  'money_collect_delivering',
+  'delivery_fail',
+  'delivered',
+]);
 
 /**
  * "GHN nói gì về lô hàng này" — MỘT chỗ duy nhất, hai đường vào.
@@ -91,6 +114,35 @@ export class ShipmentTrackingService {
   }
 
   /**
+   * Đưa đơn của lô này sang "Đang giao" khi GHN báo tài xế đã lấy hàng.
+   *
+   * MỘT câu UPDATE có điều kiện chứ không đọc-rồi-ghi: webhook và lượt quét mỗi
+   * giờ có thể chạy cùng lúc trên cùng một đơn. Điều kiện `status IN
+   * (confirmed, processing)` vừa làm câu lệnh chạy lại vô hại, vừa chặn kéo
+   * ngược một đơn đã huỷ, đã giao hay đã hoàn tiền về "Đang giao".
+   *
+   * Đi qua `shipments.manager` thay vì tiêm thêm repo Order: lớp này cố ý chỉ
+   * có hai phụ thuộc để bài kiểm dựng được bằng hai dòng (xem đầu file).
+   */
+  private async chuyenDonSangDangGiao(lo: OrderShipment): Promise<boolean> {
+    const kq = await this.shipments.manager
+      .createQueryBuilder()
+      .update(Order)
+      .set({ status: OrderStatus.SHIPPING })
+      .where(
+        'id = (SELECT s.order_id FROM order_shipments s WHERE s.id = :loId)',
+        {
+          loId: lo.id,
+        },
+      )
+      .andWhere('status IN (:...truoc)', {
+        truoc: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING],
+      })
+      .execute();
+    return (kq.affected ?? 0) > 0;
+  }
+
+  /**
    * Một lượt webhook từ GHN.
    *
    * ĐIỀU QUAN TRỌNG NHẤT TRONG HÀM NÀY: thân request KHÔNG được tin.
@@ -158,14 +210,22 @@ export class ShipmentTrackingService {
       return { known: true, updated: false };
     }
 
+    const dangGiao =
+      thuc !== null && GHN_DA_LAY_HANG.has(thuc)
+        ? await this.chuyenDonSangDangGiao(lo)
+        : false;
+    if (dangGiao)
+      this.logger.log(`Webhook GHN: ${ma} đã lấy hàng, đơn sang Đang giao.`);
+
     if (thuc !== 'delivered') {
-      this.logger.log(`Webhook ${ma}: GHN đang báo "${thuc}", chưa chốt.`);
-      return { known: true, updated: false };
+      if (!dangGiao)
+        this.logger.log(`Webhook ${ma}: GHN đang báo "${thuc}", chưa chốt.`);
+      return { known: true, updated: dangGiao };
     }
 
     const doi = await this.danhDauDaGiao(lo);
     if (doi) this.logger.log(`Webhook GHN: lô ${ma} chuyển sang đã giao.`);
-    return { known: true, updated: doi };
+    return { known: true, updated: doi || dangGiao };
   }
 
   /**
@@ -184,7 +244,11 @@ export class ShipmentTrackingService {
     for (const lo of ds) {
       if (!lo.tracking_code) continue;
       try {
-        if ((await this.ghn.getOrderStatus(lo.tracking_code)) === 'delivered') {
+        const thuc = await this.ghn.getOrderStatus(lo.tracking_code);
+        if (thuc !== null && GHN_DA_LAY_HANG.has(thuc)) {
+          await this.chuyenDonSangDangGiao(lo);
+        }
+        if (thuc === 'delivered') {
           if (await this.danhDauDaGiao(lo)) delivered += 1;
         }
       } catch (err) {

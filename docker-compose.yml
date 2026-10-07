@@ -24,9 +24,21 @@
 # fail-open); @keyv/redis đã nằm trong dependencies nên image có sẵn client. Vì
 # vậy Redis giờ là thật, không còn là container trang trí.
 #
+# Cộng thêm `backup`: chỉ chờ mysql healthy rồi chạy song song, api không phụ
+# thuộc vào nó (sao lưu hỏng không được làm sập ứng dụng).
+#
 # KHÔNG đặt `name:` ở đây — tên project truyền lúc chạy bằng cờ `-p`
 # (prod: `-p zoldify`, staging: `-p zoldify-staging`) để CÙNG một file compose
 # này chạy được cả hai môi trường; khác biệt cổng/URL nằm ở .env mỗi bên.
+
+# Giới hạn log cho MỌI service. Driver json-file mặc định của Docker không có
+# trần: log của api cứ thế phình ra tới khi đầy ổ đĩa VPS. 5 file x 10 MB là
+# đủ đọc lại vài ngày gần nhất bằng `docker compose logs`.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
 
 services:
   mysql:
@@ -36,6 +48,7 @@ services:
     # cho nó chỗ thở mà vẫn không nuốt hết VPS. Đây là dịch vụ đắt nhất cụm và
     # cũng là thứ đau nhất khi bị OOM-killer chọn — nên nó được phần lớn nhất.
     mem_limit: ${MYSQL_MEM:-1g}
+    logging: *default-logging
     environment:
       # `:?` làm compose DỪNG kèm thông báo khi biến trống, thay vì dựng một
       # database có mật khẩu rỗng rồi để đó.
@@ -92,6 +105,7 @@ services:
       # (mặc định), vì nó trả lỗi ghi và biến cache-miss thành lỗi 500.
       - --maxmemory-policy
       - allkeys-lru
+    logging: *default-logging
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
@@ -101,6 +115,69 @@ services:
     # Không mở cổng ra máy chủ: chỉ container trong mạng compose gọi được.
     # ports:
     #   - '6379:6379'
+
+  # Sao lưu database mỗi ngày vào ./backups trên VPS (xem scripts/backup-db.sh).
+  #
+  # Trước 29/09 không có bản sao lưu nào: toàn bộ đơn, tiền, sổ cái nằm trong
+  # một volume trên một máy. Chạy một bản ngay khi service khởi động (tức mỗi
+  # lần deploy), sau đó 24 giờ một lần; giữ 14 ngày.
+  #
+  # ./backups VẪN nằm trên cùng VPS: chống được xoá nhầm, migration hỏng, dữ
+  # liệu bị ghi sai; KHÔNG chống được mất cả máy. Service `offsite` bên dưới
+  # chép nó ra R2. Cách khôi phục: DEPLOY.md, mục "Sao lưu và khôi phục".
+  backup:
+    image: mysql:8
+    restart: unless-stopped
+    # `mysqldump --quick` đẩy từng dòng ra stdout thay vì nạp cả bảng vào RAM,
+    # rồi gzip nén theo luồng. Cả hai đều không giữ bộ đệm lớn, nên 128M dư.
+    # Vẫn phải có trần: không có thì một lần dump bảng lớn bất thường có thể
+    # đẩy container này thành kẻ bị OOM-killer chọn thay vì mysql.
+    mem_limit: ${BACKUP_MEM:-128m}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD đang trống, điền vào .env trước khi chạy}
+      DB_DATABASE: ${DB_DATABASE:-zoldify}
+      DB_HOST: mysql
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    # Thay entrypoint của ảnh mysql: không khởi động một MySQL thứ hai, chỉ
+    # mượn mysqldump/gzip có sẵn trong ảnh.
+    entrypoint: ['sh', '/backup-db.sh']
+    volumes:
+      - ./scripts/backup-db.sh:/backup-db.sh:ro
+      - ./backups:/backups
+    logging: *default-logging
+
+  # Chép ./backups lên Cloudflare R2 mỗi 6 giờ, giữ 30 ngày trên R2 (xem
+  # scripts/offsite-backup.sh). Không phụ thuộc mysql hay api: nó chỉ đọc thư
+  # mục, và hỏng thì chỉ log lỗi, không kéo gì khác xuống.
+  #
+  # Token R2 RIÊNG (BACKUP_R2_*), không dùng R2_ACCESS_KEY_ID của ứng dụng: token
+  # đó chỉ vào được bucket ảnh, và tách riêng thì lỗ hổng ở api không chạm được
+  # bản sao lưu. Thiếu biến thì service nằm chờ và báo trong log, không làm hỏng
+  # lần deploy.
+  offsite:
+    image: rclone/rclone:1
+    restart: unless-stopped
+    # rclone ăn RAM theo `--transfers` × kích thước chunk (mặc định S3 là 5M,
+    # 4 luồng). Với bản sao lưu chép tuần tự thì vài chục MB, nhưng để 192M vì
+    # rclone phình khi gặp file lớn và nó chạy không ai nhìn — hỏng lúc 3 giờ
+    # sáng thì không ai biết cho tới lúc cần khôi phục.
+    mem_limit: ${OFFSITE_MEM:-192m}
+    environment:
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      BACKUP_R2_ACCESS_KEY_ID: ${BACKUP_R2_ACCESS_KEY_ID:-}
+      BACKUP_R2_SECRET_ACCESS_KEY: ${BACKUP_R2_SECRET_ACCESS_KEY:-}
+      BACKUP_R2_BUCKET: ${BACKUP_R2_BUCKET:-zoldify-backups}
+      BACKUP_R2_PREFIX: ${BACKUP_R2_PREFIX:-}
+      OFFSITE_KEEP_DAYS: ${OFFSITE_KEEP_DAYS:-30}
+    entrypoint: ['sh', '/offsite-backup.sh']
+    volumes:
+      - ./scripts/offsite-backup.sh:/offsite-backup.sh:ro
+      # Chỉ đọc: service này không bao giờ được sửa hay xoá bản local.
+      - ./backups:/backups:ro
+    logging: *default-logging
 
   # Chạy migration NHƯ MỘT BƯỚC RIÊNG, không nhét vào lúc api khởi động.
   #
@@ -119,6 +196,7 @@ services:
     # cùng lúc với chúng. `check:compose` bỏ qua mọi dịch vụ `restart: 'no'` khi
     # cộng ngân sách, đúng vì lý do này.
     mem_limit: ${MIGRATE_MEM:-256m}
+    logging: *default-logging
     depends_on:
       mysql:
         condition: service_healthy
@@ -157,6 +235,7 @@ services:
     deploy:
       replicas: ${API_REPLICAS:-3}
     mem_limit: ${API_MEM:-512m}
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -251,6 +330,7 @@ services:
     # Vẫn phải có trần — nó đụng cùng TypeORM và cùng đống entity, nên một rò rỉ
     # ở đây ăn RAM đúng như ở api, chỉ chậm hơn.
     mem_limit: ${WORKER_MEM:-256m}
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -277,6 +357,12 @@ services:
       disable: true
     # KHÔNG mount product-images: worker không đụng ảnh. Mount thừa một volume
     # ghi được là mở thêm một đường cho tiến trình nền sửa dữ liệu người dùng.
+    #
+    # Có mount khoá Firebase (chỉ đọc): job huỷ đơn / chốt vận đơn tạo thông
+    # báo, và NotificationsService gửi push FCM qua khoá này. Thiếu file thì
+    # FirebaseService chỉ cảnh báo và bỏ push, worker vẫn chạy.
+    volumes:
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
 
   # Đường vào duy nhất của cụm: kết thúc TLS, chia tải cho ba bản api.
   #

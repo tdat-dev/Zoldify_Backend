@@ -105,6 +105,25 @@ export class Product {
   @Column({ type: 'int', default: 0 })
   sold_count: number;
 
+  // Điểm trung bình và số lượt đánh giá, giữ sẵn để danh sách sản phẩm không
+  // phải tổng hợp bảng reviews cho từng thẻ (migration 1787700000000, lỗi H-01).
+  // Chỉ InteractionsService.refreshProductStats được ghi hai cột này.
+  // DECIMAL về tới JS là chuỗi ("4.50"); đổi sang số để app không phải đoán.
+  @Column({
+    type: 'decimal',
+    precision: 3,
+    scale: 2,
+    default: 0,
+    transformer: {
+      to: (v?: number | null) => v,
+      from: (v?: string | number | null) => (v == null ? 0 : Number(v)),
+    },
+  })
+  rating_avg: number;
+
+  @Column({ type: 'int', default: 0 })
+  review_count: number;
+
   @Column({ type: 'int', default: 0 })
   view_count: number;
 

@@ -3,6 +3,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JobsModule } from '@ops/jobs/jobs.module';
+import { FirebaseModule } from '@messaging/firebase/firebase.module';
 import { cacheConfig } from './common/cache.config';
 
 /**
@@ -91,6 +92,14 @@ import { cacheConfig } from './common/cache.config';
       }),
       inject: [ConfigService],
     }),
+
+    // FirebaseService, vì cùng lý do với CACHE_MANAGER ở trên: đồ thị phụ
+    // thuộc bắt phải có. OrdersModule → NotificationsModule, và từ khi gộp
+    // nhánh prod (29/09) `NotificationsService` gửi push FCM qua FirebaseService.
+    // FirebaseModule là @Global nhưng chỉ AppModule nạp nó, nên worker chết lúc
+    // dựng với "Nest can't resolve dependencies of the NotificationsService".
+    // check:worker trên CI bắt được đúng lỗi này.
+    FirebaseModule,
 
     JobsModule,
   ],

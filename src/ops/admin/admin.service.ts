@@ -84,6 +84,9 @@ export class AdminService {
       throw new BadRequestException('Không thể khóa tài khoản admin');
 
     user.is_locked = !user.is_locked;
+    // Khoá thì thu hồi luôn mọi phiên đang có: JwtStrategy và socket chat so
+    // token_version với DB ở mỗi lần xác thực (audit B-04).
+    if (user.is_locked) user.token_version = (user.token_version || 0) + 1;
     await this.userRepository.save(user);
     return {
       id: user.id,

@@ -34,9 +34,10 @@ import {
   LessThan,
   QueryFailedError,
 } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
-import { GhnService } from '@ordering/ghn/ghn.service';
+import { GhnService, ghnErrorMessage } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Escrow, EscrowStatus } from '@money/escrows/entities/escrow.entity';
 import { PayosService } from '@money/payos/payos.service';
@@ -260,6 +261,15 @@ export class OrdersService {
     // không tính được phí, và "không tính được" phải ra 0 chứ không phải ra
     // con số người mua tự khai.
     //
+    // Khối tính phí ngay dưới là của Đạt (lỗi H-07, 30/09): GHN tính không ra
+    // thì TỪ CHỐI đặt đơn, không rơi về 0. Trước đó GHN lỗi là đơn vẫn tạo với
+    // phí 0đ, app hiện "Miễn phí", rồi người bán mới phát hiện không tạo được
+    // vận đơn và hàng kẹt giữa chừng.
+    //
+    // Hai bản vá phủ hai lỗ KHÁC NHAU nên phải có cả hai: của Đạt lo lúc CÓ
+    // địa chỉ GHN mà tính lỗi; của vai B lo lúc client KHÔNG gửi địa chỉ GHN
+    // (hai trường đó `@IsOptional`, bỏ trống là khối `if` không chạy).
+    //
     // `shipping_fee` vẫn còn trong DTO nhưng bị BỎ QUA. Không gỡ khỏi DTO vì
     // `forbidNonWhitelisted: true` sẽ khiến frontend đang gửi trường đó nhận
     // 400 — gỡ là việc của một lần dọn riêng, sau khi frontend thôi gửi.
@@ -274,18 +284,22 @@ export class OrdersService {
       );
     }
     if (createOrderDto.ghn_district_id && createOrderDto.ghn_ward_code) {
-      try {
-        const quote = await this.quoteShippingBySellerFromCart(
-          cartItems,
-          createOrderDto.ghn_district_id,
-          createOrderDto.ghn_ward_code,
+      const quote = await this.quoteShippingBySellerFromCart(
+        cartItems,
+        createOrderDto.ghn_district_id,
+        createOrderDto.ghn_ward_code,
+      );
+      if (!quote.ok) {
+        const reason = quote.items.find((i) => i.error)?.error;
+        this.logger.warn(
+          `Từ chối đơn của user ${user.id}: không tính được phí ship (${reason})`,
         );
-        shippingFee = quote.total;
-      } catch (err) {
-        this.logger.error(
-          `Tính phí ship thất bại (đơn của user ${user.id}): ${(err as Error).message}`,
+        throw new BadRequestException(
+          `Chưa tính được phí vận chuyển tới địa chỉ này (${reason}). ` +
+            'Chọn địa chỉ khác giúp mình.',
         );
       }
+      shippingFee = quote.total;
     }
     const discountAmount = 0;
     const finalAmount = totalAmount + shippingFee - discountAmount;
@@ -566,6 +580,8 @@ export class OrdersService {
       );
     }
 
+    await this.notifySellersOfNewOrder(savedOrder.id, orderCode, cartItems);
+
     const result: any = await this.findOne(savedOrder.id, user);
     // Đánh dấu payment_method để frontend biết cần gọi PayOS
     result.needs_payOS = payment_method === PaymentMethod.PAYOS;
@@ -693,19 +709,68 @@ export class OrdersService {
     };
   }
 
-  async findOne(id: number, user: IUser) {
-    const where: any = { id };
-    if (user.role !== 'admin') {
-      where.user = { id: user.id };
+  /**
+   * Báo cho TỪNG người bán trong đơn vừa đặt (lỗi H-02 test E2E 30/09).
+   *
+   * Trước đây chỉ người mua nhận thông báo: người bán không biết có đơn để xác
+   * nhận, đơn nằm "Chờ xác nhận" tới khi người mua hỏi qua chat.
+   * notificationsService.create tự đẩy push tới mọi thiết bị của người bán;
+   * `view: 'seller'` để app mở màn Đơn bán thay vì màn đơn mua.
+   *
+   * Đơn ĐÃ lưu xong ở đây: thông báo hỏng thì chỉ ghi log, không ném, nếu
+   * không người mua thấy "đặt hàng lỗi" cho một đơn đã tạo và đã trừ kho.
+   */
+  private async notifySellersOfNewOrder(
+    orderId: number,
+    orderCode: string,
+    cartItems: Cart[],
+  ): Promise<void> {
+    const bySeller = new Map<number, { count: number; amount: number }>();
+    for (const ci of cartItems) {
+      const sellerId = ci.product?.seller?.id;
+      if (!sellerId) continue;
+      const g = bySeller.get(sellerId) ?? { count: 0, amount: 0 };
+      g.count += ci.quantity;
+      g.amount += Number(ci.product.price) * ci.quantity;
+      bySeller.set(sellerId, g);
     }
+    for (const [sellerId, { count, amount }] of bySeller) {
+      try {
+        await this.notificationsService.create({
+          user_id: sellerId,
+          type: 'order_status' as any,
+          title: 'Bạn có đơn hàng mới',
+          content: `Đơn ${orderCode}: ${count} món, ${amount.toLocaleString('vi-VN')}đ. Xác nhận để gửi hàng nhé.`,
+          data: { order_id: orderId, order_code: orderCode, view: 'seller' },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Không báo được đơn mới ${orderCode} cho người bán ${sellerId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
 
-    const order = await this.orderRepository.findOne({
-      where,
-      relations: ['user', 'items', 'items.product', 'items.product.seller'],
-    });
-
-    if (!order) {
-      throw new NotFoundException('Không tìm thấy đơn hàng');
+  async findOne(id: number, user: IUser) {
+    // Người mua, admin, VÀ người bán của bất kỳ món nào trong đơn đều xem được
+    // (lỗi H-02). Trước đây lọc cứng theo order.user_id nên người bán mở đơn
+    // của chính mình nhận 404, app không làm được màn Đơn bán. Người không liên
+    // quan vẫn nhận 404 (findOneForActor), không lộ là đơn có tồn tại.
+    const { order, actors } = await this.findOneForActor(id, user);
+    const sellerOnly =
+      actors.length === 1 && actors[0] === OrderActor.SELLER;
+    if (sellerOnly) {
+      // Người bán chỉ cần biết ai nhận (đã có receiver_* trên đơn), không cần
+      // email/hồ sơ tài khoản của người mua.
+      order.user = {
+        id: order.user?.id,
+        full_name: order.user?.full_name,
+      } as User;
+      // Đơn nhiều người bán: chỉ trả món của chính người gọi (review 05/10).
+      // Không lọc thì người bán A đọc được món, giá của người bán B cùng đơn.
+      order.items = (order.items || []).filter(
+        (i) => i.product?.seller?.id === user.id,
+      );
     }
 
     // Đính kèm vận đơn theo từng người bán để giao diện hiện trạng thái giao và
@@ -715,7 +780,11 @@ export class OrdersService {
       where: { order: { id } },
       relations: ['seller'],
     });
-    (order as any).shipments = shipments;
+    // Như món ở trên: người bán chỉ thấy vận đơn của mình, không thấy mã vận
+    // đơn và tiền thu hộ (cod_amount) của người bán khác.
+    (order as any).shipments = sellerOnly
+      ? shipments.filter((s) => s.seller?.id === user.id)
+      : shipments;
 
     return order;
   }
@@ -1002,6 +1071,137 @@ export class OrdersService {
   }
 
   /**
+   * SANDBOX: gia lap GHN day trang thai van don (GHN dev khong co shipper that).
+   * Chi chay tren host GHN dev. phase "shipping" = GHN da lay hang/dang giao ->
+   * don sang "Dang giao" (KHONG do nguoi ban bam). phase "delivered" = GHN giao
+   * toi cua -> danh dau van don DELIVERED (nguoi mua xac nhan / he thong tu chot).
+   */
+  async simulateGhnStatus(
+    orderId: number,
+    phase: "shipping" | "delivered",
+    user: IUser,
+  ) {
+    const ghnHost = (process["env"]["GHN_HOST"] as string) ?? "";
+    if (!ghnHost.includes("dev-online-gateway")) {
+      throw new BadRequestException("Gia lap GHN chi dung o moi truong sandbox");
+    }
+    const { order, actors } = await this.findOneForActor(orderId, user);
+    if (
+      !actors.includes(OrderActor.SELLER) &&
+      !actors.includes(OrderActor.ADMIN)
+    ) {
+      throw new ForbiddenException(
+        "Chi nguoi ban cua don hoac admin moi gia lap GHN",
+      );
+    }
+
+    if (phase === "shipping") {
+      if (
+        order.status !== OrderStatus.CONFIRMED &&
+        order.status !== OrderStatus.PROCESSING
+      ) {
+        throw new BadRequestException(
+          "Chi gia lap dang giao cho don da xac nhan hoac dang chuan bi",
+        );
+      }
+      // GHN chỉ "đang giao" được lô hàng nó đã nhận vận đơn. Trước đây nhánh
+      // này đẩy đơn sang shipping kể cả khi vận đơn FAILED (lỗi H-08, đơn
+      // ORD-20260930-785): app hiện "Đang giao", người mua bấm "Đã nhận hàng"
+      // thì bị từ chối, đơn kẹt ở đó. Mọi người bán trong đơn phải có vận đơn.
+      await this.assertAllSellersShipped(order);
+      order.status = OrderStatus.SHIPPING;
+      await this.orderRepository.save(order);
+      return { order_id: order.id, status: order.status };
+    }
+
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id: orderId } },
+    });
+    const now = new Date();
+    for (const s of shipments) {
+      if (s.status === ShipmentStatus.CREATED) {
+        s.status = ShipmentStatus.DELIVERED;
+        s.delivered_at = now;
+        await this.shipmentRepository.save(s);
+      }
+    }
+    return { order_id: order.id, delivered_shipments: shipments.length };
+  }
+
+
+  /**
+   * Mỗi người bán trong đơn phải có một vận đơn GHN không FAILED. Thiếu hay
+   * lỗi thì ném 400 kèm lý do GHN, để người bán biết phải sửa gì.
+   */
+  private async assertAllSellersShipped(order: Order): Promise<void> {
+    const sellerIds = new Set(
+      (order.items || [])
+        .map((i) => i.product?.seller?.id)
+        .filter((id): id is number => !!id),
+    );
+    const shipments = await this.shipmentRepository.find({
+      where: { order: { id: order.id } },
+      relations: ['seller'],
+    });
+    const missing = [...sellerIds].filter(
+      (id) =>
+        !shipments.some(
+          (s) => s.seller?.id === id && s.status !== ShipmentStatus.FAILED,
+        ),
+    );
+    if (sellerIds.size === 0 || missing.length > 0) {
+      const reason = shipments.find(
+        (s) => s.status === ShipmentStatus.FAILED && s.error,
+      )?.error;
+      throw new BadRequestException(
+        'Đơn chưa có vận đơn GHN hợp lệ nên chưa thể chuyển sang đang giao' +
+          (reason ? ` (${reason})` : '') +
+          '. Người bán tạo lại vận đơn trước.',
+      );
+    }
+  }
+
+  /**
+   * Tạo lại vận đơn GHN cho những người bán mà lần trước GHN từ chối.
+   *
+   * Entity OrderShipment ghi FAILED là trạng thái "cho phép tạo lại", nhưng
+   * trước đây không có đường nào làm việc đó: xác nhận đơn chỉ xảy ra một lần,
+   * và lần tạo sau coi dòng FAILED như đã có vận đơn. Người bán sửa địa chỉ
+   * lấy hàng xong vẫn kẹt (lỗi H-07/H-08).
+   */
+  async retryGhnShipments(orderId: number, user: IUser) {
+    const { order, actors } = await this.findOneForActor(orderId, user);
+    if (
+      !actors.includes(OrderActor.SELLER) &&
+      !actors.includes(OrderActor.ADMIN)
+    ) {
+      throw new ForbiddenException(
+        'Chỉ người bán của đơn hoặc admin mới tạo lại được vận đơn',
+      );
+    }
+    if (
+      order.status !== OrderStatus.CONFIRMED &&
+      order.status !== OrderStatus.PROCESSING
+    ) {
+      throw new BadRequestException(
+        'Chỉ tạo lại vận đơn cho đơn đã xác nhận, chưa giao',
+      );
+    }
+    if (!order.ghn_district_id) {
+      throw new BadRequestException(
+        'Đơn này không dùng địa chỉ GHN nên không tạo được vận đơn',
+      );
+    }
+    await this.createGhnShipmentsPerSeller(order);
+    // createGhnShipmentsPerSeller có thể điền order.tracking_code (UI cũ đọc).
+    await this.orderRepository.save(order);
+    return this.shipmentRepository.find({
+      where: { order: { id: orderId } },
+      relations: ['seller'],
+    });
+  }
+
+  /**
    * Chạy tay lượt chốt vận đơn (đồng bộ GHN + tự xác nhận) — cho admin/ops khi
    * cần chốt ngay thay vì chờ cron hàng giờ. Cùng logic với job định kỳ.
    */
@@ -1139,13 +1339,16 @@ export class OrdersService {
    * để client cảnh báo nếu muốn.
    *
    * Lỗi GHN của một người bán KHÔNG làm hỏng cả báo giá: phần đó tính 0 và kèm
-   * error, các người bán khác vẫn có phí.
+   * error, các người bán khác vẫn có phí. `ok = false` khi có ít nhất một phần
+   * lỗi: số 0 đó nghĩa là "chưa biết", KHÔNG phải "miễn phí", client phải hiện
+   * lỗi thay vì chữ "Miễn phí" (lỗi H-07).
    */
   private async quoteShippingBySellerFromCart(
     cartItems: Cart[],
     toDistrictId: number,
     toWardCode: string,
   ): Promise<{
+    ok: boolean;
     total: number;
     items: Array<{
       seller_id: number;
@@ -1201,7 +1404,7 @@ export class OrdersService {
         });
         fee = Number(res?.total || 0);
       } catch (e) {
-        error = (e as Error).message;
+        error = ghnErrorMessage(e);
       }
       total += fee;
       items.push({
@@ -1212,7 +1415,7 @@ export class OrdersService {
         error,
       });
     }
-    return { total, items };
+    return { ok: items.every((i) => !i.error), total, items };
   }
 
   /**
@@ -1253,6 +1456,8 @@ export class OrdersService {
    *
    * Nguyên tắc:
    *  - Idempotent: đã có vận đơn cho (đơn, người bán) thì bỏ qua, không tạo lại.
+   *    Riêng dòng FAILED thì THỬ LẠI và cập nhật chính dòng đó (xem
+   *    retryGhnShipments), không sinh dòng thứ hai cho cùng người bán.
    *  - Cô lập lỗi: người bán A hỏng KHÔNG chặn người bán B — mỗi người một
    *    try/catch, lỗi lưu vào shipment để còn nhìn thấy.
    *  - Fallback: người bán chưa khai địa chỉ lấy hàng thì bỏ trống from_*, GHN
@@ -1278,7 +1483,7 @@ export class OrdersService {
       where: { order: { id: order.id } },
       relations: ['seller'],
     });
-    const shippedSellerIds = new Set(existing.map((s) => s.seller?.id));
+    const existingBySeller = new Map(existing.map((s) => [s.seller?.id, s]));
 
     // Địa chỉ lấy hàng của các người bán, tra một lần.
     const shops = await this.shopRepository.find({
@@ -1290,7 +1495,30 @@ export class OrdersService {
     const isCod = order.payment_method === PaymentMethod.COD;
 
     for (const [sellerId, { seller, items }] of bySeller) {
-      if (shippedSellerIds.has(sellerId)) continue;
+      const previous = existingBySeller.get(sellerId);
+      if (previous && previous.status !== ShipmentStatus.FAILED) continue;
+
+      // Chốt dòng FAILED TRƯỚC khi gọi GHN (review 30/09). Hai yêu cầu tạo lại
+      // cùng lúc (bấm đúp) đều đọc thấy dòng FAILED; không chốt thì cả hai gọi
+      // GHN và GHN tạo HAI vận đơn thật cho một lô hàng, một cái mồ côi mà vẫn
+      // đi lấy hàng, thu hộ. UPDATE có điều kiện trên `error` vừa đọc chỉ đổi
+      // được dòng cho một yêu cầu (InnoDB khoá dòng, yêu cầu sau thấy error đã
+      // khác): nó được đi tiếp, yêu cầu kia nhận affected = 0 và bỏ qua.
+      // Sập giữa chừng thì dòng vẫn FAILED với error là mã chốt, lần tạo lại
+      // sau chốt lại được bình thường.
+      if (previous) {
+        const claim = `Đang tạo lại vận đơn (${randomUUID()})`;
+        const res = await this.shipmentRepository.update(
+          {
+            id: previous.id,
+            status: ShipmentStatus.FAILED,
+            error: previous.error ?? IsNull(),
+          },
+          { error: claim },
+        );
+        if (!res.affected) continue;
+        previous.error = claim;
+      }
 
       const shop = shopByUser.get(sellerId);
       const from =
@@ -1320,6 +1548,10 @@ export class OrdersService {
 
       try {
         const ghnOrder = await this.ghnService.createOrder({
+          // Cố định theo (đơn, người bán): timeout phía GHN không có nghĩa là
+          // chưa tạo (test máy ảo 05/10: request "vẫn đang xử lý" sau timeout).
+          // Tạo lại với cùng mã thì GHN trả vận đơn cũ, không sinh vận đơn trùng.
+          client_order_code: `${order.order_code}-${sellerId}`,
           to_name: order.receiver_name,
           to_phone: order.receiver_phone,
           to_address: order.shipping_address,
@@ -1335,33 +1567,44 @@ export class OrdersService {
           })),
           from,
         });
+        // GhnService trả `any` (body GHN); chốt kiểu một lần ở đây.
+        const trackingCode = (ghnOrder as { order_code: string }).order_code;
 
         await this.shipmentRepository.save(
-          this.shipmentRepository.create({
-            order: { id: order.id } as Order,
-            seller: { id: sellerId } as User,
-            tracking_code: ghnOrder.order_code,
-            cod_amount: codAmount,
-            status: ShipmentStatus.CREATED,
-          }),
+          previous
+            ? Object.assign(previous, {
+                tracking_code: trackingCode,
+                cod_amount: codAmount,
+                status: ShipmentStatus.CREATED,
+                error: null,
+              })
+            : this.shipmentRepository.create({
+                order: { id: order.id } as Order,
+                seller: { id: sellerId } as User,
+                tracking_code: trackingCode,
+                cod_amount: codAmount,
+                status: ShipmentStatus.CREATED,
+              }),
         );
 
         // Giữ tương thích: UI cũ đọc order.tracking_code. Đơn một người bán vẫn
         // thấy mã như trước; đơn nhiều người bán lấy mã đầu tiên làm đại diện.
-        if (!order.tracking_code) order.tracking_code = ghnOrder.order_code;
+        if (!order.tracking_code) order.tracking_code = trackingCode;
       } catch (err) {
-        const message = (err as Error).message;
+        const message = ghnErrorMessage(err);
         this.logger.error(
           `Tạo vận đơn GHN thất bại cho người bán ${sellerId} (đơn ${order.id}): ${message}`,
         );
         await this.shipmentRepository.save(
-          this.shipmentRepository.create({
-            order: { id: order.id } as Order,
-            seller: { id: sellerId } as User,
-            cod_amount: codAmount,
-            status: ShipmentStatus.FAILED,
-            error: message,
-          }),
+          previous
+            ? Object.assign(previous, { cod_amount: codAmount, error: message })
+            : this.shipmentRepository.create({
+                order: { id: order.id } as Order,
+                seller: { id: sellerId } as User,
+                cod_amount: codAmount,
+                status: ShipmentStatus.FAILED,
+                error: message,
+              }),
         );
       }
     }
@@ -1531,8 +1774,27 @@ export class OrdersService {
     }
   }
 
+  /**
+   * Đơn mà người gọi là NGƯỜI MUA (hoặc admin). Dùng cho thao tác của người mua.
+   *
+   * Tách khỏi findOne vì findOne giờ cho cả người bán XEM (lỗi H-02). cancel()
+   * và remove() từng mượn findOne để kiểm quyền; giữ nguyên thì người bán gọi
+   * được đường huỷ của người mua và xoá mềm được đơn. Người bán huỷ qua
+   * cancelSale, có luật riêng.
+   */
+  private async findOneAsBuyerOrAdmin(id: number, user: IUser) {
+    const { order, actors } = await this.findOneForActor(id, user);
+    if (
+      !actors.includes(OrderActor.BUYER) &&
+      !actors.includes(OrderActor.ADMIN)
+    ) {
+      throw new NotFoundException('Không tìm thấy đơn hàng');
+    }
+    return order;
+  }
+
   async cancel(id: number, user: IUser) {
-    const order = await this.findOne(id, user);
+    const order = await this.findOneAsBuyerOrAdmin(id, user);
     this.assertCancellable(order, 'hủy đơn hàng');
 
     await this.applyCancellation(order);
@@ -1587,7 +1849,30 @@ export class OrdersService {
    * trong một transaction. Ở đây chỉ chặn, không tự làm thay.
    */
   async remove(id: number, user: IUser) {
-    const order = await this.findOne(id, user);
+    // CHỈ NGƯỜI MUA HOẶC ADMIN. Người bán thì nhận 404 như người ngoài.
+    //
+    // Trước lần gộp 07/10, chỗ này gọi `findOne(id, user)` và comment cũ của
+    // vai B viết: "đã qua findOne nên chắc chắn là người mua của đơn hoặc
+    // admin". Câu đó ĐÃ CHẾT: nhánh của Đạt mở `findOne` cho NGƯỜI BÁN xem đơn
+    // (H-02). Người bán đi lọt qua đó, rơi xuống phép kiểm trạng thái bên dưới
+    // và nhận "đơn đang pending nên chưa xoá được" — tức hệ thống mách rằng cứ
+    // đợi đơn kết thúc là xoá được đơn của người khác.
+    //
+    // Không bên nào tự thấy được: Đạt mở quyền xem mà không biết có hàm dựa vào
+    // giả định cũ; vai B viết giả định đúng tại thời điểm viết. Nó chỉ lộ ra khi
+    // bài kiểm `seller-orders.spec.ts` của Đạt chạy trên mã của vai B.
+    //
+    // Bài học giữ lại: đừng suy quyền từ việc "đã qua được hàm đọc". Hàm đọc có
+    // thể được nới rộng bởi người khác, ở nhánh khác, vì lý do chính đáng.
+    const { order, actors } = await this.findOneForActor(id, user);
+    if (
+      !actors.includes(OrderActor.ADMIN) &&
+      !actors.includes(OrderActor.BUYER)
+    ) {
+      // 404 chứ không 403: người bán không cần biết đơn này có tồn tại hay
+      // không — cùng lý do với `findOneForActor`.
+      throw new NotFoundException(`Không tìm thấy đơn hàng #${id}`);
+    }
 
     const daKetThuc =
       order.status === OrderStatus.CANCELLED ||

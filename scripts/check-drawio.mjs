@@ -109,10 +109,13 @@ for (const file of files) {
     }
   }
 
-  // 4. Entity lồng nhau — dấu hiệu escape hai lần, nhãn sẽ hiện ra chữ &lt;
-  const doubled = xml.match(/&amp;(?:lt|gt|amp|quot);/g);
+  // 4. Thẻ HTML bị escape hai lần: nhãn hiện ra chữ "<br>" thay vì xuống dòng.
+  //    Chỉ bắt THẺ. `&amp;amp;` hay `&amp;lt;` đứng một mình là cách draw.io tự
+  //    lưu dấu & và < gõ trong nhãn html=1, file mở ra vẫn hiển thị đúng; bắt
+  //    chúng thì mọi file vừa lưu từ draw.io đều bị báo sai.
+  const doubled = xml.match(/&amp;lt;\/?(?:br|div|b|i|u|span|font|p|sup|sub)\b/gi);
   if (doubled) {
-    report(file, `${doubled.length} chỗ escape hai lần, nhãn sẽ hiện ra &lt; thay vì <`);
+    report(file, `${doubled.length} thẻ HTML escape hai lần, nhãn sẽ hiện ra chữ &lt;br&gt;`);
   }
 
   // 3. Mọi id được tham chiếu phải tồn tại

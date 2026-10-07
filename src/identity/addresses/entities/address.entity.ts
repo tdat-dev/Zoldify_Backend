@@ -55,7 +55,29 @@ export class Address {
   @Column({ type: 'varchar', length: 255 })
   street: string;
 
-  @Column({ type: 'boolean', default: false })
+  // Mã GHN để tính phí ship — lưu lúc thêm địa chỉ (form đã có sẵn). Nullable:
+  // địa chỉ cũ chưa có mã, checkout sẽ bắt chọn lại khi thiếu. ward là CHUỖI.
+  @Column({ type: 'int', nullable: true })
+  ghn_province_id: number;
+
+  @Column({ type: 'int', nullable: true })
+  ghn_district_id: number;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  ghn_ward_code: string;
+
+  // tinyint(1) -> driver mysql2 trả 0/1. Không có transformer thì API trả
+  // `"is_default": 1`, app gửi lại nguyên giá trị và UpdateAddressDto
+  // (@IsBoolean) từ chối: không ai sửa được địa chỉ (lỗi H-04, 30/09).
+  @Column({
+    type: 'tinyint',
+    width: 1,
+    default: 0,
+    transformer: {
+      to: (v?: boolean | null) => (v == null ? v : v ? 1 : 0),
+      from: (v?: number | string | null) => (v == null ? v : Number(v) === 1),
+    },
+  })
   is_default: boolean;
 
   @CreateDateColumn({ type: 'timestamp' })

@@ -3,6 +3,7 @@ import type { Repository } from 'typeorm';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
+import type { ProductsService } from '@catalog/products/products.service';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { Review } from './entities/review.entity';
 import { InteractionsService } from './interactions.service';
@@ -77,9 +78,28 @@ describe('InteractionsService — ai được đánh giá cái gì', () => {
       {} as Repository<User>,
       {
         findOne: () => Promise.resolve(opts.sanPham ?? null),
+        // `refreshProductStats` (nhánh của Đạt, tính điểm đánh giá) chạy một câu
+        // SQL thô sau mỗi lần viết/sửa/xoá đánh giá. Repo giả ở đây không có
+        // `.query` nên nó ném `this.productRepository.query is not a function`,
+        // và ca "đã mua thì đánh giá được" đỏ vì một lý do chẳng liên quan gì
+        // tới quyền đánh giá — thứ mà bài kiểm này đo.
+        //
+        // Trả mảng rỗng là đủ: bài kiểm này không đo số liệu tổng hợp. Việc đó
+        // có `review-stats.spec.ts` của Đạt lo, và nó chạy trên MySQL thật.
+        query: () => Promise.resolve([]),
       } as unknown as Repository<Product>,
       reviewRepo,
       orderRepoGia(opts.daMua ?? false),
+      // Tham số thứ năm, mới từ nhánh của Đạt: `refreshProductStats` xoá bản nhớ
+      // Redis của sản phẩm sau khi tính lại điểm, nếu không thì app làm mới vẫn
+      // nhận điểm cũ cho tới lúc bản nhớ hết hạn.
+      //
+      // Bài kiểm này đo QUYỀN đánh giá, không đo bản nhớ — nên một hàm rỗng là
+      // đủ, và việc xoá bản nhớ có `review-stats.spec.ts` của Đạt lo trên
+      // MySQL thật.
+      {
+        invalidateProductCache: () => Promise.resolve(),
+      } as unknown as ProductsService,
     );
 
     return { service, daLuu, daXoaMem };

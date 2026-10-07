@@ -2,6 +2,44 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 
+/**
+ * Lý do thật của một lỗi GHN.
+ *
+ * axios chỉ đặt message "Request failed with status code 400"; câu GHN giải
+ * thích (vd "Không tìm thấy thông tin quận") nằm trong body. Trước đây chỉ lưu
+ * message, nên vận đơn lỗi của đơn ORD-20260930-785 ghi đúng câu vô nghĩa đó,
+ * và phải gọi lại GHN bằng tay mới biết quận của người nhận đã ngừng phục vụ.
+ */
+export function ghnErrorMessage(err: unknown): string {
+  const e = err as {
+    message?: string;
+    response?: {
+      status?: number;
+      data?: { message?: unknown; code_message_value?: unknown };
+    };
+  };
+  const data = e?.response?.data;
+  const reason = [data?.message, data?.code_message_value].find(
+    (m): m is string => typeof m === 'string' && m.trim() !== '',
+  );
+  if (reason) return `GHN ${e.response?.status ?? ''}: ${reason}`;
+  return e?.message || String(err);
+}
+
+/**
+ * GHN vẫn trả cả quận/phường đã NGỪNG phục vụ trong danh mục (Status khác 1,
+ * hoặc SupportType 0). Đo 30/09: 13/726 quận như vậy, trong đó 2045 Văn Giang.
+ * Người mua chọn được, nhưng tính phí và tạo vận đơn tới đó đều bị GHN từ chối
+ * (lỗi H-07). Lọc ở đây để không ai chọn được địa chỉ GHN không giao tới.
+ *
+ * Thiếu trường thì GIỮ lại: GHN đổi cấu trúc cũng không làm trống cả danh sách.
+ */
+function isServiceable(x: { Status?: number; SupportType?: number }): boolean {
+  if (x.Status !== undefined && x.Status !== 1) return false;
+  if (x.SupportType !== undefined && x.SupportType === 0) return false;
+  return true;
+}
+
 @Injectable()
 export class GhnService {
   private readonly baseUrl: string;
@@ -70,7 +108,9 @@ export class GhnService {
           { headers: this.getHeaders() },
         ),
       );
-      return res.data.data;
+      return ((res.data.data ?? []) as Array<{ Status?: number }>).filter(
+        isServiceable,
+      );
     });
   }
 
@@ -84,7 +124,9 @@ export class GhnService {
           { headers: this.getHeaders() },
         ),
       );
-      return res.data.data;
+      return ((res.data.data ?? []) as Array<{ Status?: number }>).filter(
+        isServiceable,
+      );
     });
   }
 
@@ -120,8 +162,19 @@ export class GhnService {
       dto.to_district_id,
       fromDistrictId,
     );
-    const defaultService = services.find((s) => s.service_type_id === 2);
-    if (!defaultService) throw new Error('Không tìm thấy dịch vụ vận chuyển');
+    // GHN trả `data: null` (không phải mảng rỗng) khi không có tuyến, đo live
+    // staging 05/10 với quận 2045. Gọi .find() thẳng trên null thì người mua
+    // đọc thấy "Cannot read properties of null" thay vì lý do bên dưới.
+    const defaultService = (services ?? []).find(
+      (s) => s.service_type_id === 2,
+    );
+    // Mảng rỗng (không phải lỗi HTTP) là cách GHN nói "không có tuyến giữa hai
+    // quận này", thường vì một bên đã ngừng phục vụ.
+    if (!defaultService) {
+      throw new Error(
+        'GHN không có tuyến giao giữa quận gửi và quận nhận (quận có thể đã ngừng phục vụ)',
+      );
+    }
 
     const res = await firstValueFrom(
       this.httpService.post(
@@ -165,6 +218,10 @@ export class GhnService {
   }
 
   async createOrder(dto: {
+    // Mã của ta cho vận đơn. GHN chống trùng theo mã này: gửi lại cùng mã thì
+    // GHN trả về vận đơn đã tạo thay vì tạo cái mới (đo sandbox 05/10). Nhờ vậy
+    // tạo lại sau một lần timeout không bao giờ sinh hai vận đơn cho một lô.
+    client_order_code?: string;
     to_name: string;
     to_phone: string;
     to_address: string;
@@ -197,6 +254,9 @@ export class GhnService {
       this.httpService.post(
         `${this.baseUrl}/shipping-order/create`,
         {
+          ...(dto.client_order_code
+            ? { client_order_code: dto.client_order_code }
+            : {}),
           to_name: dto.to_name,
           to_phone: dto.to_phone,
           to_address: dto.to_address,

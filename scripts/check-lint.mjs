@@ -23,14 +23,28 @@
 // `lint:check` gọi thẳng eslint.
 import { ESLint } from 'eslint';
 
-// Đo ngày 2026-09-29, Node 24, trên staging SAU KHI gộp bốn nhánh:
-// fix/luong-mua-ban (916) · task-6 (964) · task-34 (965) · khôi-phục-sơ-đồ.
+// Đo ngày 2026-10-07, Node 24, trên cây SAU KHI gộp `origin/staging` (31 commit
+// của vai A, 63 file).
 //
-// Số dưới đây KHÔNG phải số nhỏ nhất trong bốn nhánh, mà là số ĐO LẠI trên
-// cây đã gộp. Bốn nhánh dọn bốn phần nợ khác nhau, nên gộp xong con số thật
-// không bằng bất kỳ nhánh nào — chọn bừa một trong bốn là dựng một cái mốc
-// chưa ai đo, và nó sẽ đỏ hoặc lỏng ngay lần chạy sau.
-const BASELINE = 507;
+//   nhánh vai B trước khi gộp : 507   (sau đợt prettier toàn repo 06/10)
+//   nhánh vai A (staging)     : 943
+//   cây ĐÃ GỘP                : 521   ← số dưới đây
+//
+// 521 không phải số của bên nào. Nó là số ĐO LẠI trên một cái cây chưa từng tồn
+// tại trước đó: 63 file của vai A mang theo nợ của nhánh ấy, và nợ đó chưa bao
+// giờ nằm dưới bánh cóc của vai B. Chọn 507 là dựng một cái mốc mà cây hiện tại
+// không đạt được; chọn 943 là tự tháo bánh cóc. Cả hai đều là mốc chưa ai đo.
+//
+// ĐÂY KHÔNG PHẢI GIẤY PHÉP NÂNG MỐC. Mốc chỉ được đo lại khi hợp nhất hai dòng
+// mã độc lập. Nợ do chính thay đổi của mình sinh ra thì sửa thay đổi đó, không
+// nâng số này — đúng như đợt 06/10: `eslint --fix` xoá một ép kiểu làm nợ nhảy
+// lên 508, và cách xử lý là trả lại ép kiểu chứ không nâng mốc.
+//
+// 14 điểm chênh so với 507 nằm rải trong 76 file, phần lớn là `no-unsafe-*`
+// trong mã vai A (products.service 61, orders.service 34, payos 27,
+// chat.gateway 26). Không tự sửa được bằng `--fix` (chỉ 3/26 ở chat.gateway là
+// prettier), và sửa tay là chạm mã của vai A. Để lại cho một đợt dọn riêng.
+const BASELINE = 521;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);

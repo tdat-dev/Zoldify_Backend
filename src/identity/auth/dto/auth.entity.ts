@@ -1,4 +1,10 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 // 1. Luồng Quên mật khẩu - Bước 1: Gửi OTP
 export class SendOtpDto {
@@ -48,11 +54,13 @@ export class VerifyRegisterOtpDto {
   password: string;
 }
 
-// 2. Luồng Thay đổi mật khẩu (Khi đã đăng nhập)
+// 2. Luồng Thay đổi / ĐẶT mật khẩu (Khi đã đăng nhập)
+// oldPassword optional: tài khoản đăng nhập bằng Google/social CHƯA có mật khẩu
+// nên "đặt mật khẩu" lần đầu không cần mật khẩu cũ.
 export class ChangePasswordDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'Mật khẩu cũ không được để trống' })
-  oldPassword: string;
+  oldPassword?: string;
 
   @IsString()
   @MinLength(6, { message: 'Mật khẩu mới phải có ít nhất 6 ký tự' })

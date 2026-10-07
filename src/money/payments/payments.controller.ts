@@ -14,6 +14,7 @@ import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
+import { AdminGuard } from '@common/guards/admin.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
@@ -62,7 +63,8 @@ export class PaymentsController {
     return this.paymentsService.findOne(+id, user);
   }
 
-  @UseGuards(JwtAuthGuard)
+  // Chỉ admin (audit A-01): người thường từng tự đánh dấu đơn đã trả tiền ở đây.
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ResponseMessage('Cập nhật giao dịch thành công')
   @Patch(':id')
   update(
@@ -73,7 +75,8 @@ export class PaymentsController {
     return this.paymentsService.update(+id, updatePaymentDto, user);
   }
 
-  @UseGuards(JwtAuthGuard)
+  // Chỉ admin: xoá payment là xoá chứng từ tiền, người mua không được tự làm.
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ResponseMessage('Xóa giao dịch thành công')
   @Delete(':id')
   remove(@Param('id') id: string, @User() user: IUser) {

@@ -85,7 +85,7 @@ export class OrderShipment {
 
   // Thông điệp lỗi GHN gần nhất (nếu FAILED) — để người bán/admin biết vì sao.
   @Column({ type: 'text', nullable: true })
-  error: string;
+  error: string | null;
 
   // Mốc GHN báo đã giao (điền khi đồng bộ trạng thái GHN ở GĐ2). Là gốc để đếm
   // cửa sổ tự-xác-nhận: quá N ngày kể từ đây mà người mua chưa bấm thì tự chốt.

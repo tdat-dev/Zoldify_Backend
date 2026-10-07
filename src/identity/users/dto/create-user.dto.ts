@@ -1,11 +1,4 @@
-import {
-  IsEmail,
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { UserRole } from '../entities/user.entity';
 
 export class CreateUserDto {
@@ -55,21 +48,8 @@ export class RegisterUserDto {
   @IsString({ message: 'Số điện thoại không hợp lệ' })
   phone_number?: string;
 
-  // KHÔNG có `role` ở đây, và đó là chủ ý.
-  //
-  // Trước 06/10 lớp này có `@IsOptional() @IsEnum(UserRole) role?: UserRole`.
-  // Route `POST /auth/register` là `@Public()`, nên bất kỳ ai gửi
-  // `{"role":"admin"}` là tạo thẳng một tài khoản quản trị.
-  //
-  // `ValidationPipe` dùng `whitelist: true` KHÔNG cứu được: whitelist chỉ loại
-  // trường không có decorator. `role` có decorator nên nó được giữ nguyên rồi
-  // đi tiếp xuống `UsersService.register`.
-  //
-  // Muốn đổi vai trò thì đi đường riêng có kiểm quyền:
-  // `PATCH /admin/users/:id/role` (AdminGuard + ChangeRoleDto).
-  //
-  // `UsersService.register` còn gán cứng BUYER một lần nữa — hai lớp, vì một
-  // lớp thì lớp kia hỏng là hở. `register-role.spec.ts` gác cả hai.
+  // KHÔNG có trường `role`. Đăng ký công khai từng nhận role từ body, nên ai
+  // cũng tự tạo được tài khoản admin (audit B-01). Vai trò do server gán.
 }
 
 export class LoginUserDto {

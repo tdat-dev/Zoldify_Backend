@@ -67,14 +67,26 @@ describe('assertTransitionAllowed', () => {
       ).not.toThrow();
     });
 
-    it('người bán chuyển sang đang giao', () => {
+    // "Đang giao" do GHN quyết (b18f742): hệ thống/admin đặt khi tracking báo
+    // đã lấy hàng, người bán không tự bấm được nữa.
+    it('admin (hệ thống theo GHN) chuyển sang đang giao', () => {
+      expect(() =>
+        assertTransitionAllowed(
+          OrderStatus.CONFIRMED,
+          OrderStatus.SHIPPING,
+          admin,
+        ),
+      ).not.toThrow();
+    });
+
+    it('người bán KHÔNG tự chuyển sang đang giao', () => {
       expect(() =>
         assertTransitionAllowed(
           OrderStatus.CONFIRMED,
           OrderStatus.SHIPPING,
           seller,
         ),
-      ).not.toThrow();
+      ).toThrow(ForbiddenException);
     });
 
     it('người mua xác nhận đã nhận hàng khi đơn đang giao', () => {

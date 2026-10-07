@@ -11,7 +11,9 @@ import {
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
+import { AdminGuard } from '@common/guards/admin.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { SkipCheckPermissions } from '@common/decorators/public.decorator';
 import { User } from '@common/decorators/user.decorator';
@@ -27,11 +29,33 @@ import {
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  // Chỉ admin (audit B-02): route này nhận user_id tuỳ ý và bắn push thật, từng
+  // mở cho mọi tài khoản nên ai cũng gửi được thông báo giả danh Zoldify.
+  // Thông báo hệ thống do các service gọi NotificationsService.create trực tiếp.
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @ResponseMessage('Tạo thông báo thành công')
   @Post()
   create(@Body() createNotificationDto: CreateNotificationDto) {
     return this.notificationsService.create(createNotificationDto);
+  }
+
+  // Đặt TRƯỚC các route ':id' để 'push-token' không bị bắt làm param id.
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Đăng ký nhận thông báo đẩy thành công')
+  @Post('push-token')
+  registerPushToken(@Body() dto: RegisterPushTokenDto, @User() user: IUser) {
+    return this.notificationsService.registerToken(
+      user,
+      dto.token,
+      dto.platform,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Huỷ nhận thông báo đẩy thành công')
+  @Delete('push-token')
+  unregisterPushToken(@Body() dto: RegisterPushTokenDto, @User() user: IUser) {
+    return this.notificationsService.unregisterToken(dto.token, user.id);
   }
 
   @UseGuards(JwtAuthGuard)

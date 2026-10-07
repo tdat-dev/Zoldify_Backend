@@ -9,9 +9,16 @@ import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { IUser } from '@identity/users/users.interface';
 import { normalizePagination } from '@common/dto/pagination.dto';
+
+/**
+ * Cột của người mua/người bán được phép trả ra ở các API đọc escrow. Không nạp
+ * nguyên bản ghi users: trước 28/09 ba route này lộ email, số điện thoại của
+ * mọi người mua lẫn người bán (audit B-03).
+ */
+const SAFE_PARTY = { id: true, full_name: true, avatar: true } as const;
 import { LedgerService } from '@money/ledger/ledger.service';
 import { PlatformFeeService } from '@money/ledger/platform-fee.service';
 import {
@@ -524,29 +531,6 @@ export class EscrowsService {
     return manager ? run(manager) : this.dataSource.transaction(run);
   }
 
-  // ── ĐỌC KÝ QUỸ: AI ĐƯỢC XEM CÁI GÌ ──────────────────────────────────────
-  //
-  // Tới 25/09 bốn hàm dưới đây không hàm nào hỏi người gọi là ai.
-  // `escrows.controller.ts` gắn `JwtAuthGuard` rồi dừng ở đó, nên BẤT KỲ AI
-  // đăng nhập — kể cả tài khoản vừa đăng ký — cũng đọc được:
-  //
-  //   GET /escrows               ký quỹ của CẢ SÀN
-  //   GET /escrows/order/:id     ký quỹ của đơn bất kỳ
-  //   GET /escrows/seller/:id    doanh thu đang giữ của shop bất kỳ
-  //   GET /escrows/held/:id      tổng tiền đang giữ của shop bất kỳ
-  //
-  // Đó là dữ liệu kinh doanh của người khác — ai mua gì của ai, bao nhiêu tiền,
-  // mỗi shop đang có bao nhiêu chờ về. Sàn C2C thì các shop cạnh tranh trực
-  // tiếp với nhau.
-  //
-  // `payments.service.ts` đã làm đúng khuôn này từ trước:
-  //     if (user.role !== 'admin') where.user = { id: user.id };
-  // Ký quỹ chỉ là chỗ bị bỏ sót.
-  //
-  // VÌ SAO KIỂM Ở SERVICE CHỨ KHÔNG CHỈ Ở CONTROLLER. Controller là một cửa;
-  // service là cái két. Kiểm ở cửa thì cửa thứ hai mở ra sau này — một
-  // controller khác, một job, một lời gọi nội bộ — sẽ đi thẳng vào két.
-
   /** Chỉ admin. Dùng cho những chỗ nhìn được dữ liệu của mọi người. */
   private chiAdmin(user: IUser, viec: string): void {
     if (user?.role !== 'admin') {
@@ -564,30 +548,32 @@ export class EscrowsService {
   /**
    * Ký quỹ của một đơn — người mua, người bán trong đơn, hoặc admin.
    *
-   * Không trả 404 giả như `orders.findOneForActor` làm: ở đó 404 để người ngoài
-   * không dò được đơn nào tồn tại. Ở đây id đơn đã lộ qua chính đường đặt hàng
-   * của người dùng rồi, nên nói thẳng "không có quyền" đỡ khó hiểu hơn.
+   * LỌC NGAY TRONG CÂU SQL, không đọc hết rồi mới kiểm.
+   *
+   * Bản trước của vai B đọc mọi khoản ký quỹ của đơn, kiểm người gọi có là
+   * một bên nào đó không, rồi trả về TẤT CẢ. Với đơn nhiều người bán, người
+   * bán A nhìn thấy số tiền của người bán B. Mảng `where` ở đây là OR, nên
+   * A chỉ lấy được đúng dòng của A.
+   *
+   * `SAFE_PARTY` chặn nốt lớp thứ hai: không trả email và số điện thoại của
+   * bên kia (audit B-03).
    */
   async findByOrder(orderId: number, user: IUser) {
-    const rows = await this.escrowRepository.find({
-      where: { order: { id: orderId } },
+    const byOrder = { order: { id: orderId } };
+    const where =
+      user.role === UserRole.ADMIN
+        ? byOrder
+        : [
+            { ...byOrder, buyer: { id: user.id } },
+            { ...byOrder, seller: { id: user.id } },
+          ];
+    return this.escrowRepository.find({
+      where,
       relations: ['buyer', 'seller'],
+      select: { buyer: SAFE_PARTY, seller: SAFE_PARTY },
     });
-
-    if (user?.role !== 'admin') {
-      const trongDon = rows.some(
-        (e) => e.buyer?.id === user?.id || e.seller?.id === user?.id,
-      );
-      // Đơn chưa có khoản ký quỹ nào thì không có gì để lộ — trả mảng rỗng.
-      if (rows.length && !trongDon) {
-        throw new ForbiddenException(
-          'Bạn không có quyền xem khoản ký quỹ của đơn hàng này',
-        );
-      }
-    }
-
-    return rows;
   }
+
 
   async findBySeller(
     sellerId: number,
@@ -610,6 +596,7 @@ export class EscrowsService {
     const [result, total] = await this.escrowRepository.findAndCount({
       where,
       relations: ['order', 'buyer'],
+      select: { buyer: SAFE_PARTY },
       skip: offset,
       take: size,
       order: { created_at: 'DESC' },
@@ -649,6 +636,7 @@ export class EscrowsService {
     const [result, total] = await this.escrowRepository.findAndCount({
       where,
       relations: ['order', 'buyer', 'seller'],
+      select: { buyer: SAFE_PARTY, seller: SAFE_PARTY },
       skip: offset,
       take: size,
       order: { created_at: 'DESC' },

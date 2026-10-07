@@ -1,0 +1,36 @@
+{
+  "name": "Registration",
+  "title": "Register account",
+  "lifelines": [
+    {"id": "u", "label": "User", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":AuthController", "kind": "object"},
+    {"id": "auth", "label": ":AuthService", "kind": "object"},
+    {"id": "users", "label": ":UsersService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "enter name, email, password, tap Register"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /auth/register {full_name, email, password}"},
+    {"msg": "sync", "from": "ctl", "to": "auth", "label": "register(registerUserDto)"},
+    {"msg": "sync", "from": "auth", "to": "users", "label": "register(registerUserDto)"},
+    {"msg": "sync", "from": "users", "to": "db", "label": "findOne({email})"},
+    {"msg": "reply", "from": "db", "to": "users", "label": "User | null"},
+    {"frag": "break", "guardOn": "users", "operands": [
+      {"guard": "[email already exists]", "steps": [
+        {"msg": "reply", "from": "users", "to": "auth", "label": "BadRequestException"},
+        {"msg": "reply", "from": "auth", "to": "ctl", "label": "BadRequestException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show 'account already exists'"}
+      ]}
+    ]},
+    {"msg": "self", "on": "users", "label": "hashPassword(password) (bcrypt)"},
+    {"msg": "sync", "from": "users", "to": "db", "label": "INSERT users (role = buyer)"},
+    {"msg": "reply", "from": "db", "to": "users", "label": "User"},
+    {"msg": "reply", "from": "users", "to": "auth", "label": "User"},
+    {"msg": "reply", "from": "auth", "to": "ctl", "label": "{id, email, full_name, role}"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {id, email, full_name, role}"},
+    {"msg": "reply", "from": "app", "to": "u", "label": "registered, ask to log in"},
+    {"note": "Role is forced to buyer; email_verified stays 0.\nNo OTP here: see Email Verification", "over": ["auth", "db"]}
+  ]
+}

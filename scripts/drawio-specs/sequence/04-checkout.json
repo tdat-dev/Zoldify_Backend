@@ -1,0 +1,72 @@
+{
+  "name": "Checkout",
+  "title": "Place order from cart",
+  "lifelines": [
+    {"id": "u", "label": "Buyer", "kind": "actor"},
+    {"id": "app", "label": "«client»\n:ClientApp", "kind": "object"},
+    {"id": "ctl", "label": ":OrdersController", "kind": "object"},
+    {"id": "svc", "label": ":OrdersService", "kind": "object"},
+    {"id": "ghn", "label": ":GhnService", "kind": "object"},
+    {"id": "noti", "label": ":NotificationsService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "u", "to": "app", "label": "confirm address, tap Place order"},
+    {"msg": "sync", "from": "app", "to": "ctl", "label": "POST /orders {address, payment_method, ...}"},
+    {"msg": "sync", "from": "ctl", "to": "svc", "label": "create(dto, user)"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT carts + product, seller WHERE user"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Cart[]"},
+    {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[cart empty or some cart_item_ids missing]", "steps": [
+      {"msg": "reply", "from": "svc", "to": "ctl", "label": "BadRequestException"},
+      {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"}
+    ]}]},
+    {"frag": "loop", "guardOn": "svc", "operands": [{"guard": "[for each cart item]", "steps": [
+      {"msg": "self", "on": "svc", "label": "check seller != buyer, stock >= qty,\nsame currency"},
+      {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[own product / out of stock / mixed currency]", "steps": [
+        {"msg": "reply", "from": "svc", "to": "ctl", "label": "BadRequestException"},
+        {"msg": "reply", "from": "ctl", "to": "app", "label": "400 Bad Request"}
+      ]}]},
+      {"msg": "self", "on": "svc", "label": "subtotal = price * qty; total += subtotal"}
+    ]}]},
+    {"frag": "opt", "guardOn": "svc", "operands": [{"guard": "[ghn_district_id and ghn_ward_code given]", "steps": [
+      {"msg": "self", "on": "svc", "label": "quoteShippingBySellerFromCart()\ngroup items by seller"},
+      {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT shops WHERE user IN (sellerIds)"},
+      {"msg": "reply", "from": "db", "to": "svc", "label": "Shop[]"},
+      {"frag": "loop", "guardOn": "svc", "operands": [{"guard": "[for each seller]", "steps": [
+        {"msg": "sync", "from": "svc", "to": "ghn", "label": "calculateFee(to, weight, from_district)"},
+        {"msg": "reply", "from": "ghn", "to": "svc", "label": "{total} (GHN error: fee 0)"}
+      ]}]},
+      {"msg": "self", "on": "svc", "label": "shippingFee = sum of seller fees"}
+    ]}]},
+    {"msg": "self", "on": "svc", "label": "final = total + shippingFee; order_code"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "INSERT orders (PENDING, is_paid=false)"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Order"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "INSERT order_items"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+    {"frag": "loop", "guardOn": "svc", "operands": [{"guard": "[for each item]", "steps": [
+      {"msg": "sync", "from": "svc", "to": "db", "label": "UPDATE products SET stock = stock - qty"},
+      {"msg": "reply", "from": "db", "to": "svc", "label": "ok"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "DELETE carts WHERE id IN (cart ids)"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+    {"msg": "sync", "from": "svc", "to": "noti", "label": "create({type: order_status, ...})"},
+    {"msg": "sync", "from": "noti", "to": "db", "label": "INSERT notifications"},
+    {"msg": "reply", "from": "db", "to": "noti", "label": "Notification"},
+    {"msg": "reply", "from": "noti", "to": "svc", "label": "Notification (push sent async)"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "SELECT order + items"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Order"},
+    {"msg": "self", "on": "svc", "label": "needs_payOS = (payment_method == PAYOS)"},
+    {"msg": "reply", "from": "svc", "to": "ctl", "label": "Order + needs_payOS"},
+    {"msg": "reply", "from": "ctl", "to": "app", "label": "201 {order, needs_payOS}"},
+    {"frag": "alt", "guardOn": "app", "operands": [
+      {"guard": "[needs_payOS]", "steps": [
+        {"ref": "Payment", "over": ["app", "ctl"]},
+        {"msg": "reply", "from": "app", "to": "u", "label": "show payment result"}
+      ]},
+      {"guard": "[else: COD]", "steps": [
+        {"msg": "reply", "from": "app", "to": "u", "label": "show order placed"}
+      ]}
+    ]},
+    {"note": "No DB transaction or row lock in create(): stock is\nread, then decremented unconditionally. Shipments are\ncreated on seller confirm, escrows on payment.", "over": ["svc", "db"]}
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "name": "Chat",
+  "title": "Chat: send a message over Socket.IO",
+  "lifelines": [
+    {"id": "s", "label": "Sender", "kind": "actor"},
+    {"id": "sa", "label": "«client»\nsender:ClientApp", "kind": "object"},
+    {"id": "gw", "label": "«socket»\n:ChatGateway", "kind": "object"},
+    {"id": "svc", "label": ":ChatService", "kind": "object"},
+    {"id": "noti", "label": ":NotificationsService", "kind": "object"},
+    {"id": "db", "label": "«database»\n:MySQL", "kind": "object"},
+    {"id": "ra", "label": "«client»\nreceiver:ClientApp", "kind": "object"}
+  ],
+  "steps": [
+    {"msg": "sync", "from": "s", "to": "sa", "label": "open conversation"},
+    {"msg": "async", "from": "sa", "to": "gw", "label": "connect /chat {auth.token}"},
+    {"msg": "self", "on": "gw", "label": "jwtService.verify(token)"},
+    {"msg": "sync", "from": "gw", "to": "db", "label": "findOne users WHERE id = sub"},
+    {"msg": "reply", "from": "db", "to": "gw", "label": "User | null"},
+    {"frag": "break", "guardOn": "gw", "operands": [{"guard": "[no user, locked or token_version stale]", "steps": [
+      {"msg": "async", "from": "gw", "to": "sa", "label": "disconnect()"}
+    ]}]},
+    {"msg": "sync", "from": "gw", "to": "db", "label": "UPDATE users SET last_seen"},
+    {"msg": "reply", "from": "db", "to": "gw", "label": "ok"},
+    {"msg": "self", "on": "gw", "label": "onlineUsers.add(userId, socket.id)"},
+    {"msg": "async", "from": "gw", "to": "ra", "label": "user_presence {online: true} (broadcast)"},
+    {"msg": "async", "from": "sa", "to": "gw", "label": "join_conversation(conversationId)"},
+    {"msg": "self", "on": "gw", "label": "client.join(conv_{id})"},
+    {"msg": "reply", "from": "sa", "to": "s", "label": "chat screen"},
+    {"note": "Receiver connected and joined conv_{id} the same way.\nNo Redis adapter: rooms and onlineUsers live in one Node process.", "over": ["gw", "ra"]},
+    {"msg": "sync", "from": "s", "to": "sa", "label": "type message, tap Send"},
+    {"msg": "self", "on": "sa", "label": "append message optimistically"},
+    {"msg": "async", "from": "sa", "to": "gw", "label": "send_message {conversationId, content}"},
+    {"msg": "sync", "from": "gw", "to": "svc", "label": "sendMessage(conversationId, dto, user)"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "findOne conversation + buyer, seller"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Conversation | null"},
+    {"frag": "break", "guardOn": "svc", "operands": [{"guard": "[not found or sender not a member]", "steps": [
+      {"msg": "reply", "from": "svc", "to": "gw", "label": "NotFound / BadRequestException"},
+      {"msg": "async", "from": "gw", "to": "sa", "label": "emit error(message)"}
+    ]}]},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "UPDATE conversations SET updated_at"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "ok"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "INSERT messages"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Message"},
+    {"msg": "reply", "from": "svc", "to": "gw", "label": "Message"},
+    {"msg": "sync", "from": "gw", "to": "db", "label": "UPDATE users SET last_seen"},
+    {"msg": "reply", "from": "db", "to": "gw", "label": "ok"},
+    {"msg": "async", "from": "gw", "to": "sa", "label": "receive_message(message) to conv_{id}"},
+    {"msg": "async", "from": "gw", "to": "ra", "label": "receive_message(message) to conv_{id}"},
+    {"msg": "sync", "from": "gw", "to": "svc", "label": "getConversationById(conversationId)"},
+    {"msg": "sync", "from": "svc", "to": "db", "label": "findOne conversation + buyer, seller"},
+    {"msg": "reply", "from": "db", "to": "svc", "label": "Conversation"},
+    {"msg": "reply", "from": "svc", "to": "gw", "label": "Conversation"},
+    {"frag": "opt", "guardOn": "gw", "operands": [{"guard": "[recipient found]", "steps": [
+      {"msg": "sync", "from": "gw", "to": "noti", "label": "create({user_id: recipientId, type: message})"},
+      {"msg": "sync", "from": "noti", "to": "db", "label": "INSERT notifications"},
+      {"msg": "reply", "from": "db", "to": "noti", "label": "Notification"},
+      {"msg": "async", "from": "noti", "to": "ra", "label": "pushToUser(): FCM push \"Tin nhắn mới\""},
+      {"msg": "reply", "from": "noti", "to": "gw", "label": "Notification"}
+    ]}]},
+    {"msg": "reply", "from": "sa", "to": "s", "label": "message shown as sent"}
+  ]
+}

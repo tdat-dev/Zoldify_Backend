@@ -1,79 +1,64 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { RegisterUserDto } from './dto/create-user.dto';
-import { UserRole } from './entities/user.entity';
 import { UsersService } from './users.service';
-import type { Repository } from 'typeorm';
-import type { User } from './entities/user.entity';
+import { UserRole } from './entities/user.entity';
 
 /**
- * ĐĂNG KÝ KHÔNG ĐƯỢC CHO TỰ CHỌN VAI TRÒ.
+ * Bài kiểm cho một lỗ hổng đã bịt (audit B-01, 28/09).
  *
- * `RegisterUserDto` có trường `role` gắn `@IsEnum(UserRole)`, và
- * `UsersService.register` lấy thẳng `role` từ đó đưa vào `create()`:
+ * `RegisterUserDto` từng có trường `role` gắn `@IsEnum(UserRole)`, và
+ * `UsersService.register` lưu nguyên giá trị đó. Nên
+ * `POST /api/v1/auth/register {"role": "admin", ...}` tạo thẳng một tài khoản
+ * admin: duyệt rút tiền, sửa user, sửa settings. Swagger còn liệt kê trường này.
  *
- *   POST /api/v1/auth/register {"role":"admin", ...}   → tài khoản admin
- *
- * Route đó `@Public()`, không guard. `ValidationPipe` dùng `whitelist: true`,
- * nhưng whitelist chỉ loại trường KHÔNG có decorator — `role` có decorator nên
- * nó được giữ nguyên.
- *
- * Phát hiện 06/10 lúc đọc khối xung đột giữa nhánh vai B và `origin/staging`:
- * bản của Đạt bỏ `role` khỏi destructure còn bản ta giữ. Lần theo thì ra lỗ
- * thật. Đạt đã vá bên `staging` (audit B-01); bài kiểm này đưa cùng bất biến
- * sang nhánh vai B để lúc hoà hai bên không ai lỡ tay mở lại.
- *
- * HAI LỚP CHẶN, kiểm cả hai — vì một lớp thì lớp kia hỏng là hở:
- *
- *   1. DTO từ chối `role` → 400 ngay ở ValidationPipe, request không vào service.
- *   2. Service luôn gán BUYER → chặn cả khi ai đó gọi `register()` thẳng từ
- *      script, job, hay một controller khác thêm vào sau này.
- *
- * Đường đăng ký qua OTP (`AuthService.verifyRegisterOtp`) gọi `register()` với
- * đúng ba trường nên không dính; nhưng lớp 2 vẫn phủ luôn cả nó.
+ * Hai lớp chặn, kiểm cả hai: DTO từ chối trường `role` (400 ngay ở
+ * ValidationPipe), và service luôn gán BUYER dù có ai gọi nó với role khác.
  */
-describe('Đăng ký không được tự chọn vai trò', () => {
+interface SavedUser {
+  role?: string;
+}
+
+describe('Đăng ký công khai không được tự chọn vai trò', () => {
   const body = {
-    full_name: 'Nguyen Van A',
-    email: `role-test-${Date.now()}@zoldify.test`,
+    full_name: 'Kẻ thử lách',
+    email: 'kev@t.local',
     password: '123456',
   };
 
-  const kiemDto = async (input: Record<string, unknown>) =>
-    validate(plainToInstance(RegisterUserDto, input), {
+  // Đúng cấu hình ValidationPipe toàn cục trong main.ts.
+  const check = (plain: object) =>
+    validate(plainToInstance(RegisterUserDto, plain), {
       whitelist: true,
       forbidNonWhitelisted: true,
     });
 
-  it('body hợp lệ, không kèm role → qua', async () => {
-    expect(await kiemDto(body)).toHaveLength(0);
+  it('body hợp lệ không có role thì qua', async () => {
+    expect(await check(body)).toHaveLength(0);
   });
 
-  it.each(['admin', 'seller', 'moderator'])(
-    'gửi role=%s → bị từ chối',
+  it.each([UserRole.ADMIN, UserRole.MODERATOR, UserRole.SELLER])(
+    'gửi role=%s thì bị từ chối',
     async (role) => {
-      const loi = await kiemDto({ ...body, role });
-      expect(loi.map((e) => e.property)).toContain('role');
+      const errors = await check({ ...body, role });
+      expect(errors.map((e) => e.property)).toContain('role');
     },
   );
 
-  it('service luôn lưu BUYER, kể cả khi bị gọi kèm role khác', async () => {
-    // Repo giả: chỉ cần hai hàm mà `register()` chạm tới. Bất biến ở đây nằm
-    // trọn trong mã TypeScript, không phải ở database, nên MySQL thật không
-    // chứng minh thêm được gì — xem quy tắc "kiểm ở nơi bất biến thật sự sống".
-    let daLuu: Partial<User> | undefined;
+  it('service luôn lưu vai trò BUYER, kể cả khi bị gọi kèm role khác', async () => {
+    let saved: SavedUser | undefined;
     const repo = {
       findOne: () => Promise.resolve(null),
-      create: (u: Partial<User>) => u,
-      save: (u: Partial<User>) => {
-        daLuu = u;
-        return Promise.resolve(u);
+      create: (x: SavedUser) => x,
+      save: (x: SavedUser) => {
+        saved = x;
+        return Promise.resolve(x);
       },
-    } as unknown as Repository<User>;
+    };
+    const service = new UsersService(repo as never);
 
-    const service = new UsersService(repo);
     await service.register({ ...body, role: UserRole.ADMIN } as never);
 
-    expect(daLuu?.role).toBe(UserRole.BUYER);
+    expect(saved?.role).toBe(UserRole.BUYER);
   });
 });
