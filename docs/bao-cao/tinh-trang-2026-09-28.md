@@ -1,5 +1,9 @@
 # Tình trạng công việc — 28/09/2026
 
+> **ĐÃ BỊ THAY THẾ bởi `docs/bao-cao/tinh-trang-2026-10-08.md` (08/10/2026).**
+> Giữ lại làm bằng chứng cho đợt vá 22 lỗi luồng mua bán. Trạng thái nhánh và
+> danh sách việc trong file này nay đã cũ.
+
 > **Mục đích của file này**: mở cuộc trò chuyện mới mà không phải nạp lại cả
 > lịch sử. Đọc file này + `CLAUDE.md` + `docs/BAN-GIAO.md` là đủ để tiếp tục.
 >

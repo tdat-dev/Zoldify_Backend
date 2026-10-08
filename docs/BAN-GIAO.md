@@ -5,6 +5,10 @@
 Toàn bộ ngữ cảnh của phiên làm việc trước nằm ngoài repo và **sẽ mất**. File này
 là thứ duy nhất mang nó theo. Đọc file này trước khi làm gì tiếp.
 
+> **Tình trạng mới nhất: `docs/bao-cao/tinh-trang-2026-10-08.md`.** Mở cuộc trò
+> chuyện mới thì đọc file đó trước — nó có trạng thái nhánh, số đo nghiệm thu
+> gần nhất, và các bẫy môi trường của máy hiện tại. Bản 28/09 đã bị nó thay thế.
+
 ---
 
 ## 1. Quy trình bắt buộc — 6 bước
@@ -161,7 +165,7 @@ là chốt.
 | — | ~~`drawio:check` xanh giả — mất 19/20 sơ đồ~~ **XONG 29/09, và câu trên SAI** | Không mất sơ đồ nào: `839e3df` **gộp** cả 20 vào `05-use-case-diagram.drawio` (file 20 trang) rồi xoá 17 file rời. Đã khôi phục 18 file rời từ bộ sinh, sửa 3 báo động giả + thêm mục đếm đủ sơ đồ cho `drawio:check`, sửa 6 chỗ sơ đồ nói sai, render lại 21 ảnh. Xem `docs/bao-cao/khoi-phuc-so-do.md`. **Còn lại:** file gộp nay là ảnh chụp đông cứng và đang lệch — cần Huy chọn một nguồn |
 | 13 | `CDN_BASE_URL`, bỏ `req.get('host')` | |
 | 15 | Gợi ý sản phẩm — **điểm Level 3** | |
-| 26b | Tồn kho real-time — **điểm Level 3** | |
+| ~~**26b**~~ | ~~Tồn kho real-time — **điểm Level 3**~~ **XONG 08/10** — `StockEventsService` + `StockGateway` + cổng `npm run check:stock` (xanh 22 mục). Nhánh `feat/task-26b-ton-kho-realtime`, 6 commit, chưa push. Xem `docs/bao-cao/tinh-trang-2026-10-08.md` |
 | 35 | Trang admin đối soát ledger | |
 
 ### Cần Đạt quyết
