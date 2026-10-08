@@ -50,7 +50,7 @@ export class SettingsService {
 
   async update(updates: Record<string, string>) {
     for (const [key, value] of Object.entries(updates)) {
-      let setting = await this.settingRepository.findOne({ where: { key } });
+      const setting = await this.settingRepository.findOne({ where: { key } });
       if (setting) {
         setting.value = value;
         await this.settingRepository.save(setting);

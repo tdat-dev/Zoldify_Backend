@@ -3,6 +3,22 @@ import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 
 /**
+ * Stub của `StockEventsService` cho mọi chỗ tự new service thay vì để bộ tiêm phụ thuộc dựng.
+ *
+ * VÌ SAO PHẢI CÓ, KHI npm test ĐÃ XANH MÀ KHÔNG CÓ NÓ.
+ *
+ * Đo ngày 07/10: thiếu đối số này, ts-jest KHÔNG báo lỗi TS2554 — bốn spec vẫn
+ * xanh với this.stockEvents === undefined, và chỉ nổ vào ngày có người thêm một
+ * ca chạm tới đường dẫn gọi phat(). Cùng khiếm khuyết đó thì ts-node (dùng cho
+ * scripts/) BÁO NGAY, nên check:cache đỏ còn npm test xanh — hai công cụ, hai
+ * câu trả lời, cho cùng một dòng mã.
+ *
+ * resolve chứ không reject: cả ba chỗ gọi đều await nó, và chúng nằm NGAY SAU
+ * khi transaction đã commit.
+ */
+const khoPhat = { phat: () => Promise.resolve() } as never;
+
+/**
  * Lỗi H-02 của đợt test E2E Android 30/09 — bài kiểm viết TRƯỚC.
  *
  * Người mua đặt đơn xong, người bán KHÔNG biết: backend chỉ tạo thông báo cho
@@ -57,8 +73,12 @@ function fakeEm() {
   }
   qb.getMany = () =>
     Promise.resolve([
-      { id: 5, stock: 10 },
-      { id: 6, stock: 10 },
+      // `price` la bat buoc tu khi co TC-P2-16 (nhanh vai B): truoc khi chot don,
+      // OrdersService doc lai gia DUOI KHOA va tu choi neu lech. Thieu cot nay thi
+      // Number(undefined) = NaN, va don bi tu choi voi "gia vua thay doi -> NaN d".
+      // Hai so duoi day khop voi fixture san pham o cuoi file.
+      { id: 5, stock: 10, price: 100000 },
+      { id: 6, stock: 10, price: 150000 },
     ]);
   qb.execute = () => Promise.resolve({ affected: 1 });
   return {
@@ -97,6 +117,10 @@ function makeService() {
         price: '100000',
         stock: 10,
         currency: 'VND',
+        // `OrdersService.create` từ chối sản phẩm không ở trạng thái ACTIVE
+        // (TC-P1-10b, nhánh vai B). Fixture này viết trước luật đó nên thiếu
+        // `status`, và cả bài kiểm đỏ vì một lý do chẳng liên quan tới thứ nó đo.
+        status: 'active',
         seller: SELLER_A,
       },
     },
@@ -109,6 +133,10 @@ function makeService() {
         price: '150000',
         stock: 10,
         currency: 'VND',
+        // `OrdersService.create` từ chối sản phẩm không ở trạng thái ACTIVE
+        // (TC-P1-10b, nhánh vai B). Fixture này viết trước luật đó nên thiếu
+        // `status`, và cả bài kiểm đỏ vì một lý do chẳng liên quan tới thứ nó đo.
+        status: 'active',
         seller: SELLER_B,
       },
     },
@@ -136,6 +164,7 @@ function makeService() {
     {} as never,
     {} as never,
     dataSource as never,
+    khoPhat,
   );
   return { svc, notifications };
 }

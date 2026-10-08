@@ -38,7 +38,24 @@ export class FirebaseService implements OnModuleInit {
   }
 
   onModuleInit() {
-    const accountPath = this.candidatePaths().find((p) => fs.existsSync(p));
+    // `isFile()` chứ không `existsSync`, và đây là chuyện đã làm chết cả cụm.
+    //
+    // `docker-compose.yml` mount `./firebase-service-account.json` vào api.
+    // Khoá là secret nên nó bị gitignore: máy nào clone về mà chưa đặt khoá thì
+    // KHÔNG có file đó — và Docker, gặp một bind mount trỏ vào đường dẫn không
+    // tồn tại, **tự tạo một THƯ MỤC rỗng** ở đó. `existsSync` trả true cho thư
+    // mục, nên nhánh "không tìm thấy khoá" không chạy, và `require(<thư mục>)`
+    // ném MODULE_NOT_FOUND ngay trong onModuleInit.
+    //
+    // Hậu quả đo được lúc dựng cụm lần đầu: cả BA bản api vào vòng khởi động
+    // lại vô tận, trong khi ý định của mã là chỉ tắt đăng nhập Google.
+    const accountPath = this.candidatePaths().find((p) => {
+      try {
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
     if (!accountPath) {
       this.logger.warn(
         'Khong tim thay firebase-service-account.json — dang nhap bang Google se tat. ' +
@@ -46,13 +63,26 @@ export class FirebaseService implements OnModuleInit {
       );
       return;
     }
-    const serviceAccount = require(accountPath);
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
+    // Bọc try/catch vì một FILE vẫn hỏng được theo cách khác: JSON sai cú pháp,
+    // khoá của project khác, file rỗng do `touch` cho qua chuyện. Không bọc thì
+    // mọi trường hợp đó đều là api không khởi động nổi — đổi một tính năng phụ
+    // (đăng nhập Google) thành cả hệ thống ngừng bán hàng.
+    try {
+      const serviceAccount = require(accountPath) as admin.ServiceAccount;
+      if (!admin.apps.length) {
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+      }
+      this.initialized = true;
+    } catch (e) {
+      this.logger.error(
+        `Doc duoc ${accountPath} nhung khong dung duoc lam khoa Firebase — ` +
+          'dang nhap bang Google se tat. ' +
+          (e instanceof Error ? e.message : String(e)),
+      );
+      return;
     }
-    this.initialized = true;
     // In ra CHỖ đã nạp, không chỉ "thành công": ba đường dẫn ứng viên nghĩa là
     // khi có hai bản khoá lệch nhau trên cùng một máy, dòng log này là thứ duy
     // nhất cho biết bản nào đang chạy.

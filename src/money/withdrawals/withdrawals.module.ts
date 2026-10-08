@@ -6,11 +6,10 @@ import { Withdrawal } from './entities/withdrawal.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { LedgerModule } from '@money/ledger/ledger.module';
 
-
 @Module({
   imports: [TypeOrmModule.forFeature([Withdrawal, User]), LedgerModule],
   controllers: [WithdrawalsController],
   providers: [WithdrawalsService],
   exports: [WithdrawalsService],
 })
-export class WithdrawalsModule { }
+export class WithdrawalsModule {}

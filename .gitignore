@@ -81,7 +81,13 @@ public/media/demo/
 /backups/
 *.sql.gz
 
+# Project.txt — đề bài của thầy, cố ý không commit
+Project.txt
+
 # Bản máy đọc của bài soi SQL. File .md mới là thứ để người đọc; cái này
 # 232KB toàn SQL sinh tự động, đưa vào git chỉ làm mọi diff sau này thành
 # rác. Sinh lại bằng: npm run sql:audit
 docs/system-design/sql-audit.json
+
+# Chi muc CodeGraph — sinh lai duoc, ~12MB nhi phan, doi moi lan sua ma.
+.codegraph/

@@ -1,9 +1,19 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { WithdrawalsService } from './withdrawals.service';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalDto } from './dto/update-withdrawal.dto';
 import { ResponseMessage } from '@common/decorators/response.decorator';
-import type { IUser } from '@identity/users/users.interface'
+import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { Withdrawal } from './entities/withdrawal.entity';
@@ -29,8 +39,10 @@ export class WithdrawalsController {
     @Query('limit') limit: string,
     @User() user: IUser,
   ) {
-    return this.withdrawalsService.findByUser(user.id, Number(page) || 1, Number(limit) || 20);
+    return this.withdrawalsService.findByUser(
+      user.id,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
   }
-
-  
 }

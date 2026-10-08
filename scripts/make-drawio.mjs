@@ -338,18 +338,21 @@ function activityDiagram() {
 
   vertex(s, {
     value:
-      'Thanh đậm là fork/join của UML. Sau khi thanh toán commit, việc báo người bán\n' +
-      'và việc tạo vận đơn chạy song song, rồi phải GẶP LẠI ở thanh join trước khi\n' +
-      'hoạt động kết thúc — nếu để mỗi nhánh tự chạy vào nút kết thúc thì nhánh về\n' +
-      'trước sẽ giết nhánh còn lại, đó là ngữ nghĩa của activity final.\n\n' +
-      'Vòng tròn có dấu X là flow final: luồng đó dừng, hoạt động vẫn tiếp tục. Dùng\n' +
-      'cho webhook PayOS gửi trùng — bỏ qua là đúng, không phải lỗi.\n\n' +
-      'Nhánh "Order already cancelled?" có vì huỷ đơn KHÔNG chắc chắn đóng được link\n' +
-      'thanh toán — việc đóng link là lời gọi mạng, hỏng thì thôi. Nên webhook phải tự\n' +
-      'phòng: đơn đã huỷ thì tiền vào ví người mua và đơn giữ nguyên trạng thái huỷ.\n' +
-      'Không được bỏ qua số tiền, vì nó đã nằm trong tài khoản ngân hàng thật — không\n' +
-      'ghi sổ là gateway_clearing lệch với ngân hàng. Xem 06b-activity-cancel-refund.\n\n' +
-      'Xanh lá là bước đã hiện thực xong; đỏ là nhánh thất bại.',
+      'The thick bars are a UML fork and join. Once the payment commits, notifying the\n' +
+      'seller and creating the shipment run in parallel, and they MUST meet again at\n' +
+      'the join before the activity ends. If each branch ran into its own final node,\n' +
+      'the first to finish would kill the other — that is what activity final means.\n\n' +
+      'The circle with an X is a flow final: that one flow stops, the activity keeps\n' +
+      'going. It is used for duplicate PayOS webhooks — ignoring them is correct\n' +
+      'behaviour, not an error.\n\n' +
+      'The "Order already cancelled?" branch exists because cancelling an order does\n' +
+      'NOT reliably close the payment link: closing it is a network call, and it can\n' +
+      'fail. So the webhook must defend itself. If the order is already cancelled the\n' +
+      'money goes into the buyer wallet and the order stays cancelled. The amount can\n' +
+      'never be ignored, because it is already sitting in a real bank account — not\n' +
+      'recording it leaves gateway_clearing out of step with the bank. See\n' +
+      '06b-activity-cancel-refund.\n\n' +
+      'Green is a step that is already implemented; red is a failure branch.',
     style: S.note,
     x: 40, y: 1740, w: 700, h: 220,
   });
@@ -749,19 +752,21 @@ function ghnActivityDiagram() {
 
   vertex(s, {
     value:
-      'THE HALF THAT DOES NOT EXIST: STATUS SYNC\n\n' +
-      'Zoldify calls GHN once, stores order_code, and never speaks to GHN again.\n' +
-      'There is no webhook route and no polling job. Search the repository for a GHN\n' +
-      'callback and there is nothing to find.\n\n' +
-      'So picked up, in transit, delivered, delivery failed, returned to sender —\n' +
-      'none of it reaches the order. `status` only moves when a human presses a\n' +
-      'button in the seller UI.\n\n' +
-      'That matters more here than on an ordinary shop, because DELIVERED is the\n' +
-      'event that releases the escrow. The money is waiting on a fact the system\n' +
-      'cannot observe. Today a seller can mark their own order delivered and be paid\n' +
-      'for a parcel that never left the house.\n\n' +
-      'Two ways to close it: register a GHN webhook, or poll the tracking endpoint on\n' +
-      'a schedule. The webhook is cheaper and faster; polling survives a missed call.',
+      'STATUS SYNC — BUILT, task #26\n\n' +
+      'This half used to be missing. Zoldify called GHN once, stored order_code and\n' +
+      'never spoke to GHN again, so picked up / in transit / delivered / returned\n' +
+      'never reached the order: `status` only moved when a human pressed a button in\n' +
+      'the seller UI.\n\n' +
+      'That mattered more here than on an ordinary shop, because DELIVERED is the\n' +
+      'event that releases the escrow — a seller could mark their own order delivered\n' +
+      'and be paid for a parcel that never left the house.\n\n' +
+      'Closed both ways, because they fail differently. POST /api/v1/orders/\n' +
+      'ghn-webhook (orders.controller.ts:172) takes the callback, and the worker\n' +
+      'still sweeps on a schedule so a missed call is caught late rather than never.\n\n' +
+      'The webhook is authenticated by GHN_WEBHOOK_TOKEN in the query string. Leaving\n' +
+      'that variable EMPTY locks the route shut (every request 401) rather than\n' +
+      'disabling the check — this endpoint marks a parcel delivered, which is what\n' +
+      'releases escrow to the seller, so an open one lets a stranger drain the buyer.',
     style: S.note,
     x: 40, y: 1080, w: 800, h: 300,
   });
@@ -808,7 +813,7 @@ function topupActivityDiagram() {
 
   const b1 = act(l2, 'POST /payos/create-link  type = topup', 140, 190, 360, 50);
   const d1 = vertex(s, {
-    value: '10.000đ ≤ amount\n≤ 50.000.000đ?',
+    value: '10,000 VND ≤ amount\n≤ 50,000,000 VND?',
     style: S.decision, x: 230, y: 270, w: 180, h: 90, parent: l2,
   });
   const err1 = act(l2, '400 — amount out of range', 580, 285, 230, 60, S.actionTodo);
@@ -1526,10 +1531,15 @@ function deploymentDiagram() {
   vertex(s, { value: 'Android / iOS app\n(React Native, Expo)', style: S.artifact, x: 60, y: 215, w: 210, h: 55 });
 
   // Máy của quản trị viên là một origin khác, không phải một tab khác của cùng
-  // trang. Đỏ = đã chốt 13/08/2026, chưa dựng.
+  // trang.
+  //
+  // HẾT ĐỎ TỪ 29/09/2026. Đỏ trong sơ đồ này nghĩa là "đã chốt, chưa dựng" —
+  // đúng lúc vẽ (13/08). Nay `admin.zoldify.com` đã chạy thật: gọi vào trả
+  // HTTP 200 qua TLS. Để nguyên màu đỏ là sơ đồ nói thiếu một thứ nhóm đã làm
+  // xong, và đó là kiểu nói dối tự làm mình thiệt.
   const adminDev = vertex(s, {
-    value: '«device»\nAdmin workstation  (planned)',
-    style: S.node3d + 'fillColor=#ffe0e0;strokeColor=#c62828;',
+    value: '«device»\nAdmin workstation',
+    style: S.node3d,
     x: 40, y: 340, w: 260, h: 140,
   });
   vertex(s, {
@@ -1546,7 +1556,7 @@ function deploymentDiagram() {
     style: S.artifact, x: 450, y: 120, w: 560, h: 65 });
 
   const apiNode = vertex(s, {
-    value: '«execution environment»\nNode.js 20 — API replicas',
+    value: '«execution environment»\nNode.js 24 — API replicas',
     style: S.node3d, x: 450, y: 200, w: 560, h: 150,
   });
   vertex(s, { value: 'zoldify-api  x3\nNestJS, stateless, mem_limit 512M',
@@ -1554,7 +1564,7 @@ function deploymentDiagram() {
   vertex(s, { value: 'zoldify-worker  x1\nBullMQ + cron, mem_limit 256M',
     style: S.artifact, x: 740, y: 265, w: 245, h: 60 });
 
-  vertex(s, { value: '«database»  mysql:8\nmax_connections 200, volume mysql_data',
+  vertex(s, { value: '«database»  mysql:8\napp pool 15 connections, volume mysql_data',
     style: S.artifact, x: 450, y: 380, w: 270, h: 65 });
   vertex(s, { value: '«database»  redis:7\ncache, throttle, socket adapter, queue',
     style: S.artifact, x: 740, y: 380, w: 270, h: 65 });
@@ -1578,14 +1588,14 @@ function deploymentDiagram() {
     value: '«device»\nGitHub Actions',
     style: S.node3d, x: 1140, y: 520, w: 240, h: 120,
   });
-  vertex(s, { value: 'build image, push GHCR', style: S.artifact, x: 1165, y: 585, w: 190, h: 35 });
+  vertex(s, { value: 'gate: lint + build, then SSH', style: S.artifact, x: 1165, y: 585, w: 190, h: 35 });
 
   const link = (a, b, v) => edge(s, { source: a, target: b, value: v, style: S.flow });
   link(dev, vps, 'HTTPS  /api/v1\nWebSocket  /chat');
   link(adminDev, vps, 'HTTPS  /api/v1/admin');
   link(vps, cf, 'S3 API');
   link(vps, gw, 'HTTPS');
-  link(gh, vps, 'SSH  compose pull && up -d');
+  link(gh, vps, 'SSH  git reset && compose up -d --build');
 
   vertex(s, {
     value:
@@ -1671,11 +1681,14 @@ function containerDiagram() {
   const app = box('Mobile\nReact Native + Expo\nAndroid and iOS', 60, 195, 240, 90);
 
   // Đỏ = chưa dựng, cùng quy ước với các sơ đồ hoạt động và lớp.
+  //
+  // HẾT ĐỎ 29/09: `admin.zoldify.com` đã chạy thật, gọi vào trả HTTP 200 qua
+  // TLS, và `admin-staging.zoldify.com` cũng có. Repo `Zoldify_Admin` tồn tại,
+  // Next.js + next-intl, đã deploy.
   const admin = vertex(s, {
-    value: 'Admin web  (planned)\nNext.js, separate deployable\nadmin.zoldify.com',
+    value: 'Admin web\nNext.js, separate deployable\nadmin.zoldify.com',
     style:
-      S.component +
-      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+      S.component + 'verticalAlign=middle;align=center;spacingLeft=0;',
     x: 60, y: 320, w: 240, h: 90,
   });
 
@@ -1698,18 +1711,29 @@ function containerDiagram() {
   //
   // Vẽ hai cái này màu xanh là khẳng định API không giữ trạng thái, mà đó chính
   // là điều nó KHÔNG làm được hôm nay.
+  // HẾT ĐỎ 29/09 — task #14 đã xong. `worker` là dịch vụ riêng trong
+  // docker-compose.yml, chạy `node dist/worker`, dùng chung image với api.
+  // Cron ra khỏi API: lịch nằm trong Redis, job giao cho ĐÚNG MỘT worker.
+  // `npm run check:worker` dựng hai worker thật, đẩy một job, đếm số lần chạy
+  // — và nó xanh. Đó là câu hỏi không đọc mã mà trả lời được.
   const worker = vertex(s, {
-    value: 'Worker x1  (planned)\nBullMQ + cron\ntoday the cron runs inside the API',
-    style: S.component +
-      'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
+    value: 'Worker x1\nBullMQ + cron\nseparate process, one replica only',
+    style: S.component + 'verticalAlign=middle;align=center;spacingLeft=0;',
     x: 760, y: 210, w: 240, h: 80,
   });
   const mysql = store('MySQL 8\nsource of truth', 440, 340);
   // Cùng hình hộp 3D như MySQL. Đã BỎ màu đỏ "planned": từ Epic 4 Redis là thật
-  // cho phần CACHE (app.module đọc REDIS_URL, @keyv/redis trong deps). Nhãn nói rõ
-  // phần nào đã dùng, phần nào chưa — throttle/socket vẫn nằm trong tiến trình.
+  // cho phần CACHE (app.module đọc REDIS_URL, @keyv/redis trong deps).
+  //
+  // CẬP NHẬT 29/09: nhãn cũ ghi "throttle · socket · queue: CHƯA" — nay cả ba
+  // đều đã qua Redis thật, kiểm bằng mã chứ không bằng trí nhớ:
+  //   throttle → `ThrottlerStorageRedisService` trong app.module.ts:101
+  //   socket   → src/common/redis-io.adapter.ts, gắn trong main.ts
+  //   queue    → BullMQ ở src/ops/jobs/jobs.runner.ts (task #14)
+  // `npm run check:redis` và `check:worker` đều xanh. Để nguyên chữ "CHƯA" là
+  // sơ đồ nói thiếu ba thứ nhóm đã làm xong.
   const redis = vertex(s, {
-    value: 'Redis 7\ncache: CÓ (Epic 4, opt-in REDIS_URL)\nthrottle · socket · queue: CHƯA',
+    value: 'Redis 7\ncache · throttle · socket · queue\nall on Redis (Epic 4, tasks 5 and 14)',
     style: S.node3d + 'verticalAlign=middle;align=center;spacingLeft=0;',
     x: 760, y: 340, w: 220, h: 90,
   });
@@ -1727,7 +1751,7 @@ function containerDiagram() {
   // qua khe và nhãn `writes images today` rơi đè lên hộp Redis.
   const disk = store('VPS disk\npublic/images/{folder}', 600, 480);
   const r2 = vertex(s, {
-    value: 'Cloudflare R2  (planned)\nobject storage, outside the VPS',
+    value: 'Cloudflare R2  (opt-in)\nobject storage, outside the VPS\non when R2_* are filled',
     style:
       S.component +
       'verticalAlign=middle;align=center;spacingLeft=0;fillColor=#ffe0e0;strokeColor=#c62828;',
@@ -1755,46 +1779,42 @@ function containerDiagram() {
   // hàng Caddy và hàng API. Bản trước để draw.io tự định tuyến: đường cắt thẳng
   // qua hộp MySQL và nhãn "upload" dính vào nhãn "MySQL 8" thành "MySQupload".
   f(api, disk, 'writes images today', S.flow + at(0.96, 1, 0.5, 0));
-  f(api, r2, 'upload  (planned)', S.depend + at(0.5, 0, 0, 0.5));
+  f(api, r2, 'upload  (opt-in)', S.depend + at(0.5, 0, 0, 0.5));
 
   vertex(s, {
     value:
       'Four things this diagram states:\n' +
       '1. The API keeps NO state, so it can be replicated. Everything that used to\n' +
-      '   live in process memory — cache, rate-limit counters, socket lists — is in Redis.\n' +
-      '   PARTLY TRUE NOW (Epic 4): the catalog cache IS externalisable to Redis via\n' +
-      '   REDIS_URL (single-flight + fail-open) and @keyv/redis is a dependency, so a\n' +
-      '   shared cache across replicas works. STILL IN-PROCESS: ThrottlerModule rate-\n' +
-      '   limit counters and the websocket socket lists — so the API is not yet fully\n' +
-      '   stateless and the x3 above remains a target for those two pieces.\n' +
+      '   live in process memory is in Redis now: the catalog cache (single-flight +\n' +
+      '   fail-open), the ThrottlerModule rate-limit counters, and the websocket\n' +
+      '   socket lists. That is what makes the x3 above real rather than a target.\n' +
       '2. Exactly ONE worker. Cron inside the API would run the reconciliation job\n' +
-      '   three times; for a job that touches money that is a serious bug.\n' +
-      '   NOT TRUE YET: TasksModule is imported by AppModule, so the cron runs inside\n' +
-      '   the API. Harmless while there is one replica — and the exact reason a second\n' +
-      '   replica cannot simply be started.\n' +
-      '3. Images ARE on the VPS disk today — multer writes to public/images/{folder},\n' +
-      '   and there is no R2 or S3 client anywhere in src/. That blocks point 1: a\n' +
-      '   second API replica cannot serve an image the first one wrote. Moving to R2\n' +
-      '   is decided, not built.\n' +
+      '   three times, and for a job that moves money that is a serious bug. The\n' +
+      '   schedule now lives in Redis and each job goes to exactly one worker.\n' +
+      '   Do NOT raise the worker replica count: cancelExpired reads orders outside\n' +
+      '   a transaction, so two overlapping sweeps can still refund twice.\n' +
+      '3. Images are written to the VPS disk by multer. A named Docker volume is\n' +
+      '   mounted into all three API replicas, so on THIS single VPS they share the\n' +
+      '   same directory — measured, not assumed. Object storage only becomes\n' +
+      '   necessary when the replicas move to different machines. An R2 client does\n' +
+      '   exist in src/catalog/files/storage.service.ts and turns on when the five\n' +
+      '   R2_* variables are filled; empty means disk.\n' +
       '4. Admin is its own deployable on its own hostname, so admin code is never\n' +
       '   shipped in the customer bundle. Sessions are per-origin, so an admin who\n' +
       '   also sells signs in twice.\n\n' +
-      'Checked against the code on 14/08/2026. Red = decided, not built.\n\n' +
-      'The box is now buildable. Dockerfile and docker-compose.yml exist in\n' +
-      'Zoldify_Backend; an earlier mysql+migrate+api stack was brought up from an\n' +
-      'empty volume and answered on /api/v1/products. Compose now ALSO declares a\n' +
-      'redis service and passes REDIS_URL=redis://redis:6379 to the api, so Redis\n' +
-      'backs the catalog cache (Epic 4). Honest caveat: the redis-included compose\n' +
-      'is config-verified (YAML + wiring) but NOT yet brought up — the author box\n' +
-      'has no Docker. Still no worker.\n\n' +
-      'The uploads question has an answer now: compose mounts a NAMED volume at\n' +
-      '/app/public/images, and a file written there survives docker compose down and\n' +
-      'up — measured, not assumed. That keeps uploads across a redeploy but does not\n' +
-      'unblock point 1: a volume lives on one machine, so it still cannot be shared\n' +
-      'by two API replicas. Only object storage fixes that.\n\n' +
+      'Checked against the code on 29/09/2026. The one red box is built but off by\n' +
+      'default: the R2 client ships in src/, and filling the five R2_* variables\n' +
+      'switches uploads from the VPS disk to object storage.\n\n' +
+      'The whole cluster has been brought up and measured, not just config-checked:\n' +
+      'caddy + 3 api + 1 worker + mysql + redis, from an empty volume. 90 requests\n' +
+      'through caddy were served 31 / 35 / 32 by the three replicas, so the load\n' +
+      'balancing is real. Rate limiting stayed correct across replicas: one client\n' +
+      'was cut off at exactly 10 requests while a second client was still served,\n' +
+      'which is only possible if the counters are shared through Redis and the real\n' +
+      'client IP survives the proxy.\n\n' +
       'See DEPLOY.md for the commands and for what is still missing.',
     style: S.note,
-    x: 60, y: 700, w: 740, h: 480,
+    x: 60, y: 700, w: 740, h: 430,
   });
 
   return s;
@@ -2270,16 +2290,24 @@ function cicdDiagram() {
   const review = step('Reviewed by\nanother member', 990, 150, 220);
   const merge = step('Merge into develop', 990, 240, 220);
   const main = step('Merge develop into main', 990, 330, 220);
-  // Hai bước còn đỏ vì chúng cần CI và một máy chủ — chưa có cái nào. Bước
-  // migration đã đen: nó là dịch vụ `migrate` trong docker-compose.yml, chạy
-  // một lần rồi thoát, và đã chạy thật.
-  const build = step('Build image,\npush to GHCR', 990, 420, 220, '#ffe0e0');
-  const deploy = step('SSH to VPS\ncompose pull and up -d', 990, 510, 220, '#ffe0e0');
-  const migrate = step('Run migrations\nservice `migrate`, chạy trước api', 990, 600, 220);
+  // HAI BƯỚC NÀY TỪNG ĐỎ VÌ "CHƯA CÓ CI VÀ CHƯA CÓ MÁY CHỦ". Cả hai nay đã có,
+  // nên chúng đen như các bước khác — và nội dung phải đổi theo, vì quy trình
+  // thật KHÔNG giống thứ được vẽ hồi đó:
+  //
+  //   `deploy.yml` KHÔNG build ảnh và KHÔNG đẩy lên registry nào. Nó chạy một
+  //   job cổng (npm ci · build · lint) rồi SSH vào VPS, `git reset --hard` về
+  //   đúng nhánh và `docker compose up -d --build` — tức máy chủ tự dựng ảnh
+  //   lấy. Grep `ghcr|docker push|registry` trong deploy.yml: 0 kết quả.
+  const build = step('Gate: npm ci · build · lint\n(job `gate`)', 990, 420, 220);
+  const deploy = step('SSH to VPS\ngit reset and compose up -d --build', 990, 510, 220);
+  const migrate = step('Run migrations\nservice `migrate`, before api starts', 990, 600, 220);
   const health = vertex(s, {
     value: '/api/v1/health\nok?', style: S.decision, x: 1010, y: 690, w: 180, h: 80,
   });
-  const rollback = step('Roll back to\nprevious image', 700, 700, 220, '#ffe0e0');
+  // VẪN ĐỎ, và lần này đỏ đúng: không có registry thì không có "ảnh trước" để
+  // quay về. Lùi bản hiện nay là `git checkout <commit cũ>` rồi dựng lại —
+  // chưa ai viết thành quy trình, chưa ai diễn tập.
+  const rollback = step('Roll back\n(no procedure yet)', 700, 700, 220, '#ffe0e0');
   const done = step('Done', 1010, 810, 180, '#d5f5dd');
 
   const f = (a, b, v = '') => edge(s, { source: a, target: b, value: v, style: S.flow });
@@ -2312,24 +2340,20 @@ function cicdDiagram() {
       'openapi:check guarantees web and mobile never build against a stale contract.\n\n' +
       'diagrams:check means a broken diagram cannot be merged — the report depends\n' +
       'on them rendering.\n\n' +
-      'NOT BUILT YET: the backend has no .github/workflows at all. This is B, week 1.',
+      'All six gates are built and run on every pull request: ci.yml, job `quality`.',
     style: S.note,
     x: 60, y: 420, w: 620, h: 170,
   });
 
   vertex(s, {
     value:
-      'The red column is a plan, not a description\n\n' +
-      'There is no Dockerfile and no compose file in any of the four repositories.\n' +
-      'The only container in the project is started by scripts/test-db.mjs with a\n' +
-      'bare `docker run mysql:8` for the test database.\n\n' +
-      'Dockerfile and docker-compose.yml now exist, and `docker compose up -d --build`\n' +
-      'has been run from an empty volume: 25 tables migrated, both containers healthy,\n' +
-      '/api/v1/products answering. So the migration step is real and is drawn black.\n\n' +
-      'The two boxes still red need things that do not exist: there is no\n' +
-      '.github/workflows anywhere, so nothing builds or pushes an image; and there is\n' +
-      'no VPS to ssh into. Until then a deploy is `git pull` then `npm run docker:up`\n' +
-      'on the machine itself, which builds locally and skips GHCR entirely.',
+      'The one red box is what is still missing\n\n' +
+      'deploy.yml never builds an image and never pushes to a registry. It runs a\n' +
+      'gate job, then SSHes into the VPS, resets the checkout to the branch and runs\n' +
+      '`docker compose up -d --build` — the server builds its own image.\n\n' +
+      'That is exactly why roll-back is red: with no registry there is no previous\n' +
+      'image to go back to. Going back today means checking out an older commit and\n' +
+      'rebuilding on the server, and nobody has rehearsed that.',
     style: S.note,
     x: 60, y: 610, w: 620, h: 170,
   });

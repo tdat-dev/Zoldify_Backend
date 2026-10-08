@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsInt, IsOptional, IsString, Min, Max, IsArray } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  Max,
+  IsArray,
+} from 'class-validator';
 
 export class CreateReviewDto {
   @IsNotEmpty({ message: 'Mã sản phẩm không được để trống' })

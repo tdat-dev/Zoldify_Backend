@@ -19,7 +19,6 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "node -r ts-node/register -r tsconfig-paths/register src/seed.ts",
     "seed:withdrawals": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-withdrawals.ts",
     "openapi:gen": "nest build && node dist/openapi-export.js",
@@ -48,6 +47,7 @@
     "seed:products": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-products.ts",
     "seed:bulk": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-bulk.ts",
     "check": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-all.ts",
+    "nghiem-thu": "node -r ts-node/register -r tsconfig-paths/register scripts/nghiem-thu.ts",
     "check:core": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck.ts",
     "check:index": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-indexes.ts",
     "check:race": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-race.ts",
@@ -60,6 +60,11 @@
     "sql:audit:seed": "node -r ts-node/register -r tsconfig-paths/register scripts/sql-audit-seed.ts",
     "sql:audit": "node -r ts-node/register -r tsconfig-paths/register scripts/sql-audit.ts",
     "check:boot": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-boot.ts",
+    "check:compose": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-compose.ts",
+    "check:audit": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-audit.ts",
+    "check:constraints": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-constraints.ts",
+    "check:drift": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-schema-drift.ts",
+    "check:stock": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-stock.ts",
     "log:summary": "node scripts/log-summary.mjs"
   },
   "dependencies": {

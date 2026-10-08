@@ -6,6 +6,22 @@ import { ShipmentStatus } from './entities/order-shipment.entity';
 import { GhnService } from '@ordering/ghn/ghn.service';
 
 /**
+ * Stub của `StockEventsService` cho mọi chỗ tự new service thay vì để bộ tiêm phụ thuộc dựng.
+ *
+ * VÌ SAO PHẢI CÓ, KHI npm test ĐÃ XANH MÀ KHÔNG CÓ NÓ.
+ *
+ * Đo ngày 07/10: thiếu đối số này, ts-jest KHÔNG báo lỗi TS2554 — bốn spec vẫn
+ * xanh với this.stockEvents === undefined, và chỉ nổ vào ngày có người thêm một
+ * ca chạm tới đường dẫn gọi phat(). Cùng khiếm khuyết đó thì ts-node (dùng cho
+ * scripts/) BÁO NGAY, nên check:cache đỏ còn npm test xanh — hai công cụ, hai
+ * câu trả lời, cho cùng một dòng mã.
+ *
+ * resolve chứ không reject: cả ba chỗ gọi đều await nó, và chúng nằm NGAY SAU
+ * khi transaction đã commit.
+ */
+const khoPhat = { phat: () => Promise.resolve() } as never;
+
+/**
  * Lỗi H-07 / H-08 của đợt test E2E Android 30/09 — bài kiểm viết TRƯỚC.
  *
  * Chuyện đã xảy ra trên prod: người mua ở Văn Giang (Hưng Yên) đặt đơn, app hiện
@@ -44,6 +60,10 @@ function makeService(ghn: Partial<Record<keyof GhnService, jest.Mock>>) {
         price: '2490000.00',
         stock: 3,
         currency: 'VND',
+        // `OrdersService.create` từ chối sản phẩm không ở trạng thái ACTIVE
+        // (TC-P1-10b, nhánh vai B). Fixture này viết trước luật đó nên thiếu
+        // `status`, và cả bài kiểm đỏ vì một lý do chẳng liên quan tới thứ nó đo.
+        status: 'active',
         seller: SELLER,
       },
     },
@@ -97,6 +117,7 @@ function makeService(ghn: Partial<Record<keyof GhnService, jest.Mock>>) {
     {} as never,
     {} as never,
     dataSource as never,
+    khoPhat,
   );
   return { svc, orderRepo, shipmentRepo, dataSource };
 }

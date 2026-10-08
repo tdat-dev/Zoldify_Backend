@@ -1,0 +1,78 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "instructions": [
+    "CLAUDE.md",
+    "docs/lenh/HIEN-TAI.md",
+    "docs/bao-cao/cach-giao-viec-cho-agent.md"
+  ],
+
+  "permission": {
+    "edit": {
+      "*": "allow",
+
+      "src/money/**": "deny",
+      "src/ordering/**": "deny",
+      "src/money/**/*.spec.ts": "ask",
+      "src/ordering/**/*.spec.ts": "ask",
+
+      "scripts/check-lint.mjs": "deny",
+      "scripts/nghiem-thu.ts": "deny",
+      "nghiem-thu.md": "deny",
+
+      ".env": "deny",
+      ".env.*": "deny",
+
+      "CLAUDE.md": "deny",
+      "docs/lenh/**": "deny",
+      "docs/BAN-GIAO.md": "deny",
+
+      "src/migrations/**": "ask",
+      ".github/workflows/**": "ask",
+      "docker-compose.yml": "ask",
+      "package.json": "ask"
+    },
+
+    "bash": {
+      "*": "ask",
+
+      "npm run *": "allow",
+      "npm test*": "allow",
+      "npx jest *": "allow",
+      "node *": "allow",
+
+      "git status*": "allow",
+      "git log*": "allow",
+      "git diff*": "allow",
+      "git show*": "allow",
+      "git add *": "allow",
+      "git commit *": "allow",
+      "git checkout *": "ask",
+      "git restore *": "ask",
+
+      "ls *": "allow",
+      "cat *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "grep *": "allow",
+      "find *": "allow",
+      "wc *": "allow",
+
+      "npx eslint *": "ask",
+      "npx prettier *": "ask",
+
+      "git push*": "deny",
+      "git reset *": "deny",
+      "git rebase*": "deny",
+      "git clean *": "deny",
+      "git replace*": "deny",
+      "git filter-branch*": "deny",
+      "git gc*": "deny",
+      "git init*": "deny",
+      "rm -rf *": "deny",
+      "npm audit fix*": "deny",
+      "npm install *": "ask",
+      "npm uninstall *": "deny"
+    }
+  }
+}

@@ -16,7 +16,6 @@ import { Product } from '@catalog/products/entities/product.entity';
 import { Category } from '@catalog/categories/entities/category.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
-import { PayosWebhookLog } from './entities/payos-webhook-log.entity';
 import {
   PaymentMethod,
   PaymentStatus,
@@ -66,7 +65,6 @@ describe('PayosService — tiền về sau khi đơn đã huỷ', () => {
         Payment,
         Wallet,
         Setting,
-        PayosWebhookLog,
         LedgerAccount,
         LedgerTransaction,
         LedgerEntry,

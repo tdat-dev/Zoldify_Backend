@@ -166,6 +166,22 @@ async function main() {
       params: [3],
       control: true,
     },
+    {
+      // `sql-audit.md` xếp câu này mức CAO: "TypeORM dựng bảng dẫn xuất rồi
+      // DISTINCT trên 2011 dòng". Phần DISTINCT là do `findAndCount` kèm
+      // relations, nhưng `filesort` thì đến từ chỗ khác: `idx_seller_status`
+      // phủ được WHERE mà không phủ ORDER BY.
+      //
+      // Đây đúng mẫu mà cả bài kiểm này sinh ra để bắt — chỉ là gian hàng của
+      // người bán chưa bao giờ nằm trong danh sách.
+      name: 'shop.getShopProducts (WHERE seller_id + status ORDER BY created_at)',
+      table: 'products',
+      filter: ['seller_id', 'status'],
+      orderCol: 'created_at',
+      explainSql:
+        "SELECT * FROM products WHERE seller_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 20",
+      params: [1],
+    },
   ];
 
   const missing: string[] = [];

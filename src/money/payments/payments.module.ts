@@ -7,14 +7,18 @@ import { Payment } from './entities/payment.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { HttpModule } from '@nestjs/axios';
 import { WalletsModule } from '@money/wallets/wallets.module';
+import { EscrowsModule } from '@money/escrows/escrows.module';
 
 @Module({
   imports: [
     HttpModule.register({ timeout: 30000, maxRedirects: 5 }),
     TypeOrmModule.forFeature([Payment, User, Order]),
-    WalletsModule
+    WalletsModule,
+    // Trả đơn bằng ví phải tách ký quỹ giống hệt đường PayOS — xem
+    // `processOrderPayment` trong payments.service.ts.
+    EscrowsModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}

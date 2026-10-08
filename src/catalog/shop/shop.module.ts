@@ -13,4 +13,4 @@ import { Shop } from './entities/shop.entity';
   controllers: [ShopController],
   providers: [ShopService],
 })
-export class ShopModule { }
+export class ShopModule {}

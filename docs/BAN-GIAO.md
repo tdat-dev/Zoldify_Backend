@@ -5,6 +5,10 @@
 Toàn bộ ngữ cảnh của phiên làm việc trước nằm ngoài repo và **sẽ mất**. File này
 là thứ duy nhất mang nó theo. Đọc file này trước khi làm gì tiếp.
 
+> **Tình trạng mới nhất: `docs/bao-cao/tinh-trang-2026-10-08.md`.** Mở cuộc trò
+> chuyện mới thì đọc file đó trước — nó có trạng thái nhánh, số đo nghiệm thu
+> gần nhất, và các bẫy môi trường của máy hiện tại. Bản 28/09 đã bị nó thay thế.
+
 ---
 
 ## 1. Quy trình bắt buộc — 6 bước
@@ -118,12 +122,14 @@ DB_DATABASE=zoldify_schema node ./node_modules/typeorm/cli.js migration:run -d d
 ## 7. Các cổng kiểm
 
 ```
-npm test              98 bài, 15 suite, chạy trên MySQL thật
-npm run check         chạy TẤT CẢ suite tự kiểm (9 suite)
+npm test              332 bài, 51 suite, chạy trên MySQL thật
+npm run nghiem-thu    18 cổng + cây sạch, GHI kết quả ra nghiem-thu.md
+npm run check         chạy TẤT CẢ suite tự kiểm (15 suite)
 npm run check:boot    app dựng được không, route đúng chỗ không   ← quan trọng
 npm run check:race    20 người bấm cùng lúc; DA_BIET_HONG phải TRỐNG
 npm run check:index   mọi list nặng phải có index ghép
-npm run lint:check    bánh cóc 966, chỉ được giảm
+npm run check:stock   đổi kho thật → socket thật, qua Redis thật (#26b)
+npm run lint:check    bánh cóc 521, chỉ được giảm
 npm run sql:audit     mỗi file sinh câu SQL nào, câu nào chậm
 npm run loadtest      RPS · p95 · event loop lag · bài chèn ngang
 npm run log:summary   đọc log JSON ra bảng p50/p95 theo route
@@ -141,7 +147,7 @@ là chốt.
 |---|---|
 | `docs/system-design/sql-audit.md` | 114 câu SQL, mỗi câu truy về `file:dòng`, kèm EXPLAIN |
 | `docs/system-design/load-test.md` | RPS, p95, event loop lag, bài chèn ngang |
-| `docs/system-design/zoldify-erd.puml` | ERD 25 bảng · 34 khoá ngoại (dán vào PlantText) |
+| `docs/system-design/zoldify-erd.puml` | ERD 24 bảng · 34 khoá ngoại (dán vào PlantText) |
 | `docs/system-design/2026-09-02-nhanh-nhap-cua-dat.md` | số liệu cho lần promote staging → production |
 
 ---
@@ -150,16 +156,16 @@ là chốt.
 
 | # | Việc | Ghi chú |
 |---|---|---|
-| **34** | **Rà bảo mật** — Swagger `/api/docs` đang **công khai không guard** (98 route + 62 schema); đóng băng `openapi` v1; nhật ký hành động admin | **quá hạn 02/09** |
-| **6** | Nhiều tiến trình api + `caddy` + `mem_limit` | quá hạn 16/08. CPU bão hoà từ 10 người bấm cùng lúc — đây là thứ duy nhất đẩy trần lên |
+| ~~**34**~~ | ~~**Rà bảo mật**~~ **XONG 29/09** — cả ba mục: Swagger `/api/docs` đã có guard (`src/core/swagger-guard.ts`, production trả 404 với request ở xa); `openapi.json` được `openapi:check` gác trong CI; **nhật ký hành động admin** xong hôm nay | Vai **B** (bảng phân công dòng 230, không phải vai A). Xem `docs/bao-cao/task-34-nhat-ky-admin.md`. Thêm `npm run check:audit` — dựng app thật, ký token admin thật, gọi route thật, đếm dòng trong DB |
+| ~~**6**~~ | ~~Nhiều tiến trình api + `caddy` + `mem_limit`~~ **ĐÃ XONG trong mã, kiểm tại `80c5ca7` (08/10) — dòng này trong bảng bị để sót, không cập nhật khi xong** — `docker-compose.yml`: `api` ×3 bản + `worker` ×1 + `caddy` + `mem_limit` mọi service, tổng 3520M ≤ ngân sách 4096M. Cổng `npm run check:compose` 24/24 PASS, đã có trong `nghiem-thu.md` dòng `check:compose`. **Chưa merge vào `staging`**: nằm trên nhánh đã push `merge/staging-07-10` (44 commit trước `origin/staging`), chờ cùng 13 mục `docs/bao-cao/soat-ban-hoa-cho-dat.md`. **Chặn thật trước khi merge**: chưa ai SSH vào VPS chạy `ss -ltnp \| grep -E ':(80\|443)'` để biết cổng 80/443 đang bị cái gì giữ — xem comment trong `docker-compose.yml` dòng ~378 | quá hạn 16/08 theo lịch, nhưng mã không còn là việc còn thiếu |
 | — | Idempotency ở đặt hàng — bấm hai lần tạo hai đơn | tiền thì sổ cái che, đơn thì không |
 | — | **0 ràng buộc `CHECK` ở tầng database** | `stock >= 0` mới chỉ có mã bảo vệ |
 | — | 7 chỗ CAO + 13 chỗ VỪA trong `sql-audit.md` | OFFSET sâu · `COUNT(*)` mọi trang · `findAndCount` hai bước |
 | — | **19/31 module không có bài kiểm nào** — gồm `auth` và `admin` | 98 route / 15 file spec |
-| — | `drawio:check` xanh giả — mất 19/20 sơ đồ | commit `839e3df`; khôi phục bằng `node scripts/make-drawio.mjs` **không** `--force` |
+| — | ~~`drawio:check` xanh giả — mất 19/20 sơ đồ~~ **XONG 29/09, và câu trên SAI** | Không mất sơ đồ nào: `839e3df` **gộp** cả 20 vào `05-use-case-diagram.drawio` (file 20 trang) rồi xoá 17 file rời. Đã khôi phục 18 file rời từ bộ sinh, sửa 3 báo động giả + thêm mục đếm đủ sơ đồ cho `drawio:check`, sửa 6 chỗ sơ đồ nói sai, render lại 21 ảnh. Xem `docs/bao-cao/khoi-phuc-so-do.md`. **Còn lại:** file gộp nay là ảnh chụp đông cứng và đang lệch — cần Huy chọn một nguồn |
 | 13 | `CDN_BASE_URL`, bỏ `req.get('host')` | |
 | 15 | Gợi ý sản phẩm — **điểm Level 3** | |
-| 26b | Tồn kho real-time — **điểm Level 3** | |
+| ~~**26b**~~ | ~~Tồn kho real-time — **điểm Level 3**~~ **XONG 08/10** — `StockEventsService` + `StockGateway` + cổng `npm run check:stock` (xanh 22 mục). Nhánh `feat/task-26b-ton-kho-realtime`, 6 commit, chưa push. Xem `docs/bao-cao/tinh-trang-2026-10-08.md` |
 | 35 | Trang admin đối soát ledger | |
 
 ### Cần Đạt quyết

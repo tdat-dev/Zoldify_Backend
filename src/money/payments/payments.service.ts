@@ -7,11 +7,11 @@ import {
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Payment } from './entities/payment.entity';
-import { Order } from '@ordering/orders/entities/order.entity';
+import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { User, UserRole } from '@identity/users/entities/user.entity';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import {
   PaymentStatus,
@@ -19,6 +19,7 @@ import {
   PaymentMethod,
 } from '@common/enums/payment.enum';
 import { WalletsService } from '@money/wallets/wallets.service';
+import { EscrowsService } from '@money/escrows/escrows.service';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
 
 @Injectable()
@@ -31,6 +32,9 @@ export class PaymentsService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly walletsService: WalletsService,
+    private readonly escrowsService: EscrowsService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createPaymentDto: CreatePaymentDto, user: IUser) {
@@ -106,32 +110,66 @@ export class PaymentsService {
     const method = paymentMethod || order.payment_method;
 
     if (method === PaymentMethod.WALLET) {
-      // Khoá chống trùng tất định theo đơn: bấm thanh toán hai lần thì chỉ
-      // trừ tiền một lần.
-      await this.walletsService.deduct(
-        user.id,
-        Number(order.final_amount),
-        `order_${orderId}`,
-        undefined,
-        `order_pay:${orderId}`,
-      );
+      // TRẢ BẰNG VÍ PHẢI LÀM ĐÚNG NHỮNG VIỆC MÀ ĐƯỜNG PayOS LÀM.
+      //
+      // Bản cũ chỉ làm hai trong bốn: trừ ví, đánh dấu `is_paid`. Nó KHÔNG tách
+      // ký quỹ và KHÔNG chuyển đơn sang `confirmed`. Hai thiếu sót đó cộng lại
+      // thành một cái bẫy im lặng:
+      //
+      //   · Không có bản ghi ký quỹ nào  -> `release()` về sau không tìm thấy
+      //     gì để giải ngân. Người bán KHÔNG BAO GIỜ nhận được tiền của đơn này.
+      //   · Người mua huỷ đơn            -> `applyCancellation` thấy `is_paid`
+      //     rồi gọi `refund()`, hàm đó ném `NotFoundException` vì không có khoản
+      //     nào, và `orders.service.ts` NUỐT đúng ngoại lệ ấy rồi vẫn huỷ đơn.
+      //     Tiền người mua đã rời ví, nằm lại trong `escrow_hold` vĩnh viễn.
+      //   · Đơn vẫn `pending`            -> người bán không thấy đơn cần gói.
+      //
+      // Đo bằng TC-P0-03a/b/c.
+      //
+      // MỘT TRANSACTION CHO CẢ BỐN VIỆC. Đường PayOS đã làm đúng như vậy
+      // (`payos.service.ts` → `applyPaidPayment`): cộng tiền, đổi trạng thái
+      // đơn và tạo ký quỹ cùng thành công hoặc cùng huỷ. Ví thì tệ hơn PayOS
+      // một bậc nếu nửa vời, vì tiền đã rời ví người mua trước cả khi có đơn
+      // nào ghi nhận nó.
+      //
+      // `status = confirmed` theo quyết định của Đạt 24/09: "Confirmed là trạng
+      // thái đã trả, đợi giao hàng" — trả bằng ví hay bằng PayOS thì người mua
+      // cũng đã trả xong, không có lý do gì để hai đường khác nhau.
+      return this.dataSource.transaction(async (em) => {
+        // Khoá chống trùng tất định theo đơn: bấm thanh toán hai lần thì chỉ
+        // trừ tiền một lần.
+        await this.walletsService.deduct(
+          user.id,
+          Number(order.final_amount),
+          `order_${orderId}`,
+          undefined,
+          `order_pay:${orderId}`,
+          em,
+        );
 
-      await this.orderRepository.update(orderId, {
-        is_paid: true,
-        paid_at: new Date(),
+        await em.update(Order, orderId, {
+          is_paid: true,
+          paid_at: new Date(),
+          status: OrderStatus.CONFIRMED,
+        });
+
+        // Sau `em.update` ở trên nên `createOrderEscrows` đọc lại sẽ thấy
+        // `is_paid = 1` — đúng điều kiện nó đòi.
+        await this.escrowsService.createOrderEscrows(orderId, em);
+
+        return em.save(
+          Payment,
+          em.create(Payment, {
+            order: { id: orderId },
+            user: { id: user.id },
+            amount: Number(order.final_amount),
+            payment_method: PaymentMethod.WALLET,
+            status: PaymentStatus.SUCCESS,
+            type: PaymentType.ORDER_PAYMENT,
+            paid_at: new Date(),
+          }),
+        );
       });
-
-      const payment = this.paymentRepository.create({
-        order: { id: orderId },
-        user: { id: user.id },
-        amount: Number(order.final_amount),
-        payment_method: PaymentMethod.WALLET,
-        status: PaymentStatus.SUCCESS,
-        type: PaymentType.ORDER_PAYMENT,
-        paid_at: new Date(),
-      });
-
-      return this.paymentRepository.save(payment);
     }
 
     const payment = this.paymentRepository.create({
@@ -245,6 +283,13 @@ export class PaymentsService {
     return this.walletsService.getBalance(user.id);
   }
 
+  /**
+   * Xoá bản ghi thanh toán. **CHỈ ADMIN**, cùng lý do với `update()`.
+   *
+   * Trước đây người mua xoá cứng được payment của chính mình — tức xoá luôn
+   * dấu vết đối soát giữa sổ cái và cổng thanh toán. Một khoản tiền có thật đã
+   * chảy qua ngân hàng mà không còn dòng nào trỏ tới nó.
+   */
   async remove(id: number, user: IUser) {
     const payment = await this.findOne(id, user);
     // Giao dịch đã thành công là chứng từ tiền, khớp với bút toán trong sổ cái.

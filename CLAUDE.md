@@ -43,14 +43,22 @@ Mẫu đáng bắt chước: `src/common/request-id.middleware.ts`,
 Repo có sẵn công cụ. Dùng chúng trước khi kết luận:
 
 ```
-npm run check         chạy tất cả suite tự kiểm (9 suite)
+npm run nghiem-thu    18 cổng + cây sạch, GHI kết quả ra nghiem-thu.md
+npm run check         chạy tất cả suite tự kiểm (15 suite)
+npm run check:stock   đổi kho thật → socket thật, qua Redis thật (#26b)
 npm run check:boot    app dựng được không, route đúng chỗ không
 npm run check:race    20 người bấm cùng lúc — DA_BIET_HONG phải TRỐNG
 npm run sql:audit     mỗi file sinh câu SQL nào, câu nào chậm
 npm run loadtest      RPS · p95 · event loop lag · bài chèn ngang
 npm run log:summary   đọc log JSON ra bảng p50/p95 theo route
-npm run lint:check    bánh cóc 966, chỉ được giảm
+npm run lint:check    bánh cóc 521, chỉ được giảm
 ```
+
+**Nghiệm thu thì dùng `npm run nghiem-thu`, đừng chạy tay từng lệnh.** Nó ghi
+`nghiem-thu.md` kèm SHA của HEAD — người làm không phải người viết file đó. Sáu
+vòng giao việc cho agent khác đều hỏng ở cùng một chỗ: chạy lệnh trong cây chưa
+commit rồi báo cáo theo ý định chứ không theo mã thoát. Cách giao việc rút ra từ
+sáu vòng đó: `docs/bao-cao/cach-giao-viec-cho-agent.md`.
 
 Ba lần đã đoán sai và phải đo mới biết — cả ba đều ghi trong mã: chi phí thật
 của `AsyncLocalStorage`, thứ đắt nhất trong ghi log, và cache "trượt" mà hoá ra

@@ -332,6 +332,10 @@ async function phanDong() {
       demChot++;
       await doi(50);
     },
+    flushViewCount: async () => {
+      // Mock implementation for self-check
+      await doi(10);
+    },
   };
 
   const xuLy = taoBoXuLy(tasksGia);

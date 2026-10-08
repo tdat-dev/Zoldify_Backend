@@ -4,8 +4,18 @@
 #   docker compose up -d --build
 #   docker compose logs -f api
 #
-# Năm dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
-#   mysql + redis  →  migrate (chạy một lần rồi thoát)  →  api + worker
+# Sáu dịch vụ, chạy theo đúng thứ tự này và không có cách nào chạy sai thứ tự:
+#   mysql + redis  →  migrate (chạy một lần rồi thoát)  →  api ×3 + worker ×1  →  caddy
+#
+# MỌI TRẦN RAM VÀ SỐ BẢN API ĐỀU LẤY TỪ BIẾN MÔI TRƯỜNG (task #6). Mặc định
+# tính cho VPS 4GB: cộng lại 3200M cho phần chạy thường trực, chừa ~900M cho hệ
+# điều hành và daemon Docker. Máy nhỏ hơn thì hạ trong `.env`:
+#
+#   VPS 2GB:  API_REPLICAS=2  API_MEM=384m  MYSQL_MEM=512m  VPS_MEM_BUDGET=1500m
+#
+# `npm run check:compose` cộng lại và báo đỏ khi tổng vượt `VPS_MEM_BUDGET`.
+# Chưa ai xác nhận VPS thật bao nhiêu RAM — người có quyền SSH phải kiểm
+# (`free -m`) và chỉnh `.env` TRƯỚC lần deploy đầu sau khi gộp nhánh này.
 #
 # CÓ Redis từ Epic 4. Trước đây cố tình KHÔNG thêm vì cache là
 # `CacheModule.register()` in-process — thêm Redis lúc không có code nói chuyện
@@ -34,6 +44,10 @@ services:
   mysql:
     image: mysql:8
     restart: unless-stopped
+    # InnoDB buffer pool mặc định 128M, cộng với bộ đệm mỗi kết nối. Trần 1G
+    # cho nó chỗ thở mà vẫn không nuốt hết VPS. Đây là dịch vụ đắt nhất cụm và
+    # cũng là thứ đau nhất khi bị OOM-killer chọn — nên nó được phần lớn nhất.
+    mem_limit: ${MYSQL_MEM:-1g}
     logging: *default-logging
     environment:
       # `:?` làm compose DỪNG kèm thông báo khi biến trống, thay vì dựng một
@@ -67,8 +81,31 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
+    mem_limit: ${REDIS_MEM:-256m}
+    command:
+      - redis-server
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+      # `maxmemory` PHẢI đi kèm `mem_limit`, không được đặt mỗi cái trần Docker.
+      #
+      # Redis không tự biết trần của container. Chỉ có `mem_limit` thì nó cứ
+      # nhận thêm khoá tới khi chạm 256M rồi bị OOM-killer giết — mất SẠCH cache
+      # trong một nhịp, và ngay sau đó mọi request rơi thẳng xuống database
+      # (load-test.md: đường sản phẩm tụt từ 2268 xuống 497 rps, gần 4.6 lần).
+      # Có `maxmemory` thì nó tự đẩy khoá cũ ra và sống tiếp: cache vơi dần chứ
+      # không biến mất cùng lúc.
+      #
+      # Đặt 192M trên trần 256M, chừa ~25% cho phân mảnh bộ nhớ và bộ đệm client
+      # — phần này nằm NGOÀI con số `maxmemory` mà Redis tự đếm.
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-192mb}
+      # Cache thì mất được, nên đuổi khoá ít dùng nhất; KHÔNG dùng `noeviction`
+      # (mặc định), vì nó trả lỗi ghi và biến cache-miss thành lỗi 500.
+      - --maxmemory-policy
+      - allkeys-lru
     logging: *default-logging
-    command: ['redis-server', '--save', '', '--appendonly', 'no']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
@@ -91,6 +128,11 @@ services:
   backup:
     image: mysql:8
     restart: unless-stopped
+    # `mysqldump --quick` đẩy từng dòng ra stdout thay vì nạp cả bảng vào RAM,
+    # rồi gzip nén theo luồng. Cả hai đều không giữ bộ đệm lớn, nên 128M dư.
+    # Vẫn phải có trần: không có thì một lần dump bảng lớn bất thường có thể
+    # đẩy container này thành kẻ bị OOM-killer chọn thay vì mysql.
+    mem_limit: ${BACKUP_MEM:-128m}
     depends_on:
       mysql:
         condition: service_healthy
@@ -118,6 +160,11 @@ services:
   offsite:
     image: rclone/rclone:1
     restart: unless-stopped
+    # rclone ăn RAM theo `--transfers` × kích thước chunk (mặc định S3 là 5M,
+    # 4 luồng). Với bản sao lưu chép tuần tự thì vài chục MB, nhưng để 192M vì
+    # rclone phình khi gặp file lớn và nó chạy không ai nhìn — hỏng lúc 3 giờ
+    # sáng thì không ai biết cho tới lúc cần khôi phục.
+    mem_limit: ${OFFSITE_MEM:-192m}
     environment:
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       BACKUP_R2_ACCESS_KEY_ID: ${BACKUP_R2_ACCESS_KEY_ID:-}
@@ -144,6 +191,11 @@ services:
       target: runtime
     image: zoldify-backend:latest
     restart: 'no'
+    # Không cộng vào đỉnh RAM: `api` và `worker` chỉ khởi động SAU khi container
+    # này đã thoát (`service_completed_successfully`), nên nó không bao giờ chạy
+    # cùng lúc với chúng. `check:compose` bỏ qua mọi dịch vụ `restart: 'no'` khi
+    # cộng ngân sách, đúng vì lý do này.
+    mem_limit: ${MIGRATE_MEM:-256m}
     logging: *default-logging
     depends_on:
       mysql:
@@ -167,6 +219,22 @@ services:
       target: runtime
     image: zoldify-backend:latest
     restart: unless-stopped
+    # BA BẢN, VÀ ĐÂY LÀ THỨ DUY NHẤT ĐẨY TRẦN CHỊU TẢI LÊN.
+    #
+    # `docs/system-design/load-test.md` đo trên chính hệ này: từ mức 10 người
+    # bấm cùng lúc, CPU đã ở ~100% của MỘT luồng, và từ đó trở đi tăng tải chỉ
+    # làm dài hàng đợi — cột RPS đứng yên (964 → 947 → 949) trong khi p95 gấp
+    # đôi mỗi lần số song song gấp đôi (13.8 → 59 → 118 ms). Node có đúng một
+    # luồng JS, nên cho thêm nhân CPU vào một tiến trình không đổi được gì;
+    # phải là thêm TIẾN TRÌNH.
+    #
+    # An toàn khi nhân bản vì ba thứ trạng thái đã ra khỏi RAM tiến trình từ
+    # task #5 (cache, throttler, socket → Redis) và bộ hẹn giờ đã ra khỏi api
+    # từ task #14 (→ `worker`). Thiếu một trong hai thì nhân bản là đếm sai rate
+    # limit, rơi socket, và huỷ đơn ba lần.
+    deploy:
+      replicas: ${API_REPLICAS:-3}
+    mem_limit: ${API_MEM:-512m}
     logging: *default-logging
     depends_on:
       migrate:
@@ -186,8 +254,24 @@ services:
       # Trỏ cache vào service `redis` trong mạng nội bộ. Trong .env dev biến này
       # để trống (in-memory); ở đây bật Redis thật cho cụm nhiều-instance.
       REDIS_URL: redis://redis:6379
-    ports:
-      - '${API_PORT:-3000}:3000'
+      # Nói cho V8 biết cái trần mà Docker đang giữ.
+      #
+      # Node KHÔNG đọc `mem_limit`; nó tự chọn kích thước heap theo RAM của cả
+      # MÁY. Trên VPS 4GB nó nhắm heap ~2GB, tức là nó sẽ để rác dồn tới mốc
+      # 2GB rồi mới chịu dọn — nhưng Docker đã giết tiến trình ở 512M từ lâu
+      # trước đó. Triệu chứng đúng kiểu khó tìm: container chết vì mã 137 lúc
+      # tải cao, log không có lỗi nào, và tại chỗ thì trông y như "app bị crash".
+      # Đặt 384 trên trần 512M để V8 dọn sớm, chừa phần còn lại cho stack,
+      # buffer và bản thân runtime.
+      NODE_OPTIONS: --max-old-space-size=${API_HEAP_MB:-384}
+    # KHÔNG publish cổng ra máy chủ nữa — caddy là đường vào duy nhất.
+    #
+    # Ba bản api không thể cùng ánh xạ một cổng host: bản thứ hai chết ngay lúc
+    # dựng với "port is already allocated". Đường vào chuyển hết sang caddy, và
+    # cổng host giờ khai ở đó (`CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT`).
+    #
+    # `API_PORT` trong `.env` vì thế không còn tác dụng với cụm compose. Giữ lại
+    # biến đó vì `npm run start:dev` chạy ngoài Docker vẫn dùng.
     volumes:
       # ĐÂY LÀ DÒNG QUYẾT ĐỊNH ẢNH SẢN PHẨM CÓ SỐNG QUA LẦN DEPLOY SAU KHÔNG.
       #
@@ -199,6 +283,14 @@ services:
       # Volume có TÊN chứ không phải bind mount, nên lần tạo đầu Docker chép
       # nội dung sẵn có trong ảnh vào volume — 26 tấm ảnh danh mục đang được
       # git theo dõi vẫn còn.
+      #
+      # CẢ BA BẢN API CÙNG MOUNT ĐÚNG VOLUME NÀY, và đó là lý do nhân bản không
+      # còn bị chặn. `docs/bao-cao/epic-5-infra-erd.md` từng ghi chỗ để ảnh là
+      # thứ chặn việc nhân bản ("volume nằm trên một máy, hai bản API không dùng
+      # chung được"). Điều đó đúng khi hai bản ở hai MÁY khác nhau; ở đây cả ba
+      # nằm trên cùng một VPS nên chúng đọc ghi chung một thư mục thật. Ngày nào
+      # cụm trải ra nhiều máy thì mới cần R2/S3 — và `multer.config.ts` vẫn là
+      # chỗ phải sửa khi đó.
       - product-images:/app/public/images
       # Khoá Firebase Admin để verify token đăng nhập Google. File này KHÔNG vào
       # git (là secret, đã gitignore) — mỗi máy deploy tự đặt vào gốc repo và
@@ -234,6 +326,10 @@ services:
     # đường cho api và worker chạy lệch phiên bản mã.
     image: zoldify-backend:latest
     restart: unless-stopped
+    # Nửa trần của api: worker không phục vụ request, chỉ chạy hai job mỗi giờ.
+    # Vẫn phải có trần — nó đụng cùng TypeORM và cùng đống entity, nên một rò rỉ
+    # ở đây ăn RAM đúng như ở api, chỉ chậm hơn.
+    mem_limit: ${WORKER_MEM:-256m}
     logging: *default-logging
     depends_on:
       migrate:
@@ -268,6 +364,59 @@ services:
     volumes:
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
 
+  # Đường vào duy nhất của cụm: kết thúc TLS, chia tải cho ba bản api.
+  #
+  # VÌ SAO HAI CỔNG HOST LẤY TỪ BIẾN, KHÔNG ĐÓNG CỨNG 80/443.
+  #
+  # `.github/workflows/deploy.yml` dựng HAI project compose trên CÙNG một VPS:
+  # `-p zoldify` (production) và `-p zoldify-staging`. Hai project là hai mạng
+  # riêng, nhưng cổng host thì chung một máy — cả hai cùng đòi 443 thì project
+  # dựng sau chết với "port is already allocated", và vì `restart: unless-stopped`
+  # nó sẽ thử lại mãi. Nên production giữ 80/443, còn staging đặt cổng khác
+  # trong `.env` của nó.
+  #
+  # CHƯA AI KIỂM ĐƯỢC HIỆN GIỜ THỨ GÌ ĐANG GIỮ 80/443 TRÊN VPS. `api.zoldify.com`
+  # đang chạy HTTPS thật trong khi compose trước đây không có dịch vụ nào nghe
+  # 443 — nghĩa là có một reverse proxy nằm NGOÀI compose (cài thẳng trên máy),
+  # và dựng caddy này lên sẽ đụng nó. Người có quyền SSH phải chạy
+  # `ss -ltnp | grep -E ':(80|443)'` và quyết định gỡ cái cũ hay đổi cổng cái
+  # mới, TRƯỚC khi gộp nhánh này vào `staging` — vì gộp vào `staging` là deploy
+  # ngay. Ghi ở đây chứ không giấu trong mô tả PR, vì đây là thứ làm sập cụm.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    mem_limit: ${CADDY_MEM:-128m}
+    depends_on:
+      # Chỉ cần api ĐÃ ĐƯỢC TẠO, không chờ khoẻ: `dynamic a` trong Caddyfile hỏi
+      # lại DNS mỗi 10 giây, nên caddy lên trước cũng tự bắt kịp khi api sẵn
+      # sàng. Chờ healthy ở đây chỉ làm cụm lâu lên mà không đổi kết quả.
+      - api
+    ports:
+      - '${CADDY_HTTP_PORT:-80}:80'
+      - '${CADDY_HTTPS_PORT:-443}:443'
+    environment:
+      # `:-:80` chứ không `:-`. Cú pháp `{$BIEN:mặc định}` bên Caddyfile chỉ
+      # chạy khi biến KHÔNG ĐƯỢC ĐẶT; truyền vào một biến rỗng thì Caddy thay
+      # bằng chuỗi rỗng và khối site mất tên, caddy từ chối cả file. Còn `:-`
+      # của compose thì rỗng cũng rơi về mặc định, nên chốt `:80` ngay tại đây.
+      # Dính thật lúc dựng cụm — caddy khởi động lại ba lần rồi mới tìm ra.
+      #
+      # `:80` nghĩa là nghe HTTP cổng 80 và KHÔNG xin chứng chỉ. Đặt một tên
+      # miền vào đây thì caddy tự lo TLS.
+      API_DOMAIN: ${API_DOMAIN:-:80}
+      ACME_EMAIL: ${ACME_EMAIL:-capstone@zoldify.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # /data GIỮ CHỨNG CHỈ. Mất nó là mỗi lần `docker compose up --build` tạo
+      # container mới lại đi xin chứng chỉ mới, mà Let's Encrypt chỉ cấp 5
+      # chứng chỉ/tuần cho một tên miền. CD deploy vài lần trong ngày là chạm
+      # trần, và khi chạm thì `api.zoldify.com` hết HTTPS trong nhiều ngày —
+      # không có cách nào ép nhanh hơn.
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   mysql-data:
   product-images:
+  caddy-data:
+  caddy-config:

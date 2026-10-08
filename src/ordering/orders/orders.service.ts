@@ -6,9 +6,11 @@ import {
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
+import { createHash, randomBytes } from 'node:crypto';
 import { ShipmentTrackingService } from './shipment-tracking.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
@@ -18,7 +20,10 @@ import {
   ShipmentStatus,
 } from './entities/order-shipment.entity';
 import { Cart } from '@ordering/carts/entities/cart.entity';
-import { Product } from '@catalog/products/entities/product.entity';
+import {
+  Product,
+  ProductStatus,
+} from '@catalog/products/entities/product.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
 import {
@@ -28,12 +33,14 @@ import {
   In,
   IsNull,
   LessThan,
+  QueryFailedError,
 } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { IUser } from '@identity/users/users.interface';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { GhnService, ghnErrorMessage } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
+import { Escrow, EscrowStatus } from '@money/escrows/entities/escrow.entity';
 import { PayosService } from '@money/payos/payos.service';
 import { assertTransitionAllowed, OrderActor } from './order-status.policy';
 import {
@@ -41,6 +48,21 @@ import {
   decodeCursor,
   encodeCursor,
 } from '@common/dto/pagination.dto';
+
+/** Mã lỗi MySQL khi đụng ràng buộc UNIQUE. Cùng hằng số mà `ledger.service.ts` dùng. */
+const ER_DUP_ENTRY = 1062;
+
+/**
+ * Lỗi này có phải do đụng khoá UNIQUE không?
+ *
+ * Tách khỏi `create()` vì đây là chi tiết của driver, không phải của nghiệp vụ
+ * đặt hàng. Cùng cách nhận diện với `LedgerService.isDuplicateKey`.
+ */
+function laLoiTrungKhoa(err: unknown): boolean {
+  if (!(err instanceof QueryFailedError)) return false;
+  const driverError = err.driverError as { errno?: number } | undefined;
+  return driverError?.errno === ER_DUP_ENTRY;
+}
 
 @Injectable()
 export class OrdersService {
@@ -68,6 +90,7 @@ export class OrdersService {
     private readonly shipmentTracking: ShipmentTrackingService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly stockEvents: StockEventsService,
   ) {}
 
   async getStats() {
@@ -75,10 +98,20 @@ export class OrdersService {
     const total_products = await this.productRepository.count();
     const total_orders = await this.orderRepository.count();
 
+    // DOANH THU CHỈ TÍNH ĐƠN ĐÃ CÓ TIỀN VỀ.
+    //
+    // Bản cũ cộng `final_amount` của mọi đơn khác `cancelled` — kể cả đơn
+    // `pending` mà chưa ai trả một đồng nào. Con số đó hiện trên dashboard
+    // admin và không có gì nói nó là "giá trị đơn đã đặt" chứ không phải
+    // "tiền đã thu". Đo bằng TC-P3-21.
+    //
+    // Lọc theo `is_paid` chứ không theo trạng thái đơn: trạng thái nói hàng
+    // đang ở đâu, `is_paid` mới nói tiền đã về hay chưa.
     const revenueResult = await this.orderRepository
       .createQueryBuilder('order')
       .select('COALESCE(SUM(order.final_amount), 0)', 'total')
       .where('order.status != :cancelled', { cancelled: 'cancelled' })
+      .andWhere('order.is_paid = 1')
       .getRawOne();
 
     const total_revenue = Number(revenueResult?.total || 0);
@@ -139,8 +172,34 @@ export class OrdersService {
     for (const cartItem of cartItems) {
       const product = cartItem.product;
       if (!product) {
-        throw new NotFoundException(
-          `Sản phẩm ID ${cartItem.product.id} không tồn tại`,
+        // BÁO ĐÚNG MÓN NÀO, VÀ ĐỪNG SẬP KHI BÁO.
+        //
+        // Bản cũ viết `cartItem.product.id` NGAY TRONG nhánh `product` là rỗng
+        // — deref thẳng vào null. Người mua có một món đã bị gỡ bán trong giỏ
+        // thì nhận `TypeError: Cannot read properties of null` và HTTP 500, thay
+        // vì một câu tiếng Việt nói rõ phải bỏ món nào ra. Đo bằng TC-P2-13.
+        //
+        // `cartItem.id` thì luôn có — nó là khoá chính của dòng giỏ hàng, không
+        // phụ thuộc vào việc sản phẩm còn sống hay không.
+        throw new BadRequestException(
+          `Một sản phẩm trong giỏ hàng (dòng #${cartItem.id}) đã ngừng bán ` +
+            'hoặc bị gỡ khỏi sàn. Mời bạn xoá nó khỏi giỏ rồi đặt lại.',
+        );
+      }
+
+      // CHỈ BÁN ĐƯỢC HÀNG ĐANG MỞ BÁN.
+      //
+      // Bản cũ kiểm tiền tệ, kiểm tự-mua-hàng-mình, kiểm tồn kho — nhưng không
+      // kiểm `product.status`. Nên hàng `draft` (người bán còn đang soạn),
+      // `pending` (chờ duyệt) và `rejected` (đã bị từ chối duyệt) đều đặt được
+      // như hàng thường. Đo bằng TC-P1-10b.
+      //
+      // Kiểm ở đây, NGOÀI transaction, là đủ: `status` do người bán đổi bằng
+      // thao tác tay chứ không đổi theo từng lượt mua, nên không có cửa sổ đua
+      // đáng kể như `stock`.
+      if (product.status !== ProductStatus.ACTIVE) {
+        throw new BadRequestException(
+          `Sản phẩm "${product.name}" hiện không mở bán, không thể đặt hàng`,
         );
       }
 
@@ -189,15 +248,43 @@ export class OrdersService {
       });
     }
 
-    // Phí ship do SERVER tính, không tin số client gửi lên. Khi người mua đã
-    // chọn địa chỉ chuẩn GHN, tính phí theo từng người bán (from = pickup của
-    // họ) rồi cộng lại.
+    // PHÍ SHIP DO SERVER TÍNH — VÀ LẦN NÀY LÀ THẬT.
     //
-    // Không tính được thì TỪ CHỐI đặt, không rơi về 0 (lỗi H-07, test E2E
-    // 30/09). Trước đây GHN lỗi thì đơn vẫn tạo với phí 0đ, app hiện "Miễn
-    // phí", rồi tới lúc người bán xác nhận GHN mới từ chối tạo vận đơn và hàng
-    // kẹt giữa chừng. Đổi địa chỉ lúc đặt dễ hơn nhiều so với lúc đơn đã chốt.
-    let shippingFee = Number(createOrderDto.shipping_fee ?? 0);
+    // Bình luận cũ ở đây viết đúng câu "không tin số client gửi lên", rồi dòng
+    // ngay dưới nó lấy đúng số client gửi làm giá trị khởi tạo:
+    //
+    //     let shippingFee = Number(createOrderDto.shipping_fee ?? 0);
+    //
+    // Nó chỉ bị ghi đè khi client CÓ gửi cả `ghn_district_id` lẫn
+    // `ghn_ward_code`, mà hai trường đó đều `@IsOptional`. Bỏ trống chúng là
+    // phí ship bằng đúng thứ client muốn — kể cả 0. Đo bằng TC-P2-12.
+    //
+    // Nay khởi tạo bằng 0 và chỉ server mới ghi vào được. Thiếu địa chỉ GHN thì
+    // không tính được phí, và "không tính được" phải ra 0 chứ không phải ra
+    // con số người mua tự khai.
+    //
+    // Khối tính phí ngay dưới là của Đạt (lỗi H-07, 30/09): GHN tính không ra
+    // thì TỪ CHỐI đặt đơn, không rơi về 0. Trước đó GHN lỗi là đơn vẫn tạo với
+    // phí 0đ, app hiện "Miễn phí", rồi người bán mới phát hiện không tạo được
+    // vận đơn và hàng kẹt giữa chừng.
+    //
+    // Hai bản vá phủ hai lỗ KHÁC NHAU nên phải có cả hai: của Đạt lo lúc CÓ
+    // địa chỉ GHN mà tính lỗi; của vai B lo lúc client KHÔNG gửi địa chỉ GHN
+    // (hai trường đó `@IsOptional`, bỏ trống là khối `if` không chạy).
+    //
+    // `shipping_fee` vẫn còn trong DTO nhưng bị BỎ QUA. Không gỡ khỏi DTO vì
+    // `forbidNonWhitelisted: true` sẽ khiến frontend đang gửi trường đó nhận
+    // 400 — gỡ là việc của một lần dọn riêng, sau khi frontend thôi gửi.
+    let shippingFee = 0;
+    if (
+      createOrderDto.shipping_fee !== undefined &&
+      Number(createOrderDto.shipping_fee) !== 0
+    ) {
+      this.logger.warn(
+        `Client gửi shipping_fee=${createOrderDto.shipping_fee} khi đặt đơn của ` +
+          `user ${user.id} — đã bỏ qua, phí ship do server tính.`,
+      );
+    }
     if (createOrderDto.ghn_district_id && createOrderDto.ghn_ward_code) {
       const quote = await this.quoteShippingBySellerFromCart(
         cartItems,
@@ -219,11 +306,57 @@ export class OrdersService {
     const discountAmount = 0;
     const finalAmount = totalAmount + shippingFee - discountAmount;
 
+    // MÃ ĐƠN PHẢI ĐỦ CHỖ CHO SỐ ĐƠN MỘT NGÀY.
+    //
+    // Bản cũ: `ORD-<ngày>-<random 0..999>` trên một cột UNIQUE. Chỉ có 1000 giá
+    // trị mỗi ngày, mà theo nghịch lý sinh nhật thì xác suất trùng chạm 50% ở
+    // khoảng 37 đơn/ngày — không phải 500 như trực giác mách.
+    //
+    // Đo bằng TC-P2-11: tạo 120 đơn trong một ngày thì 8-16 đơn ném
+    // `Duplicate entry 'ORD-20260921-746' for key 'orders.IDX_...'`. Đó là 7-13%
+    // người mua thật nhận HTTP 500 ở đúng bước bấm đặt hàng.
+    //
+    // Nay dùng 8 ký tự hex từ `crypto.randomBytes` — hơn 4 tỉ giá trị mỗi ngày.
+    // Ở 1000 đơn/ngày xác suất trùng còn khoảng 1 phần 10 nghìn, và nếu vẫn
+    // trùng thì ràng buộc UNIQUE của database vẫn là chốt chặn cuối: transaction
+    // quay lui sạch, không để lại đơn dở hay kho bị trừ oan.
+    //
+    // Giữ nguyên tiền tố `ORD-<ngày>-` vì con người đọc nó, và đơn cũ trong
+    // database vẫn khớp định dạng — không cần đụng dữ liệu lịch sử.
     const now = new Date();
-    const orderCode = `ORD-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+    const ngay = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const orderCode = `ORD-${ngay}-${randomBytes(4).toString('hex').toUpperCase()}`;
+
+    // KHOÁ CHỐNG TRÙNG — MỘT GIỎ, MỘT ĐƠN.
+    //
+    // Người mua bấm "Đặt hàng" hai lần (mạng chập, nút chưa bị khoá, trình duyệt
+    // tự gửi lại) thì ra hai đơn và kho bị trừ hai lần. Đo bằng `check:race` R5:
+    // 20 lượt bấm đồng thời → 20 đơn, kho trừ 20 lần.
+    //
+    // Kho không cứu được — còn nhiều thì mọi lượt đều qua cửa `stock >= n`.
+    // Giỏ cũng không — nó chỉ bị xoá ở CUỐI transaction, nên bấm đồng thời thì
+    // cả 20 lượt đều đọc giỏ trước khi ai kịp commit.
+    //
+    // ID DÒNG GIỎ HÀNG LÀ KHOÁ TỰ NHIÊN. Chúng bị xoá khi đặt hàng thành công,
+    // và `carts.id` là auto-increment không tái sử dụng. Nên một "giỏ" chỉ đặt
+    // được đúng một lần, còn người mua thêm lại cùng sản phẩm sau đó sẽ có dòng
+    // giỏ mới → id mới → khoá mới → mua lại bình thường.
+    //
+    // Sắp xếp trước khi ghép: hai request song song có thể nhận cùng tập dòng
+    // giỏ nhưng khác thứ tự (không có ORDER BY ở câu đọc giỏ), và khác thứ tự
+    // thì ra hai chuỗi băm khác nhau — tức khoá chống trùng không chống gì cả.
+    const khoaChongTrung = createHash('sha256')
+      .update(
+        `${user.id}:${cartItems
+          .map((c) => c.id)
+          .sort((a, b) => a - b)
+          .join(',')}`,
+      )
+      .digest('hex');
 
     const order = this.orderRepository.create({
       order_code: orderCode,
+      idempotency_key: khoaChongTrung,
       user: { id: user.id },
       total_amount: totalAmount,
       shipping_fee: shippingFee,
@@ -282,8 +415,8 @@ export class OrdersService {
       ...new Set(orderItemsData.map((i) => i.product.id)),
     ].sort((a, b) => a - b);
 
-    const savedOrder = await this.dataSource.transaction(
-      async (em: EntityManager) => {
+    const chayTransaction = () =>
+      this.dataSource.transaction(async (em: EntityManager) => {
         const daKhoa = await em
           .createQueryBuilder(Product, 'p')
           .setLock('pessimistic_write')
@@ -292,6 +425,22 @@ export class OrdersService {
           .getMany();
 
         const khoThat = new Map(daKhoa.map((p) => [p.id, Number(p.stock)]));
+        // GIÁ CŨNG PHẢI ĐỌC LẠI DƯỚI KHOÁ, KHÔNG CHỈ KHO.
+        //
+        // Vòng duyệt giỏ ở trên đọc `product.price` NGOÀI transaction, rồi tính
+        // `subtotal`, `total_amount`, `final_amount` từ đó. Giữa lúc ấy và lúc
+        // khoá hàng ở đây có cả một quãng — lưu hai bảng, và trước đó còn hỏi
+        // phí ship qua mạng. Người bán sửa giá đúng trong quãng đó thì đơn chốt
+        // theo giá cũ, và không ai biết: hoá đơn tự khớp với chính nó.
+        //
+        // Cùng cửa sổ mà task #2 đã đóng cho `stock`, chỉ khác là nó bỏ sót
+        // `price`. Đo bằng TC-P2-16.
+        //
+        // TỪ CHỐI chứ không tự tính lại. Tính lại nghĩa là người mua bấm "Đặt
+        // hàng" ở giá 100.000 rồi bị trừ 150.000 — im lặng và tệ hơn hẳn. Từ
+        // chối kèm câu giải thích thì họ nhìn thấy giá mới rồi tự quyết, đúng
+        // khuôn `ConflictException('Kho vừa thay đổi, mời bạn đặt lại đơn')`.
+        const giaThat = new Map(daKhoa.map((p) => [p.id, Number(p.price)]));
         for (const item of orderItemsData) {
           const con = khoThat.get(item.product.id);
           if (con === undefined) {
@@ -302,6 +451,16 @@ export class OrdersService {
           if (con < item.quantity) {
             throw new BadRequestException(
               `Sản phẩm "${item.product_name}" chỉ còn ${con} trong kho`,
+            );
+          }
+
+          const giaMoi = giaThat.get(item.product.id);
+          if (giaMoi !== undefined && giaMoi !== Number(item.price)) {
+            throw new ConflictException(
+              `Giá của "${item.product_name}" vừa thay đổi ` +
+                `(${Number(item.price).toLocaleString('vi-VN')}đ → ` +
+                `${giaMoi.toLocaleString('vi-VN')}đ). Mời bạn xem lại giỏ hàng ` +
+                'rồi đặt lại đơn.',
             );
           }
         }
@@ -320,10 +479,23 @@ export class OrdersService {
           const soLuong = orderItemsData
             .filter((i) => i.product.id === id)
             .reduce((s, i) => s + i.quantity, 0);
+          // Trừ kho và cộng `sold_count` trong CÙNG một câu UPDATE.
+          //
+          // `sold_count` trước đây không được cộng ở bất kỳ đâu trong repo —
+          // grep toàn bộ `src` chỉ thấy nó trong `ORDER BY` lúc sắp xếp "bán
+          // chạy". Tức danh sách bán chạy đang sắp xếp theo một cột luôn bằng 0.
+          // Đo bằng TC-P1-10a.
+          //
+          // Gộp vào một câu chứ không thêm một `increment` riêng: hai câu UPDATE
+          // trên cùng một dòng trong cùng transaction là hai lần ghi và hai lần
+          // chờ khoá, mà chúng luôn cùng thành công hoặc cùng hỏng.
           const kq = await em
             .createQueryBuilder()
             .update(Product)
-            .set({ stock: () => 'stock - :soLuong' })
+            .set({
+              stock: () => 'stock - :soLuong',
+              sold_count: () => 'sold_count + :soLuong',
+            })
             .where('id = :id AND stock >= :soLuong', { id, soLuong })
             .execute();
           if (kq.affected !== 1) {
@@ -341,18 +513,91 @@ export class OrdersService {
         );
 
         return luuDon;
-      },
-    );
+      });
 
-    await this.notificationsService.create({
-      user_id: user.id,
-      type: 'order_status' as any,
-      title: 'Đặt hàng thành công',
-      content: `Đơn hàng ${orderCode} đã được đặt thành công với tổng ${finalAmount.toLocaleString('vi-VN')}đ`,
-      data: { order_id: savedOrder.id, order_code: orderCode },
-    });
+    // LƯỢT THỨ HAI NHẬN LẠI ĐƠN CŨ, KHÔNG NHẬN LỖI.
+    //
+    // Khoá UNIQUE `uq_order_idempotency` để đúng một lượt đi qua; lượt còn lại
+    // nhận `ER_DUP_ENTRY` từ database và transaction của nó quay lui sạch — kho
+    // không bị trừ lần hai, giỏ không bị xoá hai lần.
+    //
+    // Nhưng "quay lui sạch" chưa đủ tử tế: người mua bấm hai lần không làm gì
+    // sai, họ không nên nhận thông báo lỗi. Nên ở đây tra lại đơn vừa được tạo
+    // và trả về chính nó. Đó mới là idempotency đúng nghĩa: gọi bao nhiêu lần
+    // cũng ra cùng một kết quả.
+    //
+    // KHÔNG SỢ TRA HỤT. MySQL cho lượt thứ hai chờ ở khoá cho tới khi lượt thứ
+    // nhất commit rồi mới trả lỗi trùng. Tới lúc bắt được lỗi thì đơn kia chắc
+    // chắn đã nằm trong database.
+    //
+    // Vì sao vẫn tra theo khoá thay vì tin rằng lỗi trùng LUÔN là do khoá này:
+    // `orders` còn một khoá UNIQUE nữa (`order_code`). Tra hụt thì ném tiếp,
+    // không đoán.
+    let savedOrder: Order;
+    try {
+      savedOrder = await chayTransaction();
+    } catch (err) {
+      if (!laLoiTrungKhoa(err)) throw err;
+
+      const daTao = await this.orderRepository.findOne({
+        where: { idempotency_key: khoaChongTrung },
+      });
+      if (!daTao) throw err;
+
+      this.logger.log(
+        `Đơn trùng lượt bấm của user ${user.id} — trả lại đơn #${daTao.id} ` +
+          'thay vì tạo đơn mới.',
+      );
+      const cu = (await this.findOne(daTao.id, user)) as Order & {
+        needs_payOS?: boolean;
+      };
+      cu.needs_payOS =
+        (payment_method ?? order.payment_method) === PaymentMethod.PAYOS;
+      return cu;
+    }
+
+    // THÔNG BÁO HỎNG THÌ MẤT THÔNG BÁO, KHÔNG MẤT ĐƠN.
+    //
+    // Lời gọi này nằm SAU transaction và trước đây KHÔNG có try/catch. Nó đi
+    // sang Firebase, mà Firebase chậm hoặc lỗi là chuyện thường.
+    //
+    // Lúc nó ném thì kho đã trừ, giỏ đã xoá, đơn đã lưu — nhưng người mua nhận
+    // HTTP 500 và tưởng đặt hàng thất bại. Họ bấm lại, và lần này tạo đơn thứ
+    // hai, trừ kho lần thứ hai. Đo bằng TC-P2-14.
+    //
+    // Cùng nguyên tắc với `notifyPaid` bên `payos.service.ts`: "chạy sau commit,
+    // hỏng thì chỉ mất thông báo, tiền đã vào sổ rồi".
+    try {
+      await this.notificationsService.create({
+        user_id: user.id,
+        type: 'order_status' as any,
+        title: 'Đặt hàng thành công',
+        content: `Đơn hàng ${orderCode} đã được đặt thành công với tổng ${finalAmount.toLocaleString('vi-VN')}đ`,
+        data: { order_id: savedOrder.id, order_code: orderCode },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Không gửi được thông báo đặt hàng cho đơn ${orderCode}: ` +
+          `${(err as Error).message}. Đơn đã lưu thành công.`,
+      );
+    }
 
     await this.notifySellersOfNewOrder(savedOrder.id, orderCode, cartItems);
+
+    // TỒN KHO REAL-TIME (task #26b) — phát SAU KHI transaction đã commit.
+    //
+    // Đặt bên trong transaction là phát một con số có thể bị quay lui ngay
+    // sau đó, và người đang xem trang sẽ thấy tồn kho chưa bao giờ tồn tại.
+    // Ở đây đơn đã lưu xong, kho đã trừ xong.
+    //
+    // `phat()` KHÔNG BAO GIỜ NÉM — xem StockEventsService. Đơn đã nằm trong
+    // database rồi; hỏng việc báo không được phép hỏng việc đặt hàng.
+    for (const ci of cartItems) {
+      const conLai = await this.productRepository
+        .findOne({ where: { id: ci.product.id }, select: { stock: true } })
+        .catch(() => null);
+      if (conLai) await this.stockEvents.phat(ci.product.id, conLai.stock);
+    }
 
     const result: any = await this.findOne(savedOrder.id, user);
     // Đánh dấu payment_method để frontend biết cần gọi PayOS
@@ -427,10 +672,7 @@ export class OrdersService {
       // Lấy created_at dạng CHUỖI đủ micro-giây (%f) để dựng con trỏ chính xác —
       // KHÔNG lấy qua entity Date (bị cắt còn mili-giây). ORDER BY vẫn trên cột
       // thô nên index không bị ảnh hưởng.
-      .addSelect(
-        "DATE_FORMAT(order.created_at, '%Y-%m-%d %H:%i:%s.%f')",
-        'cts',
-      )
+      .addSelect("DATE_FORMAT(order.created_at, '%Y-%m-%d %H:%i:%s.%f')", 'cts')
       // Tiebreaker theo id: created_at có thể trùng (seed rải theo giây), thiếu
       // khoá phụ thì thứ tự ở ranh giới trang không ổn định giữa các lần gọi.
       .orderBy('order.created_at', 'DESC')
@@ -656,8 +898,14 @@ export class OrdersService {
       await this.createGhnShipmentsPerSeller(order);
     }
 
-    if (updateOrderDto.is_paid === true && !order.is_paid) {
-      await this.escrowsService.createOrderEscrows(order.id);
+    // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU — không đảo ngược.
+    //
+    // Thứ tự cũ gọi `createOrderEscrows` rồi mới đặt `is_paid`, nên lúc hàm đó
+    // chạy thì database vẫn ghi đơn là CHƯA trả tiền. Nay `createOrderEscrows`
+    // từ chối đúng trường hợp ấy (xem lời giải thích trong `escrows.service.ts`),
+    // nên phải lưu cờ xuống trước.
+    const vuaDanhDauDaTra = updateOrderDto.is_paid === true && !order.is_paid;
+    if (vuaDanhDauDaTra) {
       order.is_paid = true;
       order.paid_at = new Date();
     }
@@ -668,14 +916,59 @@ export class OrdersService {
 
     await this.orderRepository.save(order);
 
+    if (vuaDanhDauDaTra) {
+      // Đường THỦ CÔNG: admin khẳng định tiền đã về (chủ yếu là đơn COD do
+      // GHN thu hộ). Không có webhook nào đưa tiền vào két nên phải ghi bút
+      // toán đó ở đây, nếu không lần giải ngân đầu tiên kéo escrow_hold xuống
+      // âm. Xem lời giải thích đầy đủ trong escrows.service.ts.
+      await this.escrowsService.createOrderEscrowsWithExternalFunding(order.id);
+    }
+
     // Tiền đi sau khi trạng thái đã lưu. Lỗi ở đây được NÉM RA, không nuốt:
     // trước đây `catch { console.error }` khiến API trả 200 trong khi tiền
     // không hề chuyển, và không ai biết cho tới lúc đối soát.
     if (nextStatus === OrderStatus.DELIVERED) {
       await this.releaseEscrowOrExplain(order.id, 'giải ngân');
     }
+    // HOÀN TIỀN THÌ HÀNG CŨNG PHẢI VỀ KHO.
+    //
+    // `cancel()` hoàn kho, còn nhánh này thì không — hai đường cùng nghĩa "giao
+    // dịch không thành" mà chỉ một đường trả hàng lại. Đơn hoàn tiền để lại
+    // hàng bị trừ vĩnh viễn: người bán mất chỗ trên kệ mà không ai lấy hàng đi.
+    // Đo bằng TC-P1-07.
+    //
+    // Tiền và kho trong CÙNG một transaction: hoàn tiền hỏng (người bán đã tiêu
+    // hết số đã nhận) thì kho cũng không được cộng lại, nếu không thì kho phình
+    // ra hàng không có thật mà tiền vẫn chưa trả người mua.
     if (nextStatus === OrderStatus.REFUNDED) {
-      await this.releaseEscrowOrExplain(order.id, 'hoàn tiền');
+      await this.dataSource.transaction(async (em) => {
+        try {
+          await this.escrowsService.refund(order.id, em, true);
+        } catch (err) {
+          // CHỈ nuốt đúng một trường hợp, y như `applyCancellation` đã làm:
+          // đơn không có khoản ký quỹ nào để hoàn (đơn COD, hoặc đơn có từ
+          // trước khi hệ thống ký quỹ tồn tại). Hàng vẫn phải về kho — việc trừ
+          // kho xảy ra lúc đặt đơn, không phụ thuộc vào việc tiền đi đường nào.
+          //
+          // Mọi lỗi khác phải làm hỏng cả transaction: tiền chưa về mà kho đã
+          // cộng lại thì sàn vừa mất hàng lẫn tiền.
+          if (!(err instanceof NotFoundException)) throw err;
+          this.logger.warn(
+            `Đơn #${order.id} hoàn tiền nhưng không có khoản ký quỹ nào. ` +
+              'Vẫn trả hàng về kho, nhưng cần đối soát tay xem tiền ở đâu.',
+          );
+        }
+        for (const item of order.items ?? []) {
+          if (item.product) {
+            await em.increment(
+              Product,
+              { id: item.product.id },
+              'stock',
+              item.quantity,
+            );
+          }
+        }
+      });
     }
 
     return this.orderRepository.findOne({
@@ -708,6 +1001,32 @@ export class OrdersService {
     const isBuyer = actors.includes(OrderActor.BUYER);
     if (!isBuyer && !isAdmin) {
       throw new ForbiddenException('Chỉ người mua mới xác nhận đã nhận hàng');
+    }
+
+    // ĐƠN CHƯA THANH TOÁN THÌ KHÔNG CÓ GÌ ĐỂ NHẢ.
+    //
+    // Hàm này kiểm đủ thứ — ai gọi, lô có tồn tại, lô đã nhận chưa, lô có hỏng
+    // không — nhưng tới 24/09 nó KHÔNG hỏi đơn đã trả tiền chưa. Mà dòng
+    // `escrowsService.release()` ngay dưới là lệnh chuyển tiền cho người bán.
+    //
+    // Ghép với BUG-02 (ký quỹ sinh ra lúc tạo link, chưa ai trả đồng nào) thì
+    // đây là nút bấm cuối của một chuỗi ba bước lấy hàng miễn phí, chỉ cần một
+    // tài khoản người mua bình thường:
+    //
+    //   POST /payos/create-link          -> ký quỹ holding, chưa trả tiền
+    //   PATCH /payments/:id {success}    -> orders.is_paid = 1, sổ cái trống
+    //   PATCH .../shipments/:id/received -> ví người bán +N, escrow_hold -N
+    //
+    // BUG-01 và BUG-02 đã vá, nên chuỗi đó đã đứt ở hai chỗ. Lớp này là chỗ thứ
+    // ba, cố ý chồng lên: chừng nào còn đường nào tạo được ký quỹ cho đơn chưa
+    // trả tiền thì nó vẫn phải chặn ở đây.
+    //
+    // Đo được bằng TC-P3-20.
+    if (!order.is_paid) {
+      throw new BadRequestException(
+        'Đơn hàng chưa được thanh toán nên chưa thể xác nhận đã nhận hàng. ' +
+          'Với đơn COD, người bán hoặc quản trị viên cần ghi nhận đã thu tiền trước.',
+      );
     }
 
     const shipment = await this.shipmentRepository.findOne({
@@ -1308,16 +1627,19 @@ export class OrdersService {
     }
   }
 
+  /**
+   * Giải ngân, và nếu hỏng thì nói rõ hỏng ở đâu.
+   *
+   * Chỉ còn phục vụ nhánh `delivered`. Nhánh `refunded` trước đây cũng đi qua
+   * đây, nhưng nó cần thêm việc hoàn kho trong cùng transaction nên đã tách ra
+   * chỗ gọi riêng ở `updateStatus`.
+   */
   private async releaseEscrowOrExplain(
     orderId: number,
-    action: 'giải ngân' | 'hoàn tiền',
+    action: 'giải ngân',
   ): Promise<void> {
     try {
-      if (action === 'giải ngân') {
-        await this.escrowsService.release(orderId);
-      } else {
-        await this.escrowsService.refund(orderId);
-      }
+      await this.escrowsService.release(orderId);
     } catch (err) {
       throw new BadRequestException(
         `Đã cập nhật trạng thái đơn hàng nhưng ${action} ký quỹ thất bại: ` +
@@ -1337,6 +1659,8 @@ export class OrdersService {
    * được báo — chỉ còn một dòng log không ai đọc.
    */
   private async applyCancellation(order: Order) {
+    // Gom id san pham da hoan kho, de phat SAU khi transaction commit.
+    const daHoan: number[] = [];
     await this.dataSource.transaction(async (em: EntityManager) => {
       // KHOÁ DÒNG ĐƠN TRƯỚC MỌI THỨ, RỒI ĐỌC LẠI TRẠNG THÁI TỪ DATABASE.
       //
@@ -1394,20 +1718,71 @@ export class OrdersService {
       // `update` chứ không `save(order)`: `order` là đối tượng nạp từ trước khi
       // có khoá, lưu cả nó là ghi đè bằng dữ liệu có thể đã cũ. Chỉ đổi đúng
       // một cột mình vừa quyết định.
-      await em.update(Order, { id: order.id }, { status: OrderStatus.CANCELLED });
+      await em.update(
+        Order,
+        { id: order.id },
+        { status: OrderStatus.CANCELLED },
+      );
       order.status = OrderStatus.CANCELLED;
 
+      // KHÔNG CỘNG LẠI KHO CHO MÓN NGƯỜI MUA ĐÃ CẦM TRONG TAY.
+      //
+      // Sàn C2C nhiều shop: người mua xác nhận nhận hàng của shop A (ký quỹ của
+      // A chuyển sang `released`, hàng đã tới nhà họ), rồi huỷ đơn vì shop B
+      // chưa giao. `applyCancellation` cộng lại kho cho CẢ món của A — món đang
+      // nằm ở nhà người mua. Kho phình ra một món không có thật, và người sau
+      // đặt được thứ không tồn tại. Đo bằng TC-P1-09b.
+      //
+      // Quy tắc: ký quỹ của người bán nào đã `released` thì hàng của người đó
+      // coi như đã giao xong, không hoàn kho. Phần tiền cũng không bị `refund()`
+      // đụng tới vì nó chỉ tìm khoản `holding` — hai vế khớp nhau.
+      const daGiaiNgan = new Set(
+        (
+          await em.find(Escrow, {
+            where: { order: { id: order.id } },
+            relations: ['seller'],
+          })
+        )
+          .filter((e) => e.status === EscrowStatus.RELEASED)
+          .map((e) => e.seller?.id)
+          .filter((id): id is number => id !== undefined),
+      );
+
       for (const item of order.items) {
-        if (item.product) {
-          await em.increment(
-            Product,
-            { id: item.product.id },
-            'stock',
-            item.quantity,
+        if (!item.product) continue;
+
+        const sellerId = item.product.seller?.id;
+        if (sellerId !== undefined && daGiaiNgan.has(sellerId)) {
+          this.logger.log(
+            `Đơn #${order.id}: không hoàn kho sản phẩm ${item.product.id} — ` +
+              `người bán ${sellerId} đã giao xong và đã được giải ngân.`,
           );
+          continue;
         }
+
+        await em.increment(
+          Product,
+          { id: item.product.id },
+          'stock',
+          item.quantity,
+        );
+        // Nhớ lại để phát SAU khi transaction commit — xem dưới.
+        daHoan.push(item.product.id);
       }
     });
+
+    // TỒN KHO REAL-TIME (task #26b) — phát SAU KHI transaction đã commit.
+    //
+    // Đây là chỗ DUY NHẤT trong ba chỗ phát mà `worker` cũng chạy:
+    // `cancelExpired` gọi xuống đây mỗi giờ. Worker KHÔNG có socket server,
+    // nên `server.emit` ở đây là gọi vào `undefined` — chính lý do cả cơ chế
+    // phải đi qua Redis pub/sub.
+    for (const productId of daHoan) {
+      const p = await this.productRepository
+        .findOne({ where: { id: productId }, select: { stock: true } })
+        .catch(() => null);
+      if (p) await this.stockEvents.phat(productId, p.stock);
+    }
   }
 
   /**
@@ -1488,8 +1863,77 @@ export class OrdersService {
     await this.voidOpenPaymentLink(order.id);
   }
 
+  /**
+   * Xoá mềm một đơn. **Chỉ đơn đã kết thúc, và tiền phải đã yên chỗ.**
+   *
+   * Tới 24/09 hàm này chỉ gọi `findOne(id, user)` — mà người mua là chủ đơn nên
+   * qua được — rồi `softDelete` thẳng. Không kiểm trạng thái, không hoàn kho,
+   * không đụng tới ký quỹ.
+   *
+   * Nghĩa là người mua xoá được một đơn ĐANG GIAO, ĐÃ TRẢ TIỀN. Đơn biến mất
+   * khỏi danh sách của cả người bán (soft-delete lọc ở tầng repository), trong
+   * khi hàng vẫn đang trừ kho và tiền vẫn nằm trong `escrow_hold` — không ai
+   * còn đường nào tìm thấy nó để giải ngân hay hoàn lại.
+   *
+   * Đo được bằng TC-P1-08.
+   *
+   * Vì sao KHÔNG hoàn kho ở đây: xoá là thao tác dọn danh sách, không phải
+   * thao tác nghiệp vụ. Muốn trả hàng về kho thì phải đi qua `/cancel` hoặc
+   * `/cancel-sale` — hai chỗ đó hoàn kho, hoàn ký quỹ và đóng link thanh toán
+   * trong một transaction. Ở đây chỉ chặn, không tự làm thay.
+   */
   async remove(id: number, user: IUser) {
-    await this.findOneAsBuyerOrAdmin(id, user);
+    // CHỈ NGƯỜI MUA HOẶC ADMIN. Người bán thì nhận 404 như người ngoài.
+    //
+    // Trước lần gộp 07/10, chỗ này gọi `findOne(id, user)` và comment cũ của
+    // vai B viết: "đã qua findOne nên chắc chắn là người mua của đơn hoặc
+    // admin". Câu đó ĐÃ CHẾT: nhánh của Đạt mở `findOne` cho NGƯỜI BÁN xem đơn
+    // (H-02). Người bán đi lọt qua đó, rơi xuống phép kiểm trạng thái bên dưới
+    // và nhận "đơn đang pending nên chưa xoá được" — tức hệ thống mách rằng cứ
+    // đợi đơn kết thúc là xoá được đơn của người khác.
+    //
+    // Không bên nào tự thấy được: Đạt mở quyền xem mà không biết có hàm dựa vào
+    // giả định cũ; vai B viết giả định đúng tại thời điểm viết. Nó chỉ lộ ra khi
+    // bài kiểm `seller-orders.spec.ts` của Đạt chạy trên mã của vai B.
+    //
+    // Bài học giữ lại: đừng suy quyền từ việc "đã qua được hàm đọc". Hàm đọc có
+    // thể được nới rộng bởi người khác, ở nhánh khác, vì lý do chính đáng.
+    const { order, actors } = await this.findOneForActor(id, user);
+    if (
+      !actors.includes(OrderActor.ADMIN) &&
+      !actors.includes(OrderActor.BUYER)
+    ) {
+      // 404 chứ không 403: người bán không cần biết đơn này có tồn tại hay
+      // không — cùng lý do với `findOneForActor`.
+      throw new NotFoundException(`Không tìm thấy đơn hàng #${id}`);
+    }
+
+    const daKetThuc =
+      order.status === OrderStatus.CANCELLED ||
+      order.status === OrderStatus.DELIVERED ||
+      order.status === OrderStatus.REFUNDED;
+
+    if (!daKetThuc) {
+      throw new BadRequestException(
+        `Đơn hàng đang ở trạng thái "${order.status}" nên chưa xoá được. ` +
+          'Huỷ đơn bằng /cancel (người mua) hoặc /cancel-sale (người bán) — ' +
+          'hai đường đó còn hoàn lại tồn kho và tiền ký quỹ.',
+      );
+    }
+
+    // Còn khoản ký quỹ đang giữ thì tiền chưa đi đâu cả. Xoá đơn lúc này là
+    // chôn luôn manh mối duy nhất dẫn tới số tiền đó.
+    // Truyền `user` xuống: từ 25/09 `findByOrder` kiểm quyền (BUG-18). Người
+    // gọi ở đây đã qua `findOne(id, user)` nên chắc chắn là người mua của đơn
+    // hoặc admin — cả hai đều đủ quyền xem ký quỹ của chính đơn đó.
+    const conGiuTien = await this.escrowsService.findByOrder(id, user);
+    if (conGiuTien.some((e) => e.status === EscrowStatus.HOLDING)) {
+      throw new BadRequestException(
+        'Đơn hàng còn khoản ký quỹ đang giữ, chưa xoá được. Cần giải ngân ' +
+          'hoặc hoàn tiền xong trước.',
+      );
+    }
+
     await this.orderRepository.softDelete(id);
     return { message: 'Xóa đơn hàng thành công' };
   }
@@ -1519,6 +1963,37 @@ export class OrdersService {
   async cancelSale(orderId: number, user: IUser) {
     const order = await this.findOneForSeller(orderId, user.id);
     this.assertCancellable(order, 'hủy bán đơn hàng');
+
+    // MỘT NGƯỜI BÁN KHÔNG ĐƯỢC HUỶ PHẦN CỦA NGƯỜI BÁN KHÁC.
+    //
+    // `cancelSale` nhận `user.id` chỉ để KIỂM QUYỀN, rồi gọi thẳng
+    // `applyCancellation(order)` — hàm đó huỷ cả đơn, hoàn kho MỌI món và
+    // refund MỌI khoản ký quỹ đang giữ. Nên shop A bấm "huỷ bán" phần của mình
+    // là huỷ luôn phần của shop B, trong khi B chưa làm gì sai và có thể đã
+    // đóng gói xong. Đo bằng TC-P1-09a.
+    //
+    // VÌ SAO CHẶN CHỨ KHÔNG HUỶ TỪNG PHẦN. Huỷ đúng phần của một người bán cần
+    // trạng thái huỷ ở mức TỪNG MÓN — `order_items` hiện không có cột nào như
+    // vậy, và `orders.status` thì chỉ có một giá trị cho cả đơn. Thêm trạng
+    // thái đó là đổi lược đồ, đổi cách tính `final_amount`, đổi cả cách hiển
+    // thị đơn ở ba client. Không làm nửa vời ở đây.
+    //
+    // Nợ kỹ thuật, nói thẳng: người bán trong đơn nhiều shop phải nhờ admin
+    // hoặc nhờ người mua tự huỷ. Gỡ nợ này khi `order_items` có trạng thái
+    // riêng — lúc đó đường huỷ theo từng người bán mới có chỗ để ghi kết quả.
+    const soNguoiBan = new Set(
+      (order.items ?? [])
+        .map((item) => item.product?.seller?.id)
+        .filter((id): id is number => id !== undefined),
+    ).size;
+
+    if (soNguoiBan > 1) {
+      throw new BadRequestException(
+        'Đơn hàng này có hàng của nhiều người bán nên bạn không tự huỷ được — ' +
+          'huỷ sẽ ảnh hưởng tới phần của người bán khác. Liên hệ quản trị viên, ' +
+          'hoặc đề nghị người mua huỷ đơn.',
+      );
+    }
 
     // Dùng chung đúng một đường huỷ với `cancel()`. Trước đây hai hàm này là
     // hai bản chép tay của cùng một việc, thứ tự các bước còn khác nhau — nên

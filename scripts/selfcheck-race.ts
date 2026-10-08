@@ -326,6 +326,60 @@ async function main() {
     `huỷ ${huyR4} lượt → kho về ${khoR4} (đúng phải là 1)`,
   );
 
+  // ── R5: MỘT NGƯỜI BẤM "ĐẶT HÀNG" N LẦN CÙNG LÚC ──────────────────────────
+  //
+  // R1 cố ý dùng N người KHÁC NHAU — comment ở `dungNguoiMua` nói rõ vì sao:
+  // "một người bấm N lần thì ta lại đi đo một cuộc đua khác". Đây chính là
+  // cuộc đua khác đó, và chưa ai đo nó.
+  //
+  // Kịch bản thật: mạng chập, người mua bấm lại; hoặc nút không bị khoá sau
+  // lần bấm đầu; hoặc trình duyệt tự gửi lại. `docs/BAN-GIAO.md` ghi nó trong
+  // mục việc còn lại: "Idempotency ở đặt hàng — bấm hai lần tạo hai đơn.
+  // Tiền thì sổ cái che, đơn thì không."
+  //
+  // VÌ SAO KHO KHÔNG CỨU ĐƯỢC. Kho ở đây để 50, nên cả N lượt đều qua được
+  // cửa `stock >= n`. Bất biến bị vi phạm không phải "kho âm" mà là "một lần
+  // bấm, một đơn" — người mua bị tính tiền hai lần cho cùng một giỏ.
+  //
+  // VÌ SAO GIỎ KHÔNG CỨU ĐƯỢC. `orders.create` xoá giỏ ở CUỐI transaction.
+  // Bấm tuần tự thì lần hai thấy giỏ trống và trả 400 sạch sẽ. Nhưng bấm
+  // ĐỒNG THỜI thì cả N lượt đều đọc giỏ trước khi ai kịp commit.
+  console.log(
+    '\n\x1b[1mR5 · Một người bấm "Đặt hàng" nhiều lần cùng lúc\x1b[0m',
+  );
+  await dungSanPham(ds, 50);
+  await ds.query(
+    `INSERT INTO users (id, full_name, email, password, role)
+     VALUES (200,'mua lap','lap@race.local','x','buyer')`,
+  );
+  await ds.query(
+    `INSERT INTO carts (user_id, product_id, quantity) VALUES (200,1,1)`,
+  );
+
+  await dongThoi(async () => {
+    await svc.create(
+      {
+        receiver_name: 'Nguoi mua',
+        receiver_phone: '0900000000',
+        shipping_address: 'So 1 duong Dua',
+        payment_method: 'cod',
+      },
+      { id: 200, role: 'buyer' },
+    );
+    return true;
+  });
+
+  const donR5 = await ds.query<Array<{ n: number }>>(
+    'SELECT COUNT(*) AS n FROM orders WHERE user_id = 200',
+  );
+  const soDonR5 = Number(donR5[0].n);
+  const khoR5 = await khoHienTai(ds);
+  chot(
+    'R5 orders.create — một người bấm nhiều lần, một giỏ',
+    soDonR5 === 1 && khoR5 === 49,
+    `${N} lượt bấm → ${soDonR5} đơn (đúng phải là 1), kho còn ${khoR5} (đúng phải là 49)`,
+  );
+
   await ds.destroy();
 
   // ── Tổng kết theo kiểu bánh cóc ──────────────────────────────────────────

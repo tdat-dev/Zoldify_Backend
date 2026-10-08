@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
@@ -13,6 +14,12 @@ import { User } from '@identity/users/entities/user.entity';
 // idx_conversation_id (1 cột) ĐÃ BỎ: thừa vì idx_conversation_created
 // (conversation_id, created_at) phủ leftmost prefix + đỡ luôn FK conversation_id.
 // Xem migration 1787200000000.
+//
+// Nhưng chính idx_conversation_created thì trước nay CHƯA được khai ở đây —
+// nó chỉ tồn tại trong migration. Entity mới là nguồn mà `migration:generate`
+// và `synchronize` đọc, nên thiếu dòng dưới thì lần sinh migration tới sẽ đề
+// nghị XOÁ đúng cái index đang phục vụ màn chat.
+@Index('idx_conversation_created', ['conversation', 'created_at'])
 export class Message {
   @PrimaryGeneratedColumn()
   id: number;
@@ -31,7 +38,7 @@ export class Message {
   @Column({ type: 'json', nullable: true })
   images: string[];
 
-  @Column({ type: 'tinyint', width: 1, default: 0 })
+  @Column({ type: 'boolean', default: false })
   is_read: boolean;
 
   @CreateDateColumn({ type: 'timestamp' })

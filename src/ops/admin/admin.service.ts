@@ -3,8 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateAdminDto } from './dto/create-admin.dto';
-import { UpdateAdminDto } from './dto/update-admin.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -16,6 +14,7 @@ import {
   WithdrawalStatus,
 } from '@money/withdrawals/entities/withdrawal.entity';
 import { WithdrawalsService } from '@money/withdrawals/withdrawals.service';
+import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 
 @Injectable()
 export class AdminService {
@@ -109,9 +108,23 @@ export class AdminService {
     return { id: user.id, role: user.role };
   }
 
-  async updateUser(id: number, dto: Partial<User>) {
+  async updateUser(id: number, dto: UpdateUserByAdminDto) {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+
+    // M-01: Chặn ghi các cột nhạy cảm — DTO chỉ là type hint, validation pipe ở
+    // controller mới lọc, nhưng service có thể được gọi trực tiếp (test, script).
+    // Danh sách cột CẤM: password, role, token_version, is_locked, refresh_token.
+    const cam = [
+      'password',
+      'role',
+      'token_version',
+      'is_locked',
+      'refresh_token',
+    ] as const;
+    for (const k of cam) {
+      if (k in dto) throw new BadRequestException(`Không được sửa cột ${k}`);
+    }
 
     await this.userRepository.update(id, dto);
     return this.userRepository.findOne({ where: { id } });
@@ -133,10 +146,23 @@ export class AdminService {
         this.userRepository.count(),
         this.productRepository.count(),
         this.orderRepository.count(),
+        // DOANH THU = TIỀN ĐÃ NHẬN, KHÔNG PHẢI ĐƠN ĐÃ GIAO.
+        //
+        // Bản cũ chỉ lọc `status = 'delivered'`. Một đơn đã giao mà chưa thu
+        // được tiền (COD chưa đối soát) thì không phải doanh thu đã nhận.
+        // `orders.getStats` đã sửa theo hướng này ở BUG-21; để hai bảng điều
+        // khiển tính khác nhau là hai con số "doanh thu" cùng tồn tại.
+        //
+        // Thứ tự điều kiện khớp với index `idx_paid_status_amount`
+        // (is_paid, status, final_amount) — có `final_amount` ở cuối nên MySQL
+        // đọc xong ngay trong index. Đo trên 1.000 đơn:
+        //   trước: type=ALL key=NULL              rows=1000
+        //   sau:   type=ref key=idx_paid_status_amount rows=681  Using index
         this.orderRepository
           .createQueryBuilder('order')
           .select('COALESCE(SUM(order.final_amount), 0)', 'total')
-          .where('order.status = :status', { status: 'delivered' })
+          .where('order.is_paid = :paid', { paid: true })
+          .andWhere('order.status = :status', { status: 'delivered' })
           .getRawOne(),
       ]);
 
@@ -161,7 +187,7 @@ export class AdminService {
 
   async updateSettings(updates: Record<string, string>) {
     for (const [key, value] of Object.entries(updates)) {
-      let setting = await this.settingRepository.findOne({ where: { key } });
+      const setting = await this.settingRepository.findOne({ where: { key } });
       if (setting) {
         setting.value = value;
         await this.settingRepository.save(setting);

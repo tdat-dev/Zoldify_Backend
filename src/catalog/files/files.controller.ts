@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { StorageService } from './storage.service';
+import { urlTepCongKhai } from '@common/public-url';
 import * as fs from 'fs';
 import { basename, extname, join } from 'path';
 import { Public } from '@common/decorators/public.decorator';
@@ -71,11 +72,24 @@ export class FilesController {
       url = await this.storage.upload(file.buffer, key, file.mimetype);
     } else {
       // Fallback đĩa (giữ hành vi cũ khi R2 chưa cấu hình): ghi buffer ra
-      // public/images rồi ghép URL theo host.
+      // public/images rồi ghép URL.
+      //
+      // ĐỊA CHỈ LẤY TỪ CẤU HÌNH, KHÔNG LẤY TỪ REQUEST.
+      //
+      // Bản cũ ghép `${req.protocol}://${req.get('host')}/...`. `Host` là header
+      // do NGƯỜI GỬI đặt, mà URL này được **lưu vào bảng `files`** rồi phục vụ
+      // cho mọi người xem sau đó. Một lần tải ảnh kèm `Host: evil.example` là
+      // ghi vào database một địa chỉ trỏ sang máy chủ người khác — người bán
+      // tải ảnh sản phẩm, người mua nhìn thấy ảnh lấy từ `evil`.
+      //
+      // Đứng sau proxy còn một mặt nữa: `Host` khi đó là tên nội bộ của
+      // container, nên URL lưu xuống không ai ngoài mạng nội bộ mở được.
+      //
+      // Task #13 trong `docs/BAN-GIAO.md`. Xem `common/public-url.ts`.
       const dir = join(process.cwd(), 'public', 'images', folder);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(join(dir, filename), file.buffer);
-      url = `${req.protocol}://${req.get('host')}/public/images/${folder}/${filename}`;
+      url = urlTepCongKhai(process.env, folder, filename);
     }
 
     const saved = await this.filesService.create(

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -10,7 +11,7 @@ import type { Cache } from '@nestjs/cache-manager';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Product } from './entities/product.entity';
+import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
 import { Repository, Between } from 'typeorm';
@@ -18,6 +19,8 @@ import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
+import Redis from 'ioredis';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 
 // TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn.
 const PRODUCT_DETAIL_TTL = 60_000; // 60s
@@ -54,6 +57,8 @@ const DOI_NHO_MS = 1_000;
 
 @Injectable()
 export class ProductsService {
+  private readonly redis: Redis | null = null;
+
   constructor(
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
@@ -64,7 +69,26 @@ export class ProductsService {
     private readonly notificationsService: NotificationsService,
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
-  ) {}
+    private readonly stockEvents: StockEventsService,
+  ) {
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) {
+      // Fail-open: không có Redis thì bỏ đếm view_count, tuyệt đối không chặn boot
+      console.warn(
+        '[ProductsService] REDIS_URL không có — bỏ qua đếm view_count',
+      );
+      return;
+    }
+    this.redis = new Redis(redisUrl, {
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+    });
+    this.redis.on('error', (err) => {
+      // on('error') chỉ bắt SỰ KIỆN KẾT NỐI, không bắt lệnh bị từ chối.
+      // Lệnh incr/get/set bị reject là promise rejection riêng, phải try/catch ở chỗ gọi.
+      // Đo được: "Stream isn't writeable and enableOfflineQueue options is false" khi Redis mất.
+    });
+  }
 
   /**
    * Chặn đăng bán khi người bán CHƯA khai địa chỉ lấy hàng.
@@ -310,6 +334,44 @@ export class ProductsService {
     );
   }
 
+  /**
+   * Hàng của CHÍNH người bán đang đăng nhập — đủ mọi trạng thái.
+   *
+   * Vì sao phải có đường riêng: `findAll` là endpoint CÔNG KHAI (`@Public()`),
+   * không có `req.user`, nên nó không phân biệt được "người bán xem hàng của
+   * mình" với "người lạ hỏi hàng của người bán đó". Từ 25/09 nó lọc cứng
+   * `status = active` để tin nháp và tin bị từ chối duyệt không bày ra cho
+   * người ngoài.
+   *
+   * Nhưng trang "Sản phẩm của tôi" thì CẦN thấy đủ — nó hiện huy hiệu trạng
+   * thái cho từng tin (`profile/products/page.tsx`). Nên đường này nhận
+   * `sellerId` từ TOKEN chứ không từ query, và trả về mọi trạng thái.
+   *
+   * KHÔNG CACHE. Người bán vừa sửa tin phải thấy ngay, và đây là trang một
+   * người dùng tự xem của mình — không có gì để chia sẻ giữa các request.
+   */
+  async findMine(sellerId: number, page: number, limit: number) {
+    const { size, offset } = normalizePagination(String(page), String(limit));
+
+    const [result, total] = await this.productRepository.findAndCount({
+      where: { seller: { id: sellerId } },
+      relations: { category: true },
+      skip: offset,
+      take: size,
+      order: { created_at: 'DESC' },
+    });
+
+    return {
+      meta: {
+        current: page,
+        pageSize: size,
+        pages: Math.ceil(total / size),
+        total,
+      },
+      result,
+    };
+  }
+
   // Truy vấn DANH SÁCH thực sự (phần nặng: filter + phân trang + đếm tổng). Tách
   // riêng để findAll bọc cache single-flight quanh đúng phần này.
   private async queryProductList(
@@ -375,6 +437,12 @@ export class ProductsService {
         qb.andWhere('product.price <= :pmax', { pmax: Number(qs.price_max) });
       }
 
+      // Nhánh TÌM KIẾM cũng phải lọc — xem lời giải thích ở nhánh dưới.
+      // Thiếu dòng này thì gõ đúng tên một tin đã bị từ chối là thấy nó ngay.
+      qb.andWhere('product.status = :active', {
+        active: ProductStatus.ACTIVE,
+      });
+
       if (condition) {
         qb.andWhere('product.condition = :cond', { cond: condition });
       }
@@ -389,7 +457,22 @@ export class ProductsService {
 
       [result, totalItems] = await qb.getManyAndCount();
     } else {
-      const where: any = {};
+      // CHỈ HIỆN HÀNG ĐANG MỞ BÁN.
+      //
+      // Tới 25/09 không nhánh nào của hàm này lọc `status`. Nên mọi tin `draft`
+      // (người bán còn đang soạn), `pending` (chờ duyệt) và `rejected` (đã bị
+      // từ chối duyệt) đều hiện ra cho bất kỳ ai mở trang chủ — và vì danh sách
+      // sắp theo `created_at DESC`, tin vừa bị từ chối nằm ngay ĐẦU trang.
+      //
+      // Nặng nhất là `rejected`: quản trị viên vừa từ chối một tin vì nội dung
+      // không phù hợp, mà nó vẫn được bày ra.
+      //
+      // `orders.create` đã chặn MUA hàng không `active` (BUG-10b), nhưng chặn ở
+      // cửa sau không xoá được việc nó bày ra ở cửa trước.
+      //
+      // Người bán xem hàng CỦA CHÍNH MÌNH thì đi qua `findMine()` — có xác
+      // thực, và trả về đủ mọi trạng thái kèm huy hiệu.
+      const where: any = { status: ProductStatus.ACTIVE };
       if (qs.category_id) {
         where.category = { id: Number(qs.category_id) };
       }
@@ -461,12 +544,23 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
     }
-    // TODO: re-enable view_count tracking khi có Redis hoặc batch job
-    // Lý do: increment() mỗi lần GET sẽ race condition khi nhiều request đồng thời,
-    // và gây write amplification trên mỗi lượt xem chi tiết sản phẩm.
-    // Giải pháp tương lai: dùng Redis INCR + flush về MySQL theo batch (5-10 phút/lần),
-    // hoặc đẩy vào message queue xử lý async.
-    // await this.productRepository.increment({ id }, 'view_count', 1);
+
+    // Tăng view_count bằng Redis INCR (atomic, không race condition).
+    // Key: `view_count:{productId}`. Flush về MySQL theo batch mỗi 5 phút
+    // bởi job `flush-view-count` trong worker.
+    // BỎ TRƯỚC KHI KIỂM CACHE: TTL 60s khiến chỉ lượt đầu tiên mỗi phút được đếm
+    // nếu để sau `if (cached) return cached;` — phá vỡ sort=most_viewed.
+    const viewCountKey = `view_count:${id}`;
+    if (this.redis) {
+      try {
+        await this.redis.incr(viewCountKey);
+      } catch (err) {
+        // on('error') chỉ bắt sự kiện kết nối, không bắt lệnh bị từ chối.
+        // Đo được: "Stream isn't writeable and enableOfflineQueue options is false"
+        // Fail-open: Redis lỗi không được làm route 500.
+      }
+    }
+
     await this.cacheSet(key, product, PRODUCT_DETAIL_TTL);
     return product;
   }
@@ -517,11 +611,50 @@ export class ProductsService {
     return { id, deleted: true };
   }
 
+  /**
+   * Người bán đặt lại số tồn kho.
+   *
+   * ĐỌC RỒI GHI CẢ ENTITY LÀ CÁCH XOÁ SẠCH CÔNG CHỐNG ĐUA CỦA TASK #2.
+   *
+   * Bản cũ: `findOne()` → `product.stock = stock` → `save(product)`. Không khoá
+   * dòng, không điều kiện, và `save()` ghi **toàn bộ** entity chứ không riêng
+   * cột `stock`.
+   *
+   * `orders.create` trừ kho bằng `UPDATE ... SET stock = stock - n WHERE stock
+   * >= n` dưới khoá `FOR UPDATE` — rất chắc. Nhưng chắc tới đâu cũng vô nghĩa
+   * nếu có một lần ghi khác đè lên bằng giá trị đọc từ trước:
+   *
+   *   t0  người bán mở trang sửa, hàm này đọc stock = 50
+   *   t1  ba người mua đặt 3 món  -> stock = 47  (transaction, có khoá, đúng)
+   *   t2  save(product) ghi đè    -> stock = 50  ← ba món vừa bán quay về kho
+   *
+   * Đo bằng TC-P1-06, ép xen kẽ bằng spy trên `findOne`: kho về 50 sau khi đã
+   * bán 3. Ở production cửa sổ đó mở ra ngẫu nhiên, và càng đông người mua thì
+   * càng hay trúng.
+   *
+   * Tệ hơn số lượng: `save()` còn ghi đè `price`, `status`, `sold_count` bằng
+   * bản đọc từ trước — người bán bấm "lưu tồn kho" có thể lùi giá về giá cũ.
+   *
+   * CÁCH SỬA: một câu `UPDATE` chỉ chạm ĐÚNG cột `stock`, kèm **khoá lạc quan**
+   * `WHERE stock = :kyVong`. Người gọi phải nói ra "tôi đang nhìn thấy N" —
+   * không khớp thì từ chối thay vì đè. Không cần `FOR UPDATE`: một câu UPDATE
+   * có điều kiện đã là nguyên tử ở tầng database, và nó không giữ khoá qua một
+   * lượt request như bản đọc-rồi-ghi.
+   *
+   * MẶC ĐỊNH LÀ SỐ VỪA ĐỌC Ở NGAY TRÊN, không phải tuỳ chọn. Client cũ không
+   * phải sửa gì mà cửa sổ giữa `findOne` và `UPDATE` của chính hàm này vẫn
+   * đóng — đó đúng là cửa sổ mà TC-P1-06 ép mở ra.
+   *
+   * `expectedStock` do client truyền vào thì mạnh hơn: nó đóng cửa sổ dài hơn,
+   * từ lúc trang sửa được tải cho tới lúc bấm lưu. Frontend nên gửi kèm số nó
+   * đang hiển thị.
+   */
   async updateStock(
     productId: number,
     stock: number,
     userId: number,
     isAdmin: boolean,
+    expectedStock?: number,
   ) {
     const product = await this.productRepository.findOne({
       where: { id: productId },
@@ -534,10 +667,52 @@ export class ProductsService {
       throw new ForbiddenException('Bạn không có quyền sửa sản phẩm này');
     }
 
-    product.stock = stock;
-    await this.productRepository.save(product);
+    const kyVong = expectedStock ?? Number(product.stock);
+
+    const kq = await this.productRepository
+      .createQueryBuilder()
+      .update(Product)
+      .set({ stock })
+      .where('id = :id AND stock = :kyVong', { id: productId, kyVong })
+      .execute();
+    if (kq.affected !== 1) {
+      throw new ConflictException(
+        'Tồn kho vừa thay đổi (có đơn hàng mới hoặc người khác vừa sửa). ' +
+          'Mời bạn tải lại trang rồi nhập số mới.',
+      );
+    }
+
     await this.cacheDel(this.detailKey(productId));
     await this.moiDanhSach();
-    return product;
+
+    // Đọc lại từ database thay vì trả `product` đã nạp từ trước: sau câu UPDATE
+    // ở trên, bản trong bộ nhớ là bản cũ.
+    //
+    // `findOneOrFail` chứ không `findOne`: kiểu trả về phải là `Product`, không
+    // phải `Product | null`. Plugin Swagger của Nest suy ra schema từ kiểu trả
+    // về, và một union có `null` làm nó tụt xuống `type: object` — tức
+    // `openapi.json` mất `$ref` tới Product và ba client mất kiểu của endpoint
+    // này. Bản vá BUG-06 đã vô tình gây đúng chuyện đó; `npm run openapi:check`
+    // bắt được.
+    //
+    // Về nghiệp vụ thì ném cũng đúng hơn: sản phẩm vừa được UPDATE ở dòng trên
+    // mà đọc lại không thấy nghĩa là có người vừa xoá nó giữa chừng — đó là
+    // chuyện cần biết, không phải chuyện trả `null` rồi đi tiếp.
+    const moi = await this.productRepository.findOneOrFail({
+      where: { id: productId },
+      relations: ['seller'],
+    });
+
+    // TỒN KHO REAL-TIME (task #26b) — chỗ phát thứ ba.
+    //
+    // Đặt SAU khi đã đọc lại từ database: `moi.stock` là con số thật sau câu
+    // UPDATE ở trên, còn `stock` truyền vào chỉ là thứ người bán mong muốn —
+    // khoá lạc quan (`expectedStock`) có thể đã từ chối nó.
+    //
+    // `phat()` không bao giờ ném: người bán sửa kho xong không được nhận lỗi
+    // chỉ vì Redis đang hỏng.
+    await this.stockEvents.phat(productId, moi.stock);
+
+    return moi;
   }
 }

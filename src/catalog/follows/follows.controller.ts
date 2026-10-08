@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { FollowsService } from './follows.service';
 import { CreateFollowDto } from './dto/create-follow.dto';
 import { UpdateFollowDto } from './dto/update-follow.dto';
@@ -8,7 +18,10 @@ import { User } from '@common/decorators/user.decorator';
 import { Public } from '@common/decorators/public.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { User as UserEntity } from '@identity/users/entities/user.entity';
-import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
+import {
+  ApiPaginated,
+  ApiShape,
+} from '@common/decorators/api-response.decorator';
 
 @Controller('follows')
 export class FollowsController {
@@ -41,7 +54,7 @@ export class FollowsController {
   async count(@Param('userId') userId: string) {
     const follower = await this.followsService.countFollowers(+userId);
     const following = await this.followsService.countFollowings(+userId);
-    return {follower, following};
+    return { follower, following };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -49,7 +62,6 @@ export class FollowsController {
   @Get('check/:sellerId')
   async check(@Param('sellerId') sellerId: string, @User() user: IUser) {
     const followed = await this.followsService.isFollowing(user.id, +sellerId);
-     return { followed };
-  } 
-
+    return { followed };
+  }
 }

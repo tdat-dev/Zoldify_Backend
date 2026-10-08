@@ -122,8 +122,8 @@ describe('B-03: /escrows theo quyền sở hữu', () => {
 
     it('không trả nguyên bản ghi users (email, SĐT) ra ngoài', async () => {
       await service.findByOrder(99, admin);
-      await service.findBySeller(8, 1, 20);
-      await service.findAll(1, 20);
+      await service.findBySeller(8, 1, 20, undefined, admin);
+      await service.findAll(1, 20, undefined, admin);
       for (const opts of captured) {
         for (const party of ['buyer', 'seller'] as const) {
           if (opts.relations?.includes(party)) {

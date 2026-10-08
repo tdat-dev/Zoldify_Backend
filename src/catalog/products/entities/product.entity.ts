@@ -23,11 +23,20 @@ export enum ProductStatus {
 
 @Entity('products')
 @Index('idx_category_id', ['category'])
-@Index('idx_seller_id', ['seller'])
+// idx_seller_id (1 cột) ĐÃ BỎ ở migration DropRedundantPrefixIndexes2: thừa vì
+// idx_seller_status (seller_id, status) phủ nó theo quy tắc leftmost-prefix và
+// đỡ luôn khoá ngoại seller_id. Không khai lại — khai lại là bảo TypeORM dựng
+// lại đúng cái index vừa cố ý xoá.
 @Index('idx_status', ['status'])
 @Index('idx_created_at', ['created_at'])
 @Index('idx_price', ['price'])
-@Index('idx_seller_status', ['seller', 'status'])
+// Phủ cả WHERE (seller, status) LẪN ORDER BY created_at của gian hàng người
+// bán — `shop.getShopProducts`. Thay `idx_seller_status` cũ: index này phủ nó
+// theo quy tắc leftmost-prefix nên giữ cả hai là trả tiền ghi cho một thứ
+// không ai đọc. Migration 1788000000000.
+@Index('idx_seller_status_created', ['seller', 'status', 'created_at'])
+// FULLTEXT cho tìm kiếm sản phẩm — migration AddFulltextSearch tạo.
+@Index('ft_name_desc', ['name', 'description'], { fulltext: true })
 export class Product {
   // 1. ID tự tăng - Khóa chính (Primary Key)
   @PrimaryGeneratedColumn()
@@ -90,7 +99,7 @@ export class Product {
   @Column({ type: 'varchar', length: 20, default: 'new' })
   condition: string;
 
-  @Column({ type: 'tinyint', width: 1, default: 0 })
+  @Column({ type: 'boolean', default: false })
   is_freeship: boolean;
 
   @Column({ type: 'int', default: 0 })

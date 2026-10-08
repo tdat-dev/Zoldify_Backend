@@ -23,14 +23,10 @@ import {
   CancelPayosLinkDto,
   PayosPaymentType,
 } from './dto/create-link.dto';
-import { EscrowsService } from '@money/escrows/escrows.service';
 
 @Controller('payos')
 export class PayosController {
-  constructor(
-    private readonly payosService: PayosService,
-    private readonly escrowsService: EscrowsService,
-  ) {}
+  constructor(private readonly payosService: PayosService) {}
 
   /**
    * Tạo link thanh toán PayOS cho đơn hàng hoặc nạp ví
@@ -45,18 +41,27 @@ export class PayosController {
       if (!dto.order_id) {
         throw new BadRequestException('order_id là bắt buộc khi type = order');
       }
-      const result = await this.payosService.createOrderPaymentLink(
-        dto.order_id,
-        user.id,
-      );
-
-      // Tạo escrow sau khi tạo payment link (chưa paid, chờ webhook)
-      try {
-        await this.escrowsService.createOrderEscrows(dto.order_id);
-      } catch (e) {
-        // ignore nếu escrow đã tồn tại
-      }
-      return result;
+      // KHÔNG tạo ký quỹ ở đây. Tạo link thanh toán chỉ là mở một cái cổng —
+      // chưa ai trả đồng nào.
+      //
+      // Tới 24/09 chỗ này gọi `createOrderEscrows(dto.order_id)` ngay sau khi
+      // có link, kèm `catch {}` nuốt mọi lỗi. Khoản ký quỹ ra đời ở trạng thái
+      // `holding` trong khi `platform/escrow_hold` vẫn rỗng — tức sổ ghi "đang
+      // giữ hộ 500.000" mà két không có đồng nào.
+      //
+      // Hậu quả không dừng ở sổ sách lệch. `EscrowsService.release()` chỉ tìm
+      // khoản `holding` rồi chuyển tiền; nó không hỏi tiền ở đâu ra. Nên người
+      // mua bấm "đã nhận hàng" trên một đơn CHƯA TRẢ TIỀN là ví người bán được
+      // cộng thật, và `escrow_hold` xuống ÂM — sàn vừa trả cho người bán một
+      // khoản chưa ai nộp vào. Người bán rút ra được qua POST /withdrawals.
+      //
+      // Đo được bằng TC-P0-02b: escrow_hold = -500.000.
+      //
+      // Chỗ đúng để tạo ký quỹ là `payos.service.ts` → `applyPaidPayment`, nơi
+      // nó nằm CÙNG TRANSACTION với bút toán `gateway_clearing -> escrow_hold`.
+      // Tiền vào két và khoản giữ hộ ra đời chung một số phận, không có khoảng
+      // giữa nào để lọt.
+      return this.payosService.createOrderPaymentLink(dto.order_id, user.id);
     } else if (dto.type === PayosPaymentType.TOPUP) {
       if (!dto.amount) {
         throw new BadRequestException('amount là bắt buộc khi type = topup');

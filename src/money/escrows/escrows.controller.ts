@@ -10,13 +10,28 @@ import { EscrowsService } from './escrows.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { AdminGuard } from '@common/guards/admin.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
-import { Public } from '@common/decorators/public.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
 import { Escrow } from './entities/escrow.entity';
-import { ApiPaginated, ApiShape } from '@common/decorators/api-response.decorator';
+import {
+  ApiPaginated,
+  ApiShape,
+} from '@common/decorators/api-response.decorator';
 
+/**
+ * Bốn đường ĐỌC ký quỹ.
+ *
+ * Tới 25/09 cả bốn chỉ có `JwtAuthGuard` và dừng ở đó — không đường nào hỏi
+ * người đang gọi là ai. Bất kỳ tài khoản nào đăng nhập, kể cả vừa đăng ký, đều
+ * đọc được ký quỹ của cả sàn: ai mua gì của ai, bao nhiêu tiền, mỗi shop đang
+ * có bao nhiêu tiền chờ về. Sàn C2C thì các shop cạnh tranh trực tiếp với nhau.
+ *
+ * Việc kiểm quyền nằm trong `EscrowsService`, không nằm ở đây. Controller là
+ * một cửa; service là cái két. Kiểm ở cửa thì cửa thứ hai mở ra sau này — một
+ * controller khác, một job, một lời gọi nội bộ — sẽ đi thẳng vào két.
+ * Controller chỉ có nhiệm vụ chuyển `user` xuống.
+ */
 @Controller('escrows')
 export class EscrowsController {
   constructor(private readonly escrowsService: EscrowsService) {}
@@ -27,8 +42,13 @@ export class EscrowsController {
   @ApiPaginated(Escrow)
   @Get()
   @ResponseMessage('Lấy danh sách escrow thành công')
-  findAll(@Query('page') page: string, @Query('limit') limit: string, @Query('status') status: string) {
-    return this.escrowsService.findAll(+page || 1, +limit || 20, status);
+  findAll(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('status') status: string,
+    @User() user: IUser,
+  ) {
+    return this.escrowsService.findAll(+page || 1, +limit || 20, status, user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -49,8 +69,17 @@ export class EscrowsController {
     @Query('status') status: string,
     @User() user: IUser,
   ) {
+    // Hai lớp. `assertSelfOrAdmin` chặn ngay ở cửa cho lỗi 403 sớm và rõ;
+    // `EscrowsService.findBySeller` chặn lần nữa ở két. Cửa thứ hai mở ra sau
+    // này — một job, một script, một controller khác — sẽ không đi vòng qua được.
     this.assertSelfOrAdmin(+sellerId, user);
-    return this.escrowsService.findBySeller(+sellerId, +page || 1, +limit || 20, status);
+    return this.escrowsService.findBySeller(
+      +sellerId,
+      +page || 1,
+      +limit || 20,
+      status,
+      user,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -62,7 +91,7 @@ export class EscrowsController {
     @User() user: IUser,
   ) {
     this.assertSelfOrAdmin(+sellerId, user);
-    return this.escrowsService.getHeldBalance(+sellerId);
+    return this.escrowsService.getHeldBalance(+sellerId, user);
   }
 
   /** Người bán chỉ xem tiền của chính mình; admin xem của bất kỳ ai. */

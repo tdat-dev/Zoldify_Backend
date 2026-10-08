@@ -20,6 +20,11 @@ export enum WithdrawalStatus {
 @Entity('withdrawals')
 @Index('idx_user', ['user'])
 @Index('idx_status', ['status'])
+// Index ghép cho danh sách "của tôi, mới nhất trước" — do migration
+// AddListOrderingIndexes/Round2 tạo. Khai lại ở đây vì entity mới là nguồn mà
+// `migration:generate` và `synchronize` đọc: thiếu dòng này thì lần sinh
+// migration tới sẽ đề nghị XOÁ index đang phục vụ production.
+@Index('idx_user_created', ['user', 'created_at'])
 export class Withdrawal {
   @PrimaryGeneratedColumn()
   id: number;

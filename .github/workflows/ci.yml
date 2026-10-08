@@ -117,6 +117,17 @@ jobs:
       - name: Ranh giới nghiệp vụ
         run: npm run boundaries:check
 
+      # Hình dạng cụm (task #6). Đặt ở job này chứ không ở job có dịch vụ nền vì
+      # nó CHỈ đọc docker-compose.yml và Caddyfile — không dựng gì, không cần
+      # Docker. Chạy hết dưới 2 giây.
+      #
+      # Gác ba thứ mà xem diff rất khó thấy: ai đó trả `ports` về cho `api` (ba
+      # bản đụng cổng), ai đó nâng `worker` lên nhiều bản (hoàn tiền hai lần),
+      # hoặc ai đó đổi upstream của caddy về dạng tĩnh `api:3000` (nhân bản
+      # xong mà tải vẫn dồn vào một bản, không lỗi nào hiện ra).
+      - name: Hình dạng cụm
+        run: npm run check:compose
+
       - name: Build
         run: npm run build
 
@@ -161,6 +172,38 @@ jobs:
           DB_PASSWORD: testpw
           DB_DATABASE: zoldify_schema
 
+      # Ràng buộc: bất biến về tiền và tồn kho phải do DATABASE giữ, không phải
+      # do mã giữ. Chạy trên cùng lược đồ thật ở trên, vì `synchronize` KHÔNG
+      # sinh CHECK trên MySQL nên `npm test` không trả lời được câu này.
+      #
+      # Bộ kiểm INSERT dữ liệu sai thật rồi xem có bị từ chối không — đọc
+      # `information_schema` thì MySQL < 8.0.16 sẽ báo xanh giả.
+      - name: Ràng buộc DB giữ được bất biến tiền và kho
+        run: npm run check:constraints
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
+      # Entity phải mô tả ĐÚNG thứ migration đã dựng.
+      #
+      # Lệch giữa hai bên không làm test đỏ, không làm CI đỏ — nó chỉ nổ vào lần
+      # kế ai đó chạy `migration:generate`, khi TypeORM sinh ra một migration
+      # "sửa" lược đồ theo entity và xoá mất thứ đang phục vụ production.
+      #
+      # Suýt xảy ra thật: 10 index composite của ba epic tối ưu chưa bao giờ
+      # được khai ở entity, trong khi npm test vẫn xanh 130/130.
+      - name: Entity khớp lược đồ migration dựng
+        run: npm run check:drift
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
       # App có DỰNG ĐƯỢC không, và route có đúng đường dẫn không.
       #
       # Cổng này sinh ra vì `npm test` KHÔNG trả lời được câu đó: test đơn vị tự
@@ -169,13 +212,36 @@ jobs:
       # và sitemap (8/8 xanh, build sạch, `NestFactory.create` chết vì tham số
       # có giá trị mặc định bị Nest hiểu thành provider tên `Number`).
       #
-      # `test/app.e2e-spec.ts` có dựng AppModule thật, nhưng nó chạy bằng
-      # `npm run test:e2e` mà CI chưa bao giờ gọi. Một cái chốt không chạy thì
-      # không phải là chốt — đúng chuyện đã xảy ra với check:index.
+      # `test/app.e2e-spec.ts` ĐÃ XOÁ ngày 06/10 — lý do: file mẫu NestJS chưa
+      # bao giờ chạy được (thiếu moduleNameMapper trong jest-e2e.json nên alias
+      # @ops/... không phân giải được). `check:boot` là thứ thay thế, và nó MẠNH
+      # HƠN: 19 mục bao gồm GET /, /health, sitemap, request-id, 401 cho route
+      # cần token.
+      #
+      # ĐIỀU KIỆN ĐỂ DÙNG LẠI e2e: khi cần kiểm một luồng nhiều bước qua HTTP thật
+      # (đăng nhập -> dat don -> thanh toan -> giao hang) ma `check:boot` khong phu.
       #
       # Dùng `zoldify_schema` chứ không `zoldify_test`: app chạy
       # `synchronize: false`, nên nó cần lược đồ do migration dựng, không phải
       # lược đồ jest tự sinh.
+      # Nhật ký hành động admin (task #34) — bài kiểm ĐẦU-CUỐI.
+      #
+      # Spec jest của interceptor dựng ExecutionContext giả, nên nó chứng minh
+      # interceptor làm đúng việc của nó nhưng KHÔNG chứng minh một request
+      # admin thật đi qua nó. Bài này ký token admin thật, gọi route thật qua
+      # HTTP, rồi đếm dòng trong database.
+      #
+      # Cùng `zoldify_schema` với check:boot, vì cùng lý do: app chạy
+      # `synchronize: false` nên cần lược đồ do migration dựng.
+      - name: Hành động admin để lại vết
+        run: npm run check:audit
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: testpw
+          DB_DATABASE: zoldify_schema
+
       - name: App khởi động được và route đúng chỗ
         run: npm run check:boot
         env:

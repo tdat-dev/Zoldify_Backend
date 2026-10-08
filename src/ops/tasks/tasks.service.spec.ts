@@ -85,7 +85,18 @@ describe('TasksService — chọn đơn quá hạn', () => {
       },
     } as unknown as OrdersService;
 
-    tasks = new TasksService(ds.getRepository(Order), ordersService);
+    const cacheManager = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
+
+    tasks = new TasksService(
+      ds.getRepository(Order),
+      ds.getRepository(Product),
+      ordersService,
+      cacheManager,
+    );
   });
 
   /** created_at phải đặt bằng SQL: cột @CreateDateColumn tự ghi giờ hiện tại. */
@@ -159,7 +170,19 @@ describe('TasksService — chọn đơn quá hạn', () => {
         if (id === a) throw new Error('hoàn tiền hỏng');
       },
     } as unknown as OrdersService;
-    tasks = new TasksService(ds.getRepository(Order), boom);
+
+    const cacheManager = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
+
+    tasks = new TasksService(
+      ds.getRepository(Order),
+      ds.getRepository(Product),
+      boom,
+      cacheManager,
+    );
 
     await expect(tasks.autoCancelOrders()).resolves.toBeUndefined();
     expect(cancelled.sort()).toEqual([a, b].sort());

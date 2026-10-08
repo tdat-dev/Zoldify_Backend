@@ -282,14 +282,6 @@ package "money — thanh toán, ví, sổ cái" #FCE8E6 {
       order_id : int <<FK>>
       user_id : int <<FK>>
   }
-  entity "payos_webhook_logs" as payos_webhook_logs {
-    * <b>id</b> : int <<PK>>
-    --
-    * transaction_id : varchar(100) <<U>>
-    * body : json
-    * processed : tinyint
-    * created_at : timestamp(6)
-  }
   entity "wallet_transactions" as wallet_transactions {
     * <b>id</b> : int <<PK>>
     --

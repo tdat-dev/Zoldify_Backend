@@ -37,7 +37,7 @@ export class Category {
   image: string;
 
   // 6. Trạng thái hiển thị (1 = Đang hoạt động, 0 = Ẩn)
-  @Column({ type: 'tinyint', width: 1, default: 1 })
+  @Column({ type: 'boolean', default: true })
   is_active: boolean;
 
   // 7. Ngày tạo danh mục - Tự động tạo thời gian hiện tại

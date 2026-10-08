@@ -18,6 +18,12 @@ import { Order } from '@ordering/orders/entities/order.entity';
 // (product_id, created_at) phủ leftmost prefix + đỡ luôn FK product_id.
 // Xem migration 1787200000000. Giữ idx_user_product (UNIQUE, ràng buộc riêng).
 @Index('idx_user_product', ['user', 'product'], { unique: true })
+// Index ghép cho danh sách "của tôi, mới nhất trước" — do migration
+// AddListOrderingIndexes/Round2 tạo. Khai lại ở đây vì entity mới là nguồn mà
+// `migration:generate` và `synchronize` đọc: thiếu dòng này thì lần sinh
+// migration tới sẽ đề nghị XOÁ index đang phục vụ production.
+@Index('idx_product_created', ['product', 'created_at'])
+@Index('idx_created_at', ['created_at'])
 export class Review {
   @PrimaryGeneratedColumn()
   id: number;

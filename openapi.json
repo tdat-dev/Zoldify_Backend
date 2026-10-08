@@ -991,6 +991,79 @@
         ]
       }
     },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 201
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/LoginResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/v1/categories": {
       "post": {
         "operationId": "CategoriesController_create_v1",
@@ -1463,6 +1536,76 @@
             }
           }
         },
+        "tags": [
+          "Products"
+        ]
+      }
+    },
+    "/api/v1/products/mine": {
+      "get": {
+        "operationId": "ProductsController_findMine_v1",
+        "parameters": [
+          {
+            "name": "current",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Product"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Hàng của CHÍNH người đang đăng nhập — đủ mọi trạng thái.\n\nĐặt TRƯỚC `@Get(':id')`: Nest so khớp route theo thứ tự khai báo, nên nếu\nđứng sau thì `/products/mine` sẽ bị `:id` nuốt và `+'mine'` ra `NaN`.\n\n`sellerId` lấy từ TOKEN, không từ query — người bán chỉ xem được hàng của\nchính mình. Đó cũng là lý do đường này tồn tại: `GET /products` là công\nkhai nên không phân biệt được ai đang hỏi, và từ 25/09 nó lọc cứng\n`status = active` để tin nháp / bị từ chối duyệt không bày ra cho người lạ.",
         "tags": [
           "Products"
         ]
@@ -3453,53 +3596,6 @@
       "post": {
         "operationId": "GhnController_calculateFee_v1",
         "parameters": [],
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 201
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Ghn"
-        ]
-      }
-    },
-    "/api/v1/ghn/create-order": {
-      "post": {
-        "operationId": "GhnController_createOrder_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGhnOrderDto"
-              }
-            }
-          }
-        },
         "responses": {
           "201": {
             "description": "",
@@ -6304,6 +6400,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserByAdminDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -6436,6 +6542,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeRoleDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -6497,6 +6613,136 @@
             }
           }
         },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "operationId": "AdminController_getAuditLogs_v1",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "admin_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        },
+                        "result": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminActionLog"
+                          }
+                        }
+                      },
+                      "required": [
+                        "meta",
+                        "result"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Nhật ký hành động quản trị (task #34).\n\nChỉ có đọc, và cố ý không có route xoá: một nhật ký xoá được thì không còn\nlà bằng chứng — mà đúng người muốn xoá nó là người có quyền admin.\n\n`GET` nên chính route này KHÔNG tự ghi vào nhật ký. Ghi cả lượt xem nhật ký\nsẽ làm bảng tự sinh ra dữ liệu về chính nó và đẩy hành động thật xuống dưới.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ledger/doi-soat": {
+      "get": {
+        "operationId": "AdminController_doiSoatLedger_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Trang đối soát sổ cái (task #35).\n\nKiểm tra hai bất biến tiền của sổ cái:\n 1. SUM(amount) của TOÀN BỘ ledger_entries = 0\n 2. Với MỖI tài khoản: ledger_accounts.balance = SUM(ledger_entries.amount)\n\nChỉ có ĐỌC. `GET` nên KHÔNG tự ghi vào nhật ký admin — đúng như getAuditLogs.\nXem comment ở getAuditLogs để hiểu lý do.",
         "tags": [
           "Admin"
         ]
@@ -7472,6 +7718,17 @@
           "newPassword"
         ]
       },
+      "RefreshTokenDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
       "CreateCategoryDto": {
         "type": "object",
         "properties": {
@@ -7967,6 +8224,11 @@
           "order_code": {
             "type": "string"
           },
+          "idempotency_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "Khoá chống trùng — một giỏ hàng chỉ đặt được đúng một đơn.\n\nSinh từ `sha256(userId + ':' + các id dòng giỏ hàng đã sắp xếp)`. Người mua\nbấm \"Đặt hàng\" hai lần cùng lúc thì cả hai cùng sinh ra chuỗi này, và khoá\nUNIQUE dưới database để đúng một lượt đi qua. Lượt kia nhận lại chính đơn\nvừa tạo, không phải một thông báo lỗi.\n\nĐo được trước khi có nó, bằng `npm run check:race` R5: 20 lượt bấm đồng\nthời → 20 đơn, kho trừ 20 lần.\n\nNULL cho đơn có trước migration `1787900000000`. MySQL cho phép nhiều NULL\ntrong một khoá UNIQUE nên chúng không đụng nhau."
+          },
           "user": {
             "$ref": "#/components/schemas/User"
           },
@@ -8065,6 +8327,7 @@
         "required": [
           "id",
           "order_code",
+          "idempotency_key",
           "user",
           "total_amount",
           "shipping_fee",
@@ -8305,76 +8568,6 @@
           }
         }
       },
-      "OrderItemDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number",
-            "minimum": 1
-          },
-          "weight": {
-            "type": "number",
-            "minimum": 0
-          },
-          "price": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "name",
-          "quantity",
-          "weight",
-          "price"
-        ]
-      },
-      "CreateGhnOrderDto": {
-        "type": "object",
-        "properties": {
-          "to_name": {
-            "type": "string"
-          },
-          "to_phone": {
-            "type": "string"
-          },
-          "to_address": {
-            "type": "string"
-          },
-          "to_ward_code": {
-            "type": "string"
-          },
-          "to_district_id": {
-            "type": "number"
-          },
-          "weight": {
-            "type": "number",
-            "minimum": 0
-          },
-          "cod_amount": {
-            "type": "number",
-            "minimum": 0
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderItemDto"
-            }
-          }
-        },
-        "required": [
-          "to_name",
-          "to_phone",
-          "to_address",
-          "to_ward_code",
-          "to_district_id",
-          "weight",
-          "cod_amount",
-          "items"
-        ]
-      },
       "Escrow": {
         "type": "object",
         "properties": {
@@ -8391,7 +8584,12 @@
             "$ref": "#/components/schemas/User"
           },
           "amount": {
-            "type": "number"
+            "type": "number",
+            "description": "Tiền HÀNG của người bán này — tổng `subtotal` các món của họ. Phí sàn tính trên đúng số này."
+          },
+          "shipping_amount": {
+            "type": "number",
+            "description": "Phần PHÍ SHIP của người bán này, tách riêng khỏi tiền hàng.\n\nVÌ SAO PHẢI CÓ CỘT RIÊNG. Người mua trả `final_amount` (hàng + ship) và cả\nsố đó chảy vào `platform/escrow_hold`. Nhưng trước 24/09 khoản ký quỹ chỉ\nghi tiền hàng, nên phần ship KHÔNG CÓ ĐƯỜNG NÀO RA khỏi két: giải ngân thì\nngười bán không nhận được nó, hoàn tiền thì người mua cũng không. Nó đọng\nlại mãi mãi, mỗi đơn một ít. Đo bằng TC-P0-04a/b.\n\nVÌ SAO KHÔNG GỘP VÀO `amount`. Vì phí sàn tính trên `amount`, mà theo quyết\nđịnh của Đạt (24/09): *\"Tiền ship bên mua bán họ tự trả chứ sàn không thu\ntiền\"*. Sàn chỉ cầm hộ rồi chuyển đi — không được ăn phần trăm trên đó.\nGộp hai con số vào một cột là mất đúng ranh giới ấy.\n\nĐơn cũ (trước migration) để 0, nên tiền ship của chúng vẫn kẹt — cần đối\nsoát tay nếu production đã có đơn thật."
           },
           "status": {
             "enum": [
@@ -8424,6 +8622,7 @@
           "buyer",
           "seller",
           "amount",
+          "shipping_amount",
           "status",
           "released_at",
           "note",
@@ -9310,6 +9509,114 @@
             "type": "string"
           }
         }
+      },
+      "ChangeRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "buyer",
+              "seller",
+              "admin",
+              "moderator"
+            ]
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "UpdateUserByAdminDto": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "phone_number": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 20
+          },
+          "avatar": {
+            "type": "string"
+          },
+          "email_verified": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AdminActionLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "admin_id": {
+            "type": "number",
+            "description": "`users.id` của admin thực hiện. Để trần, xem ghi chú ở đầu file."
+          },
+          "method": {
+            "type": "string",
+            "description": "GET · POST · PATCH · PUT · DELETE"
+          },
+          "path": {
+            "type": "string",
+            "description": "Đường dẫn đã gọi, giữ nguyên tham số đường dẫn.\n\n512 chứ không 255: query string của `/admin/users?q=...&role=...` dài\nbất ngờ, mà cột quá ngắn thì MySQL **cắt cụt trong im lặng** ở chế độ\nmặc định — nhật ký mất phần đuôi mà không ai được báo."
+          },
+          "action": {
+            "type": "string",
+            "description": "Tên hành động đã chuẩn hoá, ví dụ `admin.users.toggle-lock`."
+          },
+          "target_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "Loại đối tượng bị tác động, ví dụ `users`, `withdrawals`, `settings`."
+          },
+          "target_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Id đối tượng, để chuỗi vì có route dùng khoá không phải số."
+          },
+          "status_code": {
+            "type": "number",
+            "nullable": true
+          },
+          "ip": {
+            "type": "string",
+            "nullable": true,
+            "description": "IP người gọi, lấy từ `req.ip`.\n\n45 ký tự vì IPv6 dạng ánh xạ IPv4 (`::ffff:255.255.255.255`) dài 45.\nTừ task #6 có Caddy đứng trước api, nên giá trị này chỉ đúng nhờ\n`trust proxy` đã bật trong `main.ts` — cùng lý do đã ghi ở\n`src/core/swagger-guard.ts:90`."
+          },
+          "user_agent": {
+            "type": "string",
+            "nullable": true
+          },
+          "payload": {
+            "type": "object",
+            "nullable": true,
+            "description": "Thân request ĐÃ LỌC khoá nhạy cảm. Xem `admin-audit.interceptor.ts`.\n\n`json` chứ không `text`: cần truy vấn được `payload->'$.role'` khi đi tìm\n\"ai đã nâng ai lên admin\"."
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "admin_id",
+          "method",
+          "path",
+          "action",
+          "target_type",
+          "target_id",
+          "status_code",
+          "ip",
+          "user_agent",
+          "payload",
+          "created_at"
+        ]
       },
       "Setting": {
         "type": "object",

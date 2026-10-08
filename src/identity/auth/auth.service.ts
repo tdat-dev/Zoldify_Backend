@@ -386,4 +386,67 @@ export class AuthService {
       gender: patch.gender ?? user.gender,
     };
   }
+
+  // ===================== REFRESH TOKEN =====================
+
+  async refreshToken(refreshToken: string) {
+    // Verify the refresh token
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(refreshToken, {
+        secret:
+          this.configService.get<string>('JWT_REFRESH_TOKEN_SECRET') || '',
+      });
+    } catch {
+      throw new BadRequestException(
+        'Refresh token không hợp lệ hoặc đã hết hạn',
+      );
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
+    });
+    if (!user) {
+      throw new BadRequestException('Người dùng không tồn tại');
+    }
+
+    // Check token_version to prevent reuse after logout
+    if (user.token_version !== payload.token_version) {
+      throw new BadRequestException(
+        'Refresh token đã bị thu hồi (đã đăng xuất)',
+      );
+    }
+
+    // Create new tokens
+    const newPayload = {
+      sub: user.id,
+      full_name: user.full_name,
+      email: user.email,
+      role: user.role,
+      token_version: user.token_version,
+    };
+
+    const newRefreshToken = this.createRefreshToken(newPayload);
+    await this.usersService.updateUserToken(
+      newRefreshToken,
+      user.id.toString(),
+    );
+
+    return {
+      access_token: this.jwtService.sign({
+        sub: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        token_version: user.token_version,
+      }),
+      refresh_token: newRefreshToken,
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+  }
 }

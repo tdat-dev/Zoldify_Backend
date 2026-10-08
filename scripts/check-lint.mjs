@@ -23,11 +23,28 @@
 // `lint:check` gọi thẳng eslint.
 import { ESLint } from 'eslint';
 
-// Đo ngày 2026-08-31, Node 24, trên staging sau khi gộp PR #18 + #19.
-// Mốc cũ 979 (đo 25/08). Hai PR đó viết lại chat.service.ts nên dọn kèm 13
-// vấn đề; hạ mốc ngay để 13 chỗ ấy không lặng lẽ mọc lại — bánh cóc chỉ có
-// tác dụng khi ai đó chịu vặn nó xuống sau mỗi lần sửa.
-const BASELINE = 943;
+// Đo ngày 2026-10-07, Node 24, trên cây SAU KHI gộp `origin/staging` (31 commit
+// của vai A, 63 file).
+//
+//   nhánh vai B trước khi gộp : 507   (sau đợt prettier toàn repo 06/10)
+//   nhánh vai A (staging)     : 943
+//   cây ĐÃ GỘP                : 521   ← số dưới đây
+//
+// 521 không phải số của bên nào. Nó là số ĐO LẠI trên một cái cây chưa từng tồn
+// tại trước đó: 63 file của vai A mang theo nợ của nhánh ấy, và nợ đó chưa bao
+// giờ nằm dưới bánh cóc của vai B. Chọn 507 là dựng một cái mốc mà cây hiện tại
+// không đạt được; chọn 943 là tự tháo bánh cóc. Cả hai đều là mốc chưa ai đo.
+//
+// ĐÂY KHÔNG PHẢI GIẤY PHÉP NÂNG MỐC. Mốc chỉ được đo lại khi hợp nhất hai dòng
+// mã độc lập. Nợ do chính thay đổi của mình sinh ra thì sửa thay đổi đó, không
+// nâng số này — đúng như đợt 06/10: `eslint --fix` xoá một ép kiểu làm nợ nhảy
+// lên 508, và cách xử lý là trả lại ép kiểu chứ không nâng mốc.
+//
+// 14 điểm chênh so với 507 nằm rải trong 76 file, phần lớn là `no-unsafe-*`
+// trong mã vai A (products.service 61, orders.service 34, payos 27,
+// chat.gateway 26). Không tự sửa được bằng `--fix` (chỉ 3/26 ở chat.gateway là
+// prettier), và sửa tay là chạm mã của vai A. Để lại cho một đợt dọn riêng.
+const BASELINE = 521;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);

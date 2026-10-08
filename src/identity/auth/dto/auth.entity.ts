@@ -66,3 +66,10 @@ export class ChangePasswordDto {
   @MinLength(6, { message: 'Mật khẩu mới phải có ít nhất 6 ký tự' })
   newPassword: string;
 }
+
+// 6. Luồng Làm mới access token bằng refresh token
+export class RefreshTokenDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Refresh token không được để trống' })
+  refreshToken: string;
+}

@@ -40,7 +40,9 @@ export enum ShipmentStatus {
  * là pickup của Shop người bán, đọc lúc tạo vận đơn — không chép lại ở đây.
  */
 @Entity('order_shipments')
-@Index('idx_shipment_order', ['order'])
+// idx_shipment_order (1 cột) ĐÃ BỎ ở migration DropRedundantPrefixIndexes2:
+// thừa vì uq_shipment_order_seller (order_id, seller_id) phủ nó theo quy tắc
+// leftmost-prefix và đỡ luôn khoá ngoại order_id.
 @Index('idx_shipment_seller', ['seller'])
 @Index('uq_shipment_order_seller', ['order', 'seller'], { unique: true })
 export class OrderShipment {
@@ -48,11 +50,21 @@ export class OrderShipment {
   id: number;
 
   @ManyToOne(() => Order, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'order_id' })
+  // Đặt TÊN khoá ngoại ngay ở đây thay vì để TypeORM tự sinh tên băm.
+  // Migration CreateOrderShipments đã đặt tên tay là `fk_shipment_order`;
+  // không khai lại thì TypeORM coi đó là một khoá lạ và mọi lần
+  // `migration:generate` sẽ đề nghị xoá rồi tạo lại bằng tên băm của nó.
+  @JoinColumn({
+    name: 'order_id',
+    foreignKeyConstraintName: 'fk_shipment_order',
+  })
   order: Order;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'seller_id' })
+  @JoinColumn({
+    name: 'seller_id',
+    foreignKeyConstraintName: 'fk_shipment_seller',
+  })
   seller: User;
 
   // Mã vận đơn GHN của riêng lô hàng người bán này.

@@ -2,6 +2,7 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from '@core/transform.interceptor';
 import { HttpExceptionFilter } from '@core/http-exception.filter';
+import { DatabaseExceptionFilter } from '@core/db-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { configureRouting } from './core/routing.config';
@@ -78,7 +79,21 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // HAI BỘ LỌC, HAI PHẠM VI KHÔNG GIAO NHAU.
+  //
+  // `HttpExceptionFilter` khai `@Catch(HttpException)` — mọi `QueryFailedError`
+  // lọt qua nó và rơi vào bộ xử lý mặc định của Nest, thành HTTP 500
+  // "Internal server error". Tức 9 ràng buộc CHECK và các khoá UNIQUE thêm ở
+  // đợt cứng hoá database khi nổ thì người dùng nhận đúng một dòng vô nghĩa,
+  // và phần lớn trong số đó thật ra là lỗi 4xx của dữ liệu gửi lên.
+  //
+  // `DatabaseExceptionFilter` bịt đúng khoảng trống đó: đổi mã lỗi MySQL thành
+  // mã HTTP đúng kèm câu tiếng Việt, và giữ `sqlMessage` (có tên bảng, tên
+  // ràng buộc, giá trị gây lỗi) lại trong log thay vì đẩy ra response.
+  app.useGlobalFilters(
+    new HttpExceptionFilter(),
+    new DatabaseExceptionFilter(),
+  );
 
   const reflector = app.get(Reflector);
   app.useGlobalInterceptors(new TransformInterceptor(reflector));

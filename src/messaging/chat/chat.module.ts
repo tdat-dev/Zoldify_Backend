@@ -18,7 +18,10 @@ import { NotificationsModule } from '@messaging/notifications/notifications.modu
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret: configService.get('JWT_ACCESS_SECRET') || '',
-        signOptions: { expiresIn: (configService.get<string>('JWT_ACCESS_EXPIRE') || '1d') as any },
+        signOptions: {
+          expiresIn: (configService.get<string>('JWT_ACCESS_EXPIRE') ||
+            '1d') as any,
+        },
       }),
       inject: [ConfigService],
     }),
@@ -27,4 +30,4 @@ import { NotificationsModule } from '@messaging/notifications/notifications.modu
   providers: [ChatService, ChatGateway],
   exports: [ChatService],
 })
-export class ChatModule { }
+export class ChatModule {}

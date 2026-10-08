@@ -84,6 +84,31 @@ export class PayosService {
       throw new BadRequestException('Đơn hàng đã được thanh toán');
     }
 
+    // KHÔNG MỞ CỔNG TRẢ TIỀN CHO ĐƠN ĐÃ ĐÓNG.
+    //
+    // Tới 25/09 hàm này không nhìn `order.status` một lần nào, nên người mua
+    // huỷ đơn xong vẫn tạo được link mới và trả tiền vào đó.
+    //
+    // `applyPaidPayment` có lưới đỡ cho trường hợp ấy — tiền về ví người mua
+    // thay vì hồi sinh đơn (xem nhánh `paidAfterCancel`). Nhưng đó là lưới
+    // CUỐI, dành cho link đã phát trước khi đơn bị huỷ và không đóng kịp. Mở
+    // một cổng MỚI cho đơn đã huỷ thì không có lý do nào biện minh: người mua
+    // trả tiền cho một thứ không còn tồn tại, rồi phải tự đi rút lại.
+    //
+    // `cancel()` đã gọi `voidOpenLinkForOrder` để đóng link cũ. Thiếu dòng này
+    // thì công đóng đó vô nghĩa — bấm tạo link lần nữa là có cổng mới.
+    const daDong: OrderStatus[] = [
+      OrderStatus.CANCELLED,
+      OrderStatus.REFUNDED,
+      OrderStatus.DELIVERED,
+    ];
+    if (daDong.includes(order.status)) {
+      throw new BadRequestException(
+        `Đơn hàng đang ở trạng thái "${order.status}" nên không tạo được link ` +
+          'thanh toán. Đơn đã huỷ thì đặt lại đơn mới.',
+      );
+    }
+
     const frontendUrl = siteUrlChinh(
       this.configService.get<string>('SITE_URL'),
     );

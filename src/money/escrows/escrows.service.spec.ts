@@ -207,9 +207,21 @@ describe('EscrowsService — giải ngân và hoàn tiền qua sổ cái', () =>
     ]);
 
     await escrows.release(orderId);
-    // Lần hai không còn escrow HOLDING nào nên ném lỗi — đó là hành vi đúng,
-    // điều bắt buộc là số dư không nhúc nhích.
-    await expect(escrows.release(orderId)).rejects.toThrow();
+
+    // Lần hai là NO-OP IM LẶNG, không ném.
+    //
+    // Đổi từ 24/09 (BUG-17). Bản cũ ném ở đây, và bài kiểm này chấp nhận điều
+    // đó — nhưng chính nó đã ghi rằng thứ bắt buộc là "số dư không nhúc nhích",
+    // còn việc ném chỉ là chi tiết đi kèm.
+    //
+    // Việc ném hoá ra có hại: sàn C2C nhả tiền theo TỪNG người bán
+    // (`confirmShipmentReceived`), nên tới lúc ai đó đặt đơn sang `delivered`
+    // thì thường đã không còn khoản `holding` nào. `orders.updateStatus` đổi
+    // ngoại lệ đó thành 400 "giải ngân ký quỹ thất bại" — người dùng nhận một
+    // thông báo lỗi về TIỀN trong khi không có gì sai xảy ra (TC-P2-17).
+    //
+    // Đơn KHÔNG có khoản ký quỹ nào thì vẫn ném — đó mới là bất thường thật.
+    await expect(escrows.release(orderId)).resolves.toEqual([]);
 
     expect(await balanceOf(sellerAId)).toBe(475_000n);
     expect(await revenueBalance()).toBe(25_000n);

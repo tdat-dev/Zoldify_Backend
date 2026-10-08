@@ -8,6 +8,7 @@ import { Follow } from '@catalog/follows/entities/follow.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { IUser } from '@identity/users/users.interface';
+import { StockEventsService } from '@catalog/stock/stock-events.service';
 
 /**
  * Cache danh sách sản phẩm — bài kiểm viết TRƯỚC.
@@ -147,12 +148,22 @@ describe('ProductsService — cache danh sách phải mới lại sau khi ghi', 
       create: () => Promise.resolve(undefined),
     } as unknown as NotificationsService;
 
+    // Phát tồn kho: BÀI KIỂM NÀY KHÔNG ĐO VIỆC PHÁT. Nó đo logic trừ/hoàn kho và
+    // tiền. Hình dạng gói tin do `stock-events.spec.ts` đo; còn "Redis thật có
+    // chuyển được gói tin không" do `npm run check:stock` đo — app thật, socket
+    // thật, đơn thật. Stub phải `resolve` chứ không `reject`: cả ba chỗ gọi đều
+    // `await` nó, và chúng nằm NGAY SAU khi transaction đã commit.
+    const khoPhat = {
+      phat: () => Promise.resolve(),
+    } as unknown as StockEventsService;
+
     svc = new ProductsService(
       ds.getRepository(Product),
       ds.getRepository(Follow),
       ds.getRepository(Shop),
       thongBaoGia,
       cache,
+      khoPhat,
     );
     dem.dem = 0;
   });
@@ -163,6 +174,54 @@ describe('ProductsService — cache danh sách phải mới lại sau khi ghi', 
     };
     return r.result.map((p) => p.name);
   };
+
+  /**
+   * BÀI KIỂM ĐỎ — danh sách công khai chỉ được hiện hàng ĐANG MỞ BÁN.
+   *
+   * `queryProductList` dựng `where = {}` ở nhánh thường và chỉ thêm điều kiện
+   * `MATCH`/`LIKE` ở nhánh tìm kiếm — KHÔNG nhánh nào lọc `status`. Nên mọi
+   * hàng `draft` (người bán còn đang soạn), `pending` (chờ duyệt) và
+   * `rejected` (đã bị từ chối duyệt) đều hiện ra cho bất kỳ ai mở trang chủ.
+   *
+   * Nặng nhất là `rejected`: quản trị viên vừa từ chối một tin đăng vì nội dung
+   * không phù hợp, mà nó vẫn nằm trên trang chủ.
+   *
+   * `orders.create` đã chặn MUA hàng không `active` (BUG-10b), nhưng chặn ở
+   * cửa sau không xoá được việc nó bày ra ở cửa trước.
+   */
+  it('danh sách KHÔNG hiện hàng draft / pending / rejected', async () => {
+    const [c] = await ds.query<Array<{ id: number }>>(
+      'SELECT id FROM categories ORDER BY id DESC LIMIT 1',
+    );
+    for (const st of ['draft', 'pending', 'rejected'] as const) {
+      await ds.query(
+        `INSERT INTO products (name, slug, price, stock, seller_id, category_id, status)
+         VALUES (?, ?, 1000, 5, ?, ?, ?)`,
+        [`Hang ${st}`, `hang-${st}`, sellerId, c.id, st],
+      );
+    }
+
+    const tenHien = await ten();
+    expect(tenHien).not.toContain('Hang draft');
+    expect(tenHien).not.toContain('Hang pending');
+    expect(tenHien).not.toContain('Hang rejected');
+    // Và hàng đang mở bán thì vẫn phải thấy — nếu không thì "sửa" bằng cách
+    // lọc mất tất cả cũng qua được bài kiểm này.
+    expect(tenHien).toContain('San pham 0');
+  });
+
+  it('tìm kiếm cũng KHÔNG hiện hàng chưa mở bán', async () => {
+    const [c] = await ds.query<Array<{ id: number }>>(
+      'SELECT id FROM categories ORDER BY id DESC LIMIT 1',
+    );
+    await ds.query(
+      `INSERT INTO products (name, slug, price, stock, seller_id, category_id, status)
+       VALUES ('San pham bi tu choi', 'sp-bi-tu-choi', 1000, 5, ?, ?, 'rejected')`,
+      [sellerId, c.id],
+    );
+
+    expect(await ten({ q: 'San pham' })).not.toContain('San pham bi tu choi');
+  });
 
   it('cache VẪN có tác dụng — gọi hai lần chỉ đọc database một lần', async () => {
     await ten();

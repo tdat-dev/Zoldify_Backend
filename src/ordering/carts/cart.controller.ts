@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { CartService } from './cart.service';
 import { CreateCartDto } from './dto/create-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
@@ -8,13 +18,16 @@ import { SkipCheckPermissions } from '@common/decorators/public.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
 import { Cart } from './entities/cart.entity';
-import { ApiEntity, ApiPaginated } from '@common/decorators/api-response.decorator';
+import {
+  ApiEntity,
+  ApiPaginated,
+} from '@common/decorators/api-response.decorator';
 import { MessageResponseDto } from '@common/dto/message-response.dto';
 
 @SkipCheckPermissions()
 @Controller('cart')
 export class CartController {
-  constructor(private readonly cartService: CartService) { }
+  constructor(private readonly cartService: CartService) {}
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Thêm mới vào giỏ hàng thành công')
@@ -41,7 +54,11 @@ export class CartController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật giỏ hàng thành công')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCartDto: UpdateCartDto, @User() user: IUser) {
+  update(
+    @Param('id') id: string,
+    @Body() updateCartDto: UpdateCartDto,
+    @User() user: IUser,
+  ) {
     return this.cartService.update(+id, updateCartDto, user);
   }
 

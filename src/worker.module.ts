@@ -3,6 +3,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JobsModule } from '@ops/jobs/jobs.module';
+import { StockEventsModule } from '@catalog/stock/stock-events.module';
 import { FirebaseModule } from '@messaging/firebase/firebase.module';
 import { cacheConfig } from './common/cache.config';
 
@@ -100,6 +101,14 @@ import { cacheConfig } from './common/cache.config';
     // dựng với "Nest can't resolve dependencies of the NotificationsService".
     // check:worker trên CI bắt được đúng lỗi này.
     FirebaseModule,
+
+    // CHỈ nửa PHÁT của tồn kho real-time, không có gateway.
+    //
+    // `cancelExpired` chạy mỗi giờ ở đây và nó hoàn kho, nên worker phải phát
+    // được sự kiện. Nhưng worker KHÔNG có socket server — nhập `StockModule`
+    // vào đây là dựng một Socket.IO thứ hai không ai nối vào, đúng thứ mà
+    // comment đầu file này nói là lý do không dùng lại AppModule.
+    StockEventsModule,
 
     JobsModule,
   ],

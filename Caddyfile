@@ -1,0 +1,79 @@
+# Caddy — TLS và đường vào duy nhất của cụm (task #6).
+#
+# Đọc kèm `docker-compose.yml`. Sau khi có file này, KHÔNG còn container nào
+# publish cổng ứng dụng ra máy chủ ngoài caddy: ba bản `api` nói chuyện với
+# caddy qua mạng nội bộ của compose.
+#
+# TÊN MIỀN LẤY TỪ BIẾN MÔI TRƯỜNG, và mặc định là `:80`.
+#
+#   API_DOMAIN=api.zoldify.com   -> caddy tự xin chứng chỉ Let's Encrypt
+#   API_DOMAIN trống             -> nghe HTTP cổng 80, KHÔNG xin chứng chỉ
+#
+# Mặc định phải là `:80` chứ không phải một tên miền nào đó: máy lập trình viên
+# `docker compose up` mà file này mặc định một tên miền thật thì caddy sẽ đi xin
+# chứng chỉ cho tên miền không trỏ về máy đó, hỏng, thử lại, và ăn vào hạn mức
+# 5 chứng chỉ/tuần/tên miền của Let's Encrypt — hạn mức đó tính theo TÊN MIỀN,
+# nên một máy cá nhân cấu hình sai làm hỏng luôn cả production.
+{
+	# Địa chỉ nhận thư hết hạn chứng chỉ. Để trống thì Let's Encrypt vẫn cấp,
+	# nhưng không ai được báo trước khi chứng chỉ sắp hết hạn.
+	email {$ACME_EMAIL:capstone@zoldify.com}
+
+	# Log của chính caddy ra stdout để `docker compose logs caddy` đọc được.
+	# Không ghi ra file trong container: mất khi tạo lại container, và không ai
+	# nhớ mount thêm một volume nữa chỉ để đọc log.
+	log {
+		output stdout
+		format json
+	}
+}
+
+# `{$BIEN:mặc định}` của Caddy CHỈ chạy khi biến KHÔNG ĐƯỢC ĐẶT. Biến được đặt
+# nhưng RỖNG thì nó thay bằng chuỗi rỗng, và dòng dưới thành `{` trần — caddy
+# từ chối cả file với "server block without any key is global configuration,
+# and if used, it must be first", một lời báo lỗi không hề nhắc tới biến nào.
+#
+# Dính thật lúc dựng cụm: `.env` có `API_DOMAIN=` (rỗng) nên compose truyền vào
+# một biến rỗng, và cả ba lần caddy khởi động lại đều chết ở đây. Nên
+# docker-compose.yml truyền `${API_DOMAIN:-:80}` — cú pháp `:-` của compose
+# thì rỗng CŨNG rơi về mặc định. Giá trị mặc định dưới đây giữ lại cho trường
+# hợp chạy caddy trực tiếp, không qua compose.
+{$API_DOMAIN::80} {
+	encode zstd gzip
+
+	reverse_proxy {
+		# `dynamic a` CHỨ KHÔNG PHẢI `reverse_proxy api:3000`.
+		#
+		# Viết `api:3000` thì caddy giải tên một lần lúc khởi động và giữ đúng
+		# MỘT địa chỉ IP. Compose dựng ba bản api, DNS nội bộ của Docker trả về
+		# ba bản ghi A — nhưng caddy đã chốt bản đầu tiên, nên hai bản còn lại
+		# ngồi không trong khi bản thứ nhất vẫn nghẽn đúng như cũ. Cụm trông như
+		# đã nhân ba mà số đo không nhúc nhích; đây là kiểu hỏng im lặng nhất
+		# của task này, vì mọi thứ đều "chạy".
+		#
+		# `dynamic a` hỏi lại DNS mỗi `refresh`, nên bản api mới dựng lên là
+		# vào đội ngay, và bản chết bị loại khỏi danh sách.
+		dynamic a {
+			name api
+			port 3000
+			refresh 10s
+		}
+
+		# Chọn bản đang ít việc nhất, không phải xoay vòng. Lý do nằm ở
+		# load-test.md: các route của hệ này lệch nhau tới 10 lần về thời gian
+		# (sitemap con 1173 rps so với "đơn của tôi" 308 rps). Xoay vòng đều
+		# tay sẽ dồn hai request nặng vào cùng một bản trong khi bản bên cạnh
+		# rảnh — mà một bản Node bận là TẤT CẢ request trên bản đó xếp hàng.
+		lb_policy least_conn
+
+		# Bản api chết thì loại khỏi đội trong 10 giây thay vì cứ đẩy request
+		# vào. `GET /` là healthcheck rẻ nhất, không chạm database.
+		health_uri /
+		health_interval 10s
+		health_timeout 3s
+
+		# Socket chat đi qua đây: caddy tự nhận `Upgrade: websocket` và chuyển
+		# tiếp, không cần khai gì thêm. Trạng thái socket nằm ở Redis (task #5)
+		# nên rơi vào bản api nào cũng được.
+	}
+}

@@ -58,6 +58,33 @@ export class ProductsController {
     return this.productsService.findAll(currentPage, limit, qs);
   }
 
+  /**
+   * Hàng của CHÍNH người đang đăng nhập — đủ mọi trạng thái.
+   *
+   * Đặt TRƯỚC `@Get(':id')`: Nest so khớp route theo thứ tự khai báo, nên nếu
+   * đứng sau thì `/products/mine` sẽ bị `:id` nuốt và `+'mine'` ra `NaN`.
+   *
+   * `sellerId` lấy từ TOKEN, không từ query — người bán chỉ xem được hàng của
+   * chính mình. Đó cũng là lý do đường này tồn tại: `GET /products` là công
+   * khai nên không phân biệt được ai đang hỏi, và từ 25/09 nó lọc cứng
+   * `status = active` để tin nháp / bị từ chối duyệt không bày ra cho người lạ.
+   */
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Lấy danh sách sản phẩm của tôi thành công!')
+  @ApiPaginated(Product)
+  @Get('mine')
+  findMine(
+    @User() user: IUser,
+    @Query('current') currentPage: string,
+    @Query('pageSize') limit: string,
+  ) {
+    return this.productsService.findMine(
+      user.id,
+      Number(currentPage) || 1,
+      Number(limit) || 20,
+    );
+  }
+
   @ResponseMessage('Lấy thông tin sản phẩm thành công!')
   @Public()
   @Get(':id')

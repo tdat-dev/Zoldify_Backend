@@ -1,5 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import Redis from 'ioredis';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
@@ -37,9 +37,13 @@ import { SitemapModule } from '@catalog/sitemap/sitemap.module';
 import { HealthModule } from '@ops/health/health.module';
 import { RequestIdMiddleware } from '@common/request-id.middleware';
 import { AdminModule } from '@ops/admin/admin.module';
+import { StockEventsModule } from '@catalog/stock/stock-events.module';
+import { StockModule } from '@catalog/stock/stock.module';
 import { SettingsModule } from '@ops/settings/settings.module';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
 import { LedgerModule } from '@money/ledger/ledger.module';
+import { AdminAuditInterceptor } from '@ops/admin/admin-audit.interceptor';
+import { AdminActionLog } from '@ops/admin/entities/admin-action-log.entity';
 import { RecommendationsModule } from '@catalog/recommendations/recommendations.module';
 @Module({
   imports: [
@@ -163,11 +167,21 @@ import { RecommendationsModule } from '@catalog/recommendations/recommendations.
     SitemapModule,
     HealthModule,
     AdminModule,
+
+    // Tồn kho real-time (task #26b). API cần CẢ HAI nửa: nó đổi kho (bên
+    // phát) và phục vụ socket (bên nhận). Worker chỉ nhập nửa phát.
+    StockEventsModule,
+    StockModule,
     SettingsModule,
     WithdrawalsModule,
 
     LedgerModule,
     RecommendationsModule,
+    // Repository cho interceptor nhật ký admin đăng ký ở `providers` bên dưới.
+    // Interceptor toàn cục được dựng trong ngữ cảnh của CHÍNH AppModule, nên
+    // `forFeature` phải nằm ở đây — khai trong AdminModule thì repository không
+    // tới được nó và app chết lúc khởi động với "Nest can't resolve".
+    TypeOrmModule.forFeature([AdminActionLog]),
 
     // JwtService cho MaintenanceGuard. Guard toàn cục được dựng trong injector
     // của module GỐC, mà JwtModule tới giờ chỉ khai bên trong AuthModule — nên
@@ -190,6 +204,21 @@ import { RecommendationsModule } from '@catalog/recommendations/recommendations.
     {
       provide: APP_GUARD,
       useClass: MaintenanceGuard,
+    },
+    // Nhật ký hành động admin (task #34).
+    //
+    // TOÀN CỤC chứ không gắn vào từng controller: 19 route admin nằm ở NĂM
+    // controller khác nhau (`admin`, `users`, `wallets`, `withdrawals.admin`,
+    // `settings`). Gắn tay từng chỗ thì route thêm sau sẽ thiếu — và route
+    // thêm sau chính là route chưa ai kịp nghĩ kỹ. Đăng ký một lần ở đây, rồi
+    // để interceptor tự lọc theo `AdminGuard`.
+    //
+    // Nó chỉ ghi các phương thức đổi trạng thái, nên đặt toàn cục KHÔNG làm
+    // mọi request phải chạm database: điều kiện lọc chạy trước, và với GET thì
+    // nó trả về ngay chuỗi gốc.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AdminAuditInterceptor,
     },
   ],
 })

@@ -1,4 +1,13 @@
-import { IsNotEmpty, IsString, IsOptional, IsEnum, IsNumber, Min, IsInt, IsArray } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  Min,
+  IsInt,
+  IsArray,
+} from 'class-validator';
 import { PaymentMethod } from '@common/enums/payment.enum';
 
 export class CreateOrderDto {

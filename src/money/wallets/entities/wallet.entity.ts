@@ -18,7 +18,7 @@ export class Wallet {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.00 })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0.0 })
   balance: number;
 
   @CreateDateColumn({ type: 'timestamp' })

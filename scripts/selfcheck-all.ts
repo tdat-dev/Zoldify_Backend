@@ -15,6 +15,11 @@ const suites: Array<{ name: string; file: string }> = [
   // package.json. Hỏng cấu hình thì biết ngay trong một giây, không phải đợi
   // ba suite database chạy xong mới lộ.
   { name: 'Task #4 — hợp đồng CI (không cần DB)', file: 'selfcheck-ci.ts' },
+  // Cùng nhóm với suite trên: chỉ đọc docker-compose.yml và Caddyfile, không
+  // dựng gì, xong dưới hai giây. Đặt sớm vì hỏng ở đây nghĩa là cụm deploy ra
+  // sai hình dạng — đắt hơn mọi suite nghiệp vụ phía dưới, mà lại rẻ nhất để
+  // biết.
+  { name: 'Task #6 — hình dạng cụm: caddy · api ×3 · mem_limit (không cần DB)', file: 'selfcheck-compose.ts' },
   // Cũng không cần database — chỉ đọc file, chỉ mục git, và chạy thử phần dọn
   // file cũ trên một thư mục giả. Đặt ngay sau CI vì cùng tính chất: rẻ, và
   // hỏng thì phải biết trước khi đợi ba suite database.
@@ -31,12 +36,34 @@ const suites: Array<{ name: string; file: string }> = [
   // sinh ra sau khi sitemap có 8/8 test xanh mà `NestFactory.create` chết —
   // test đơn vị tự `new` service nên không đi qua bộ tiêm phụ thuộc.
   { name: 'Khởi động — app dựng được, route đúng chỗ (cần DB đã migrate)', file: 'selfcheck-boot.ts' },
+  // Ngay sau suite khởi động vì cùng tính chất: nó dựng app THẬT rồi gọi HTTP
+  // thật. Hỏng ở đây nghĩa là hành động quản trị không để lại vết — biết sớm
+  // hơn ba suite nghiệp vụ phía dưới.
+  { name: 'Task #34 — nhật ký hành động admin (cần DB đã migrate)', file: 'selfcheck-audit.ts' },
   { name: 'Epic 0/1/2 — dữ liệu sạch + phân trang + keyset', file: 'selfcheck.ts' },
   { name: 'Epic 3 — index (hết filesort)', file: 'selfcheck-indexes.ts' },
+  // HAI SUITE NÀY CHẠY TRONG CI TỪ ĐỢT B NHƯNG CHƯA BAO GIỜ NẰM Ở ĐÂY.
+  //
+  // Nghĩa là người chạy `npm run check` trên máy mình thấy xanh, đẩy lên, rồi
+  // CI đỏ ở hai cổng họ không có cách nào chạy trước. Lệch giữa "cổng cục bộ"
+  // và "cổng CI" làm cả hai mất giá trị: cổng cục bộ nói dối, còn cổng CI thì
+  // chỉ báo lỗi sau khi đã mất một vòng đẩy–chờ–đỏ.
+  //
+  // Phát hiện lúc gộp bốn nhánh 02/10: `ci.yml` có 4 cổng DB mới, mà
+  // `selfcheck-all.ts` chỉ có 2.
+  { name: 'Ràng buộc DB giữ được bất biến tiền và kho', file: 'selfcheck-constraints.ts' },
+  { name: 'Lệch lược đồ — entity mô tả đúng database', file: 'selfcheck-schema-drift.ts' },
   // Cần schema thật (đủ 25 bảng + index của migration), không phải schema do
   // jest synchronize dựng. Xem bước 'Dựng schema thật để soi' trong ci.yml.
   { name: 'Đua — 20 người bấm cùng lúc', file: 'selfcheck-race.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
+  // Đặt CUỐI vì đây là suite đắt nhất về hạ tầng: cần DB test, cần Redis, dựng
+  // app thật rồi mở hai socket client thật. Mọi suite phía trên hỏng thì hỏng
+  // vì lý do rẻ hơn và cần biết trước.
+  {
+    name: 'Task #26b — tồn kho real-time (cần Redis + DB đã migrate)',
+    file: 'selfcheck-stock.ts',
+  },
 ];
 
 const scriptsDir = __dirname;

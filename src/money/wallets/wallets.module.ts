@@ -16,4 +16,4 @@ import { LedgerModule } from '@money/ledger/ledger.module';
   providers: [WalletsService],
   exports: [WalletsService],
 })
-export class WalletsModule { }
+export class WalletsModule {}

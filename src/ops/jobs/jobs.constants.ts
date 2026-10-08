@@ -12,6 +12,7 @@ export const TEN_HANG_DOI = 'zoldify-jobs';
 
 export const JOB_HUY_DON_QUA_HAN = 'huy-don-qua-han';
 export const JOB_CHOT_VAN_DON = 'chot-van-don';
+export const JOB_FLUSH_VIEW_COUNT = 'flush-view-count';
 
 export interface LichLap {
   /** Khoá của bản ghi lịch trong Redis. ĐỔI id = tạo lịch mới, không phải sửa. */
@@ -43,5 +44,10 @@ export const LICH_LAP: readonly LichLap[] = [
     id: JOB_CHOT_VAN_DON,
     ten: JOB_CHOT_VAN_DON,
     pattern: '23 * * * *',
+  },
+  {
+    id: JOB_FLUSH_VIEW_COUNT,
+    ten: JOB_FLUSH_VIEW_COUNT,
+    pattern: '*/5 * * * *', // Mỗi 5 phút
   },
 ];

@@ -10,11 +10,20 @@ import {
 } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
-import { PaymentMethod, PaymentStatus, PaymentType } from '@common/enums/payment.enum';
+import {
+  PaymentMethod,
+  PaymentStatus,
+  PaymentType,
+} from '@common/enums/payment.enum';
 
 @Entity('payments')
 @Index('idx_user_id', ['user'])
 @Index('idx_order_id', ['order'])
+// Index ghép cho danh sách "của tôi, mới nhất trước" — do migration
+// AddListOrderingIndexes/Round2 tạo. Khai lại ở đây vì entity mới là nguồn mà
+// `migration:generate` và `synchronize` đọc: thiếu dòng này thì lần sinh
+// migration tới sẽ đề nghị XOÁ index đang phục vụ production.
+@Index('idx_user_created', ['user', 'created_at'])
 export class Payment {
   @PrimaryGeneratedColumn()
   id: number;

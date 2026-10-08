@@ -16,4 +16,4 @@ import { User } from '@identity/users/entities/user.entity';
   controllers: [InteractionsController],
   providers: [InteractionsService],
 })
-export class InteractionsModule { }
+export class InteractionsModule {}

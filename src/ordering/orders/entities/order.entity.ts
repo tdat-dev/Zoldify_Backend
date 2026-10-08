@@ -28,6 +28,11 @@ export enum OrderStatus {
 @Index('idx_created_at', ['created_at'])
 @Index('idx_user_status', ['user', 'status'])
 @Index('idx_user_created', ['user', 'created_at'])
+// Index PHỦ cho hai câu cộng doanh thu của bảng điều khiển (admin.getStats và
+// orders.getStats). Có `final_amount` ở cuối để MySQL đọc xong ngay trong
+// index, khỏi lần về bảng. Đo: type=ALL rows=1000 -> type=ref rows=681,
+// "Using index". Migration 1788000000000.
+@Index('idx_paid_status_amount', ['is_paid', 'status', 'final_amount'])
 export class Order {
   @PrimaryGeneratedColumn()
   id: number;
@@ -35,6 +40,24 @@ export class Order {
   // Mã đơn hàng (ví dụ: ORD-20260520-001)
   @Column({ type: 'varchar', length: 50, unique: true })
   order_code: string;
+
+  /**
+   * Khoá chống trùng — một giỏ hàng chỉ đặt được đúng một đơn.
+   *
+   * Sinh từ `sha256(userId + ':' + các id dòng giỏ hàng đã sắp xếp)`. Người mua
+   * bấm "Đặt hàng" hai lần cùng lúc thì cả hai cùng sinh ra chuỗi này, và khoá
+   * UNIQUE dưới database để đúng một lượt đi qua. Lượt kia nhận lại chính đơn
+   * vừa tạo, không phải một thông báo lỗi.
+   *
+   * Đo được trước khi có nó, bằng `npm run check:race` R5: 20 lượt bấm đồng
+   * thời → 20 đơn, kho trừ 20 lần.
+   *
+   * NULL cho đơn có trước migration `1787900000000`. MySQL cho phép nhiều NULL
+   * trong một khoá UNIQUE nên chúng không đụng nhau.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  @Index('uq_order_idempotency', { unique: true })
+  idempotency_key: string | null;
 
   // Người đặt hàng
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
@@ -87,7 +110,7 @@ export class Order {
   payment_method: PaymentMethod;
 
   // Trạng thái thanh toán
-  @Column({ type: 'tinyint', width: 1, default: 0 })
+  @Column({ type: 'boolean', default: false })
   is_paid: boolean;
 
   // Ngày thanh toán (nếu có)

@@ -47,7 +47,6 @@ export class SeedBaselineData1787000000000 implements MigrationInterface {
         ['Admin Zoldify', email, hashSync(password, 10)],
       );
     } else {
-      // eslint-disable-next-line no-console
       console.log(
         '[SeedBaselineData] Bỏ qua admin: chưa đặt ADMIN_EMAIL/ADMIN_PASSWORD.',
       );

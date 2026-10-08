@@ -1,6 +1,5 @@
 import {
   Entity,
-  Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
@@ -12,7 +11,15 @@ import { User } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 
 @Entity('conversations')
-@Index('idx_buyer_seller_product', ['buyer', 'seller', 'product'], { unique: true })
+@Index('idx_buyer_seller_product', ['buyer', 'seller', 'product'], {
+  unique: true,
+})
+// Index ghép cho danh sách "của tôi, mới nhất trước" — do migration
+// AddListOrderingIndexes/Round2 tạo. Khai lại ở đây vì entity mới là nguồn mà
+// `migration:generate` và `synchronize` đọc: thiếu dòng này thì lần sinh
+// migration tới sẽ đề nghị XOÁ index đang phục vụ production.
+@Index('idx_buyer_updated', ['buyer', 'updated_at'])
+@Index('idx_seller_updated', ['seller', 'updated_at'])
 export class Conversation {
   @PrimaryGeneratedColumn()
   id: number;

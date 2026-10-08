@@ -114,7 +114,12 @@ export function decodeCursor(cursor: string): KeysetCursor {
   const bar = raw.lastIndexOf('|');
   const createdAt = bar >= 0 ? raw.slice(0, bar) : '';
   const id = Number(raw.slice(bar + 1));
-  if (bar < 0 || !CURSOR_TS_RE.test(createdAt) || !Number.isInteger(id) || id < 0) {
+  if (
+    bar < 0 ||
+    !CURSOR_TS_RE.test(createdAt) ||
+    !Number.isInteger(id) ||
+    id < 0
+  ) {
     throw new BadRequestException('Con trỏ phân trang (cursor) không hợp lệ');
   }
   return { createdAt, id };

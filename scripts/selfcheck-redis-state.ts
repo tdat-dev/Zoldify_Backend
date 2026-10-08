@@ -44,7 +44,18 @@ const APP_MODULE = path.join(ROOT, 'src', 'app.module.ts');
 const GATEWAY = path.join(ROOT, 'src', 'messaging', 'chat', 'chat.gateway.ts');
 const CI = path.join(ROOT, '.github', 'workflows', 'ci.yml');
 
-const REDIS_URL = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6380';
+// Cổng 6379, KHÔNG phải 6380.
+//
+// Trước 07/10 mặc định ở đây là 6380, trong khi `.env` của môi trường dev ghi
+// `REDIS_URL=redis://127.0.0.1:6379`. Hai con số lệch nhau làm hai chuyện:
+// `check:boot` đỏ với `TypeError: fetch failed` (app không nối được Redis ở
+// 6379), và cổng này đỏ vì không có ai nghe ở 6380. Cả hai lần đều bị chẩn đoán
+// nhầm thành "lỗi có sẵn của repo" trước khi đo ra nguyên nhân thật.
+//
+// Nay thống nhất một cổng cho cả `.env`, container test và cổng này. Lệch cấu
+// hình giữa hai file là loại lỗi đắt nhất để tìm, vì không file nào sai một
+// mình.
+const REDIS_URL = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379';
 
 let failures = 0;
 const ok = (m: string) => console.log(`  \x1b[32m✓ PASS\x1b[0m  ${m}`);

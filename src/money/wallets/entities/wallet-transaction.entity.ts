@@ -18,6 +18,11 @@ export enum TransactionType {
 
 @Entity('wallet_transactions')
 @Index('idx_wallet', ['wallet'])
+// Index ghép cho danh sách "của tôi, mới nhất trước" — do migration
+// AddListOrderingIndexes/Round2 tạo. Khai lại ở đây vì entity mới là nguồn mà
+// `migration:generate` và `synchronize` đọc: thiếu dòng này thì lần sinh
+// migration tới sẽ đề nghị XOÁ index đang phục vụ production.
+@Index('idx_wallet_created', ['wallet', 'created_at'])
 export class WalletTransaction {
   @PrimaryGeneratedColumn()
   id: number;

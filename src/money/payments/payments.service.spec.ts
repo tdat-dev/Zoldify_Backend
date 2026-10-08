@@ -41,7 +41,21 @@ describe('PaymentsService — không có đường tự nạp ví', () => {
     findOne: async () => null,
   } as never;
 
-  const service = new PaymentsService(repos, repos, repos, wallets);
+  // Hai phụ thuộc cuối (escrow, DataSource) cũng cho nổ: bài kiểm này đo nhánh
+  // TỪ CHỐI nạp ví, nhánh đó phải quay đầu trước khi chạm tới bất kỳ cái nào.
+  const escrows = {
+    createOrderEscrows: explode('createOrderEscrows'),
+  } as never;
+  const dataSource = { transaction: explode('transaction') } as never;
+
+  const service = new PaymentsService(
+    repos,
+    repos,
+    repos,
+    wallets,
+    escrows,
+    dataSource,
+  );
 
   it('gửi amount thì bị từ chối, ví không hề bị chạm vào', async () => {
     await expect(service.create({ amount: 999_999_999 }, user)).rejects.toThrow(

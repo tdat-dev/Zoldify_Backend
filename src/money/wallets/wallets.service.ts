@@ -139,24 +139,34 @@ export class WalletsService {
     reference?: string,
     note?: string,
     idempotencyKey?: string,
+    manager?: EntityManager,
   ) {
     this.assertPositive(amount);
-    const wallet = await this.getOrCreateWallet(userId);
+    const wallet = await this.ledger.getOrCreateAccount(
+      LedgerOwnerType.USER,
+      userId,
+      LedgerPurpose.AVAILABLE,
+      manager,
+    );
     const hold = await this.ledger.getOrCreateAccount(
       LedgerOwnerType.PLATFORM,
       null,
       LedgerPurpose.ESCROW_HOLD,
+      manager,
     );
 
-    await this.ledger.post({
-      idempotencyKey: idempotencyKey ?? `wallet_deduct:${randomUUID()}`,
-      type: LedgerTxType.ORDER_HOLD,
-      metadata: { reference, note },
-      entries: [
-        { accountId: Number(wallet.id), amount: -BigInt(Math.round(amount)) },
-        { accountId: Number(hold.id), amount: BigInt(Math.round(amount)) },
-      ],
-    });
+    await this.ledger.post(
+      {
+        idempotencyKey: idempotencyKey ?? `wallet_deduct:${randomUUID()}`,
+        type: LedgerTxType.ORDER_HOLD,
+        metadata: { reference, note },
+        entries: [
+          { accountId: Number(wallet.id), amount: -BigInt(Math.round(amount)) },
+          { accountId: Number(hold.id), amount: BigInt(Math.round(amount)) },
+        ],
+      },
+      manager,
+    );
 
     return this.getBalance(userId);
   }

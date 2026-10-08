@@ -1,8 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, IsNull } from 'typeorm';
+import { Product } from '@catalog/products/entities/product.entity';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { OrdersService } from '@ordering/orders/orders.service';
+import type { Cache } from 'cache-manager';
+import Redis from 'ioredis';
 
 /** Đơn để quá lâu mà không nhúc nhích thì bị huỷ. */
 const STALE_AFTER_HOURS = 48;
@@ -24,12 +28,32 @@ const STALE_AFTER_HOURS = 48;
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
+  private readonly redis: Redis | null = null;
 
   constructor(
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
     private readonly ordersService: OrdersService,
-  ) {}
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
+  ) {
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) {
+      // Fail-open: không có Redis thì không flush view_count, tuyệt đối không chặn boot
+      this.logger.warn('REDIS_URL không có — bỏ qua flush view_count');
+      return;
+    }
+    this.redis = new Redis(redisUrl, {
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+    });
+    this.redis.on('error', (err) => {
+      // on('error') chỉ bắt SỰ KIỆN KẾT NỐI, không bắt lệnh bị từ chối.
+      // Lệnh incr/get/set bị reject là promise rejection riêng, phải try/catch ở chỗ gọi.
+    });
+  }
 
   /**
    * Huỷ những đơn nằm im quá 48 giờ.
@@ -122,5 +146,103 @@ export class TasksService {
     } catch (err) {
       this.logger.error(`Lượt chốt vận đơn lỗi: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Flush view_count tu Redis ve MySQL.
+   *
+   * Chay moi 5 phut (pattern: mot nguoc 5 * * * *). Redis key: `view_count:{productId}`.
+   * Dung SCAN de lay tat ca key `view_count:*`, doc gia tri, cong vao MySQL,
+   * roi xoa key trong Redis. Dung pipeline de toi uu.
+   * on('error') chỉ bắt sự kiện kết nối — lệnh SCAN/GET/DEL bị reject phải try/catch.
+   */
+  async flushViewCount() {
+    if (!this.redis) return;
+
+    const keys: string[] = [];
+    let cursor = '0';
+    try {
+      do {
+        const [nextCursor, found] = await this.redis.scan(
+          cursor,
+          'MATCH',
+          'view_count:*',
+          'COUNT',
+          100,
+        );
+        cursor = nextCursor;
+        keys.push(...found);
+      } while (cursor !== '0');
+    } catch (err) {
+      this.logger.error(`flushViewCount SCAN lỗi: ${(err as Error).message}`);
+      return;
+    }
+
+    if (!keys.length) return;
+
+    let results: Array<[Error | null, unknown]> = [];
+    try {
+      const pipeline = this.redis.pipeline();
+      for (const key of keys) {
+        pipeline.get(key);
+      }
+      results = (await pipeline.exec()) ?? [];
+    } catch (err) {
+      this.logger.error(
+        `flushViewCount GET pipeline lỗi: ${(err as Error).message}`,
+      );
+      return;
+    }
+
+    // Gom theo productId và cộng vào MySQL
+    const updates: Record<number, number> = {};
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const count = results[i]?.[1];
+      if (count) {
+        const productId = parseInt(key.replace('view_count:', ''), 10);
+        if (!isNaN(productId)) {
+          updates[productId] =
+            (updates[productId] || 0) + parseInt(String(count), 10);
+        }
+      }
+    }
+
+    // Cap nhat MySQL bang bulk update
+    for (const [productIdStr, count] of Object.entries(updates)) {
+      const productId = parseInt(productIdStr, 10);
+      if (!isNaN(productId)) {
+        try {
+          await this.productRepository.increment(
+            { id: productId },
+            'view_count',
+            count,
+          );
+        } catch (err) {
+          this.logger.error(
+            `flushViewCount increment product ${productId} lỗi: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
+    // Xoa key trong Redis sau khi flush
+    if (keys.length) {
+      try {
+        const delPipeline = this.redis.pipeline();
+        for (const key of keys) {
+          delPipeline.del(key);
+        }
+        await delPipeline.exec();
+      } catch (err) {
+        this.logger.error(
+          `flushViewCount DEL pipeline lỗi: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Flush view_count: cap nhat ${Object.keys(updates).length} san pham.`,
+    );
   }
 }

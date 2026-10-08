@@ -12,7 +12,8 @@ Mọi lệnh dưới đây đã được chạy thật trên máy Windows + Dock
 | | |
 |---|---|
 | Docker Engine | 24 trở lên (`docker compose` là lệnh con, không phải `docker-compose`) |
-| Cổng trống | một cổng cho API, mặc định 3000 |
+| Cổng trống | **80 và 443** cho `caddy` — từ task #6, đó là đường vào duy nhất; `api` không còn publish cổng nào. Máy đã dùng 80/443 thì đặt `CADDY_HTTP_PORT` / `CADDY_HTTPS_PORT` |
+| RAM | **≥4GB**. Trần RAM của cụm cộng lại 3200M (xem `.env.sample`); máy 2GB phải hạ `API_REPLICAS` và `API_MEM` xuống |
 | Dung lượng | ~1.5GB cho ảnh và dữ liệu MySQL |
 
 Không cần cài Node, không cần cài MySQL. Cả hai nằm trong container.
@@ -50,21 +51,28 @@ npm run docker:logs    # xem log của api
 Kiểm tra:
 
 ```bash
-curl http://localhost:3000/
+curl http://localhost/
 # {"statusCode":200,"message":"","data":"Hello World!"}
 ```
 
-Tài liệu API: <http://localhost:3000/api/docs>
+Tài liệu API: <http://localhost/api/docs>
 
-Cổng khác 3000 thì đặt `API_PORT=3010` trong `.env`. Bên trong container ứng
-dụng luôn nghe cổng 3000; chỉ ánh xạ ra máy chủ là đổi.
+**Cổng 80 chứ không phải 3000 nữa.** Từ task #6 cụm chạy ba bản `api`, và ba
+bản không thể cùng ánh xạ một cổng host — `caddy` là đường vào duy nhất. Máy đã
+có thứ khác giữ cổng 80 thì đặt `CADDY_HTTP_PORT=8080` trong `.env`.
+
+Xem cụm đang chạy mấy bản:
+
+```bash
+docker compose ps api        # phải ra 3 dòng
+```
 
 ---
 
-## Ba dịch vụ, chạy đúng thứ tự này
+## Sáu dịch vụ, chạy đúng thứ tự này
 
 ```
-mysql  →  migrate (chạy một lần rồi thoát)  →  api
+mysql + redis  →  migrate (chạy một lần rồi thoát)  →  api ×3 + worker ×1  →  caddy
 ```
 
 `api` chỉ khởi động khi `migrate` đã thoát bằng mã 0
@@ -236,9 +244,9 @@ hoặc tải file trực tiếp trên dashboard Cloudflare (R2, bucket
 | Thứ | Trạng thái |
 |---|---|
 | CI/CD | không có `.github/workflows` trong bất kỳ repo nào |
-| HTTPS / reverse proxy | `r2-container` vẽ Caddy; chưa dựng |
+| HTTPS / reverse proxy | **đã dựng** (task #6): `caddy` kết thúc TLS, chia tải cho ba bản api bằng `dynamic a`. Chưa ai kiểm trên VPS thật xem thứ gì đang giữ 80/443 — phải làm trước lần deploy đầu |
 | Redis | **không có dòng code nào dùng** — bộ nhớ đệm nằm trong tiến trình Node (`CacheModule.register()`), nên compose cũng không khởi động Redis |
-| Nhân bản API | chặn bởi chỗ để ảnh: volume nằm trên một máy, hai bản API không dùng chung được |
+| Nhân bản API | **đã có** (task #6): ba bản, `API_REPLICAS` chỉnh được. Chỗ để ảnh không còn chặn vì cả ba bản ở **cùng một VPS** nên mount chung `product-images`; trải ra nhiều máy mới cần R2/S3 |
 | Healthcheck thật | `GET /` chỉ nói tiến trình còn sống, **không** chạm database. Cụm vẫn báo healthy khi MySQL đã chết |
 
 ---
@@ -254,8 +262,28 @@ trường thiếu; `npm run env:check` liệt kê biến nào chưa có.
 **`migrate` thoát khác 0.** `api` sẽ không khởi động — đó là chủ ý. Đọc
 `docker compose logs migrate`, sửa, rồi `npm run docker:up` lại.
 
-**`ports are not available: ... 3000`.** Cổng đang bị chiếm, thường là bởi
-`npm run start:dev` chạy song song. Đặt `API_PORT=3010`.
+**`ports are not available: ... 80`** (hoặc 443). Cổng đang bị chiếm — trên VPS
+thường là một reverse proxy cài thẳng trên máy, trên máy cá nhân thường là IIS
+hay một cụm compose khác. Xem ai giữ rồi đặt cổng khác:
+
+```bash
+ss -ltnp | grep -E ':(80|443)'      # Linux
+netstat -ano -p tcp | findstr ":80 "  # Windows
+```
+
+```
+CADDY_HTTP_PORT=8080
+CADDY_HTTPS_PORT=8443
+```
+
+**`api` chết với mã 137 lúc tải cao, log không có lỗi nào.** Đó là OOM-killer,
+không phải app crash. Trần đặt ở `API_MEM`, và `API_HEAP_MB` phải THẤP HƠN nó —
+Node không đọc `mem_limit`, nó nhắm kích thước heap theo RAM của cả máy.
+
+**Cụm chạy nhưng số đo không khá hơn một bản.** Kiểm `docker compose ps api` ra
+đủ ba dòng, rồi kiểm `Caddyfile` còn dùng `dynamic a`. Dạng
+`reverse_proxy api:3000` chốt một IP lúc khởi động: ba bản chạy, tải dồn vào
+một. `npm run check:compose` gác đúng chỗ này.
 
 **Muốn xoá sạch làm lại từ đầu:**
 

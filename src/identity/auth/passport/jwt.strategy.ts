@@ -21,12 +21,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const user = await this.userRepository.findOne({ where: { id: payload.sub } });
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
+    });
     if (!user) throw new UnauthorizedException('Người dùng không tồn tại');
     // Khoá tài khoản phải có hiệu lực ngay trên mọi request (audit B-04).
     if (user.is_locked) throw new UnauthorizedException('Tài khoản đã bị khóa');
     if (payload.token_version !== user.token_version) {
-      throw new UnauthorizedException('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+      throw new UnauthorizedException(
+        'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại',
+      );
     }
     return {
       id: payload.sub,

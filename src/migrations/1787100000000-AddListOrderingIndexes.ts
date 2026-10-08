@@ -22,12 +22,16 @@ export class AddListOrderingIndexes1787100000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // notifications.findAll: WHERE user_id ORDER BY created_at DESC
     await queryRunner
-      .query(`CREATE INDEX idx_user_created ON notifications (user_id, created_at)`)
+      .query(
+        `CREATE INDEX idx_user_created ON notifications (user_id, created_at)`,
+      )
       .catch(() => {});
 
     // interactions.findByProduct (reviews): WHERE product_id ORDER BY created_at DESC
     await queryRunner
-      .query(`CREATE INDEX idx_product_created ON reviews (product_id, created_at)`)
+      .query(
+        `CREATE INDEX idx_product_created ON reviews (product_id, created_at)`,
+      )
       .catch(() => {});
 
     // interactions.findAll (reviews, admin): ORDER BY created_at DESC toàn bảng
@@ -37,14 +41,24 @@ export class AddListOrderingIndexes1787100000000 implements MigrationInterface {
 
     // chat.getMessages (messages): WHERE conversation_id ORDER BY created_at DESC
     await queryRunner
-      .query(`CREATE INDEX idx_conversation_created ON messages (conversation_id, created_at)`)
+      .query(
+        `CREATE INDEX idx_conversation_created ON messages (conversation_id, created_at)`,
+      )
       .catch(() => {});
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX idx_user_created ON notifications`).catch(() => {});
-    await queryRunner.query(`DROP INDEX idx_product_created ON reviews`).catch(() => {});
-    await queryRunner.query(`DROP INDEX idx_created_at ON reviews`).catch(() => {});
-    await queryRunner.query(`DROP INDEX idx_conversation_created ON messages`).catch(() => {});
+    await queryRunner
+      .query(`DROP INDEX idx_user_created ON notifications`)
+      .catch(() => {});
+    await queryRunner
+      .query(`DROP INDEX idx_product_created ON reviews`)
+      .catch(() => {});
+    await queryRunner
+      .query(`DROP INDEX idx_created_at ON reviews`)
+      .catch(() => {});
+    await queryRunner
+      .query(`DROP INDEX idx_conversation_created ON messages`)
+      .catch(() => {});
   }
 }

@@ -64,11 +64,11 @@ export class User {
   // 1786600000000-DropUserBalanceColumn.
 
   // 1 = đã xác thực email - TINYINT(1) (boolean)
-  @Column({ type: 'tinyint', width: 1, default: 0 })
+  @Column({ type: 'boolean', default: false })
   email_verified: boolean;
 
   // 1 = tài khoản bị khóa - TINYINT(1) (boolean)
-  @Column({ type: 'tinyint', width: 1, default: 0 })
+  @Column({ type: 'boolean', default: false })
   is_locked: boolean;
 
   // Lần cuối online - DATETIME, có thể null

@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { GhnService } from './ghn.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
-import { CreateGhnOrderDto } from './dto/create-order.dto';
 
 @Controller('ghn')
 export class GhnController {
@@ -49,9 +48,20 @@ export class GhnController {
     return this.ghnService.calculateFee(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('create-order')
-  createOrder(@Body() dto: CreateGhnOrderDto) {
-    return this.ghnService.createOrder(dto);
-  }
+  // ĐÃ GỠ: POST /ghn/create-order
+  //
+  // Nó chỉ có `JwtAuthGuard`, nhận payload tuỳ ý, và KHÔNG gắn với đơn hàng
+  // nào. Nghĩa là bất kỳ ai đăng nhập cũng tạo được vận đơn GHN bằng tài khoản
+  // và tiền của sàn — địa chỉ nhận tuỳ ý, tiền thu hộ tuỳ ý, số lượng tuỳ ý.
+  // Mỗi vận đơn là một khoản phí thật, và không có gì trong hệ thống ghi nhận
+  // ai đã tạo nó hay vì sao.
+  //
+  // Luồng tạo vận đơn THẬT không đi qua đây: nó nằm ở
+  // `orders.updateStatus` → `createGhnShipmentsPerSeller`, nơi vận đơn được
+  // dựng từ dữ liệu của chính đơn hàng, một vận đơn cho mỗi người bán, và ghi
+  // vào bảng `order_shipments` để còn đối soát.
+  //
+  // Đã kiểm 25/09: KHÔNG nhánh nào của cả ba client (frontend, mobile, admin)
+  // gọi endpoint này. Gỡ hẳn thay vì bọc thêm guard — một cửa không ai dùng
+  // thì cách bảo vệ rẻ nhất là không có cửa.
 }
