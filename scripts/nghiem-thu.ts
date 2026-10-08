@@ -352,6 +352,17 @@ const CONG: Cong[] = [
     dieuKien: canDbDev,
     soDo: soDoTuPassFail,
   },
+  // `canCaHai` chứ không `canMySQL`: bài này cần CẢ Redis. Không có Redis thì
+  // `phat()` im lặng bỏ qua (đúng cho production) và cổng sẽ đỏ với thông điệp
+  // "socket không nhận được gói nào" — tức báo sai nguyên nhân. Chính script
+  // cũng tự dò Redis ở mục 1 và dừng sớm, nhưng dò ở đây mới cho ra BỎ QUA kèm
+  // lý do thay vì HỎNG.
+  {
+    ten: 'check:stock',
+    lenh: 'npm run check:stock',
+    dieuKien: canCaHai,
+    soDo: soDoTuPassFail,
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -43,14 +43,15 @@ Mẫu đáng bắt chước: `src/common/request-id.middleware.ts`,
 Repo có sẵn công cụ. Dùng chúng trước khi kết luận:
 
 ```
-npm run nghiem-thu    BẢY cổng + cây sạch, GHI kết quả ra nghiem-thu.md
-npm run check         chạy tất cả suite tự kiểm (14 suite)
+npm run nghiem-thu    18 cổng + cây sạch, GHI kết quả ra nghiem-thu.md
+npm run check         chạy tất cả suite tự kiểm (15 suite)
+npm run check:stock   đổi kho thật → socket thật, qua Redis thật (#26b)
 npm run check:boot    app dựng được không, route đúng chỗ không
 npm run check:race    20 người bấm cùng lúc — DA_BIET_HONG phải TRỐNG
 npm run sql:audit     mỗi file sinh câu SQL nào, câu nào chậm
 npm run loadtest      RPS · p95 · event loop lag · bài chèn ngang
 npm run log:summary   đọc log JSON ra bảng p50/p95 theo route
-npm run lint:check    bánh cóc 507, chỉ được giảm
+npm run lint:check    bánh cóc 521, chỉ được giảm
 ```
 
 **Nghiệm thu thì dùng `npm run nghiem-thu`, đừng chạy tay từng lệnh.** Nó ghi

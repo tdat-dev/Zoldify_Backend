@@ -118,13 +118,14 @@ DB_DATABASE=zoldify_schema node ./node_modules/typeorm/cli.js migration:run -d d
 ## 7. Các cổng kiểm
 
 ```
-npm test              98 bài, 15 suite, chạy trên MySQL thật
-npm run nghiem-thu    BẢY cổng + cây sạch, GHI kết quả ra nghiem-thu.md
-npm run check         chạy TẤT CẢ suite tự kiểm (14 suite)
+npm test              332 bài, 51 suite, chạy trên MySQL thật
+npm run nghiem-thu    18 cổng + cây sạch, GHI kết quả ra nghiem-thu.md
+npm run check         chạy TẤT CẢ suite tự kiểm (15 suite)
 npm run check:boot    app dựng được không, route đúng chỗ không   ← quan trọng
 npm run check:race    20 người bấm cùng lúc; DA_BIET_HONG phải TRỐNG
 npm run check:index   mọi list nặng phải có index ghép
-npm run lint:check    bánh cóc 507, chỉ được giảm
+npm run check:stock   đổi kho thật → socket thật, qua Redis thật (#26b)
+npm run lint:check    bánh cóc 521, chỉ được giảm
 npm run sql:audit     mỗi file sinh câu SQL nào, câu nào chậm
 npm run loadtest      RPS · p95 · event loop lag · bài chèn ngang
 npm run log:summary   đọc log JSON ra bảng p50/p95 theo route

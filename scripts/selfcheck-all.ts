@@ -57,6 +57,13 @@ const suites: Array<{ name: string; file: string }> = [
   // jest synchronize dựng. Xem bước 'Dựng schema thật để soi' trong ci.yml.
   { name: 'Đua — 20 người bấm cùng lúc', file: 'selfcheck-race.ts' },
   { name: 'Epic 4 — cache (hit==DB, không stale, fail-open)', file: 'selfcheck-cache.ts' },
+  // Đặt CUỐI vì đây là suite đắt nhất về hạ tầng: cần DB test, cần Redis, dựng
+  // app thật rồi mở hai socket client thật. Mọi suite phía trên hỏng thì hỏng
+  // vì lý do rẻ hơn và cần biết trước.
+  {
+    name: 'Task #26b — tồn kho real-time (cần Redis + DB đã migrate)',
+    file: 'selfcheck-stock.ts',
+  },
 ];
 
 const scriptsDir = __dirname;
