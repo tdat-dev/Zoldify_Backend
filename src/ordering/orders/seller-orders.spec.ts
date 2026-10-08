@@ -3,6 +3,22 @@ import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 
 /**
+ * Stub của `StockEventsService` cho mọi chỗ tự new service thay vì để bộ tiêm phụ thuộc dựng.
+ *
+ * VÌ SAO PHẢI CÓ, KHI npm test ĐÃ XANH MÀ KHÔNG CÓ NÓ.
+ *
+ * Đo ngày 07/10: thiếu đối số này, ts-jest KHÔNG báo lỗi TS2554 — bốn spec vẫn
+ * xanh với this.stockEvents === undefined, và chỉ nổ vào ngày có người thêm một
+ * ca chạm tới đường dẫn gọi phat(). Cùng khiếm khuyết đó thì ts-node (dùng cho
+ * scripts/) BÁO NGAY, nên check:cache đỏ còn npm test xanh — hai công cụ, hai
+ * câu trả lời, cho cùng một dòng mã.
+ *
+ * resolve chứ không reject: cả ba chỗ gọi đều await nó, và chúng nằm NGAY SAU
+ * khi transaction đã commit.
+ */
+const khoPhat = { phat: () => Promise.resolve() } as never;
+
+/**
  * Lỗi H-02 của đợt test E2E Android 30/09 — bài kiểm viết TRƯỚC.
  *
  * Người mua đặt đơn xong, người bán KHÔNG biết: backend chỉ tạo thông báo cho
@@ -148,6 +164,7 @@ function makeService() {
     {} as never,
     {} as never,
     dataSource as never,
+    khoPhat,
   );
   return { svc, notifications };
 }

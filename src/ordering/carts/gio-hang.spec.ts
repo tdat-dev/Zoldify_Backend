@@ -15,6 +15,22 @@ import { IUser } from '@identity/users/users.interface';
 import { createCache } from 'cache-manager';
 
 /**
+ * Stub của `StockEventsService` cho mọi chỗ tự new service thay vì để bộ tiêm phụ thuộc dựng.
+ *
+ * VÌ SAO PHẢI CÓ, KHI npm test ĐÃ XANH MÀ KHÔNG CÓ NÓ.
+ *
+ * Đo ngày 07/10: thiếu đối số này, ts-jest KHÔNG báo lỗi TS2554 — bốn spec vẫn
+ * xanh với this.stockEvents === undefined, và chỉ nổ vào ngày có người thêm một
+ * ca chạm tới đường dẫn gọi phat(). Cùng khiếm khuyết đó thì ts-node (dùng cho
+ * scripts/) BÁO NGAY, nên check:cache đỏ còn npm test xanh — hai công cụ, hai
+ * câu trả lời, cho cùng một dòng mã.
+ *
+ * resolve chứ không reject: cả ba chỗ gọi đều await nó, và chúng nằm NGAY SAU
+ * khi transaction đã commit.
+ */
+const khoPhat = { phat: () => Promise.resolve() } as never;
+
+/**
  * BÀI KIỂM ĐỎ — BUG-22. Giỏ hàng không kiểm gì ngoài "có phải hàng của mình".
  *
  * `cart.service.ts` kiểm đúng hai thứ: sản phẩm có tồn tại, và người mua không
@@ -116,6 +132,7 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
       ds.getRepository(Shop),
       notifications,
       createCache({ ttl: 30_000 }),
+      khoPhat,
     );
     cart = new CartService(ds.getRepository(Cart), products);
   });
