@@ -7027,6 +7027,113 @@
           "Settings"
         ]
       }
+    },
+    "/api/v1/products/{id}/related": {
+      "get": {
+        "operationId": "RecommendationsController_related_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "\"Người mua món này cũng mua\" — trang chi tiết sản phẩm.\n\nCÔNG KHAI, không cần đăng nhập: khách chưa có tài khoản vẫn xem trang sản\nphẩm, và đó chính là lúc gợi ý có giá trị nhất. Vì công khai nên nó chỉ\ntrả về sản phẩm `active` còn hàng — không rò gì về người mua.",
+        "tags": [
+          "Recommendations"
+        ]
+      }
+    },
+    "/api/v1/recommendations/me": {
+      "get": {
+        "operationId": "MyRecommendationsController_forMe_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "MyRecommendations"
+        ]
+      }
     }
   },
   "info": {

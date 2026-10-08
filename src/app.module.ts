@@ -40,6 +40,7 @@ import { AdminModule } from '@ops/admin/admin.module';
 import { SettingsModule } from '@ops/settings/settings.module';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
 import { LedgerModule } from '@money/ledger/ledger.module';
+import { RecommendationsModule } from '@catalog/recommendations/recommendations.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -166,6 +167,7 @@ import { LedgerModule } from '@money/ledger/ledger.module';
     WithdrawalsModule,
 
     LedgerModule,
+    RecommendationsModule,
 
     // JwtService cho MaintenanceGuard. Guard toàn cục được dựng trong injector
     // của module GỐC, mà JwtModule tới giờ chỉ khai bên trong AuthModule — nên
