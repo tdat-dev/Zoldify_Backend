@@ -157,7 +157,7 @@ là chốt.
 | # | Việc | Ghi chú |
 |---|---|---|
 | ~~**34**~~ | ~~**Rà bảo mật**~~ **XONG 29/09** — cả ba mục: Swagger `/api/docs` đã có guard (`src/core/swagger-guard.ts`, production trả 404 với request ở xa); `openapi.json` được `openapi:check` gác trong CI; **nhật ký hành động admin** xong hôm nay | Vai **B** (bảng phân công dòng 230, không phải vai A). Xem `docs/bao-cao/task-34-nhat-ky-admin.md`. Thêm `npm run check:audit` — dựng app thật, ký token admin thật, gọi route thật, đếm dòng trong DB |
-| **6** | Nhiều tiến trình api + `caddy` + `mem_limit` | quá hạn 16/08. CPU bão hoà từ 10 người bấm cùng lúc — đây là thứ duy nhất đẩy trần lên |
+| ~~**6**~~ | ~~Nhiều tiến trình api + `caddy` + `mem_limit`~~ **ĐÃ XONG trong mã, kiểm tại `80c5ca7` (08/10) — dòng này trong bảng bị để sót, không cập nhật khi xong** — `docker-compose.yml`: `api` ×3 bản + `worker` ×1 + `caddy` + `mem_limit` mọi service, tổng 3520M ≤ ngân sách 4096M. Cổng `npm run check:compose` 24/24 PASS, đã có trong `nghiem-thu.md` dòng `check:compose`. **Chưa merge vào `staging`**: nằm trên nhánh đã push `merge/staging-07-10` (44 commit trước `origin/staging`), chờ cùng 13 mục `docs/bao-cao/soat-ban-hoa-cho-dat.md`. **Chặn thật trước khi merge**: chưa ai SSH vào VPS chạy `ss -ltnp \| grep -E ':(80\|443)'` để biết cổng 80/443 đang bị cái gì giữ — xem comment trong `docker-compose.yml` dòng ~378 | quá hạn 16/08 theo lịch, nhưng mã không còn là việc còn thiếu |
 | — | Idempotency ở đặt hàng — bấm hai lần tạo hai đơn | tiền thì sổ cái che, đơn thì không |
 | — | **0 ràng buộc `CHECK` ở tầng database** | `stock >= 0` mới chỉ có mã bảo vệ |
 | — | 7 chỗ CAO + 13 chỗ VỪA trong `sql-audit.md` | OFFSET sâu · `COUNT(*)` mọi trang · `findAndCount` hai bước |
