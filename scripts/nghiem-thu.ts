@@ -500,7 +500,21 @@ async function main(): Promise<void> {
   process.exit(ketLuan === 'ĐẠT' ? 0 : 1);
 }
 
-/** Lấy dòng có ích nhất trong đầu ra của một cổng đỏ, để dán vào file. */
+/**
+ * Rút phần có ích trong đầu ra của một cổng đỏ, để dán vào `nghiem-thu.md`.
+ *
+ * LẤY TỐI ĐA 12 DÒNG, KHÔNG PHẢI MỘT.
+ *
+ * Bản đầu lấy đúng một dòng: dòng đầu khớp một mẫu ưu tiên, hoặc dòng cuối nếu
+ * không mẫu nào khớp. Đo ngày 08/10 trên lượt chạy thật của commit 4ffbd2e:
+ * `check:drift` đỏ với BẢY câu ALTER cụ thể, mà file chỉ ghi được
+ * "nếu entity đúng. Đừng hạ ngưỡng để đi qua." — tức dòng gợi ý cuối cùng, vô
+ * nghĩa với người đọc. Một bản ghi nghiệm thu không nói được cổng đỏ vì cái gì
+ * thì không còn là bằng chứng, chỉ còn là một ô màu đỏ.
+ *
+ * Mẫu `^\s*(ALTER|DROP|CREATE|RENAME) ` có mặt vì đó đúng hình dạng đầu ra của
+ * `check:drift`, cổng duy nhất kể lỗi bằng SQL chứ không bằng dòng `✗ FAIL`.
+ */
 function layDongLoi(ra: string): string {
   const dong = ra.split('\n').map((d) => d.trimEnd());
   const uuTien = [
@@ -509,13 +523,26 @@ function layDongLoi(ra: string): string {
     /vấn đề lint MỚI/,
     /^(Error|TypeError|ReferenceError):/,
     /FAIL src\//,
+    /^\s*(ALTER|DROP|CREATE|RENAME) /,
   ];
+
+  // Gom THEO MẪU, không gom theo thứ tự dòng: một cổng vừa có `✗ FAIL` vừa có
+  // vệt `error TS` thì dòng FAIL mới là dòng người đọc cần trước.
+  const lay: string[] = [];
   for (const mau of uuTien) {
-    const hit = dong.find((d) => mau.test(d));
-    if (hit) return hit.trim().slice(0, 200);
+    for (const d of dong) {
+      if (!mau.test(d)) continue;
+      const sach = d.trim().slice(0, 200);
+      if (sach && !lay.includes(sach)) lay.push(sach);
+      if (lay.length >= 12) break;
+    }
+    if (lay.length >= 12) break;
   }
-  const cuoi = dong.filter(Boolean).slice(-1)[0] ?? '';
-  return cuoi.slice(0, 200);
+  if (lay.length) return lay.join('\n');
+
+  // Không mẫu nào khớp: lấy NĂM dòng cuối, không phải một. Dòng cuối rất hay là
+  // dòng gợi ý chung chung, còn nguyên nhân nằm ngay trên nó.
+  return dong.filter(Boolean).slice(-5).map((d) => d.slice(0, 200)).join('\n');
 }
 
 function ghiFile(
