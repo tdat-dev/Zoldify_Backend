@@ -223,6 +223,56 @@ async function canCaHai(): Promise<string | null> {
 }
 
 /**
+ * `check:core` KHÔNG chạy trên database dev — nó thuộc `zoldify_bulk_test`.
+ *
+ * Mục (c) của nó đòi `orders` ≥ 500k ("quy mô đạt yêu cầu đề bài",
+ * `scripts/selfcheck.ts:91`), và theo `docs/BAN-GIAO.md` mục 6 thì database đó
+ * phải được dựng bằng `migration + seed + seed:bulk` (~2 phút).
+ *
+ * Đo ngày 08/10: chạy nó trên `zoldify_dev` cho ra
+ * `✗ FAIL quy mô orders < 500k (chỉ 1)` — và trong `nghiem-thu.md` thì nó nằm
+ * cạnh một cổng đỏ THẬT (`check:drift`, 7 dòng lệch) với cùng một ô ❌ y như
+ * nhau. Người đọc không có cách nào phân biệt.
+ *
+ * Nên: thiếu dữ liệu là BỎ QUA kèm lý do, không phải HỎNG. Đó đúng là việc file
+ * này sinh ra để làm — tách "đỏ vì môi trường" khỏi "đỏ vì mã". Dò bằng CHÍNH
+ * con số mà cổng kia sẽ dò, chứ không chỉ dò tên database: dựng đúng tên mà
+ * quên `seed:bulk` thì vẫn là thiếu điều kiện.
+ */
+async function canDbBulk(): Promise<string | null> {
+  const thieu = await canDbDev();
+  if (thieu) return thieu;
+
+  const host = process.env.DB_HOST ?? docEnvFile('DB_HOST') ?? 'localhost';
+  const port = Number(process.env.DB_PORT ?? docEnvFile('DB_PORT') ?? 3306);
+  const user = process.env.DB_USERNAME ?? docEnvFile('DB_USERNAME') ?? 'root';
+  const pass = process.env.DB_PASSWORD ?? docEnvFile('DB_PASSWORD') ?? '';
+  const db = process.env.DB_DATABASE ?? docEnvFile('DB_DATABASE') ?? 'zoldify';
+
+  const r = chay(
+    `"${process.execPath}" -e "const m=require('mysql2/promise');` +
+      `m.createConnection({host:'${host}',port:${port},user:'${user}',` +
+      `password:'${pass}',database:'${db}',connectTimeout:3000})` +
+      `.then(async c=>{const[[x]]=await c.query('SELECT COUNT(*) n FROM orders');` +
+      `await c.end();console.log(x.n)}).catch(()=>{console.log(-1)})"`,
+  );
+  const soDon = Number(r.ra.trim().split('\n').pop());
+
+  // `-1` là không đọc được bảng (chưa migrate). Cũng là thiếu điều kiện, không
+  // phải hỏng mã.
+  if (soDon < 0) {
+    return `${db} chưa có bảng orders — cần migration + seed + seed:bulk`;
+  }
+  if (soDon < 500_000) {
+    return (
+      `${db} chỉ có ${soDon.toLocaleString('vi-VN')} đơn, cổng này đòi ≥ 500k — ` +
+      'nó thuộc zoldify_bulk_test (xem docs/BAN-GIAO.md mục 6: seed:bulk)'
+    );
+  }
+  return null;
+}
+
+/**
  * Sáu cổng dưới đây nối vào DATABASE DEV qua `src/data-source.ts` (`.env` DB_*,
  * mặc định `zoldify` ở cổng 3306) — không phải `zoldify_test`. Chúng cần một
  * lược đồ do MIGRATION dựng: `check:drift` so entity với database thật,
@@ -319,7 +369,7 @@ const CONG: Cong[] = [
   {
     ten: 'check:core',
     lenh: 'npm run check:core',
-    dieuKien: canDbDev,
+    dieuKien: canDbBulk,
     soDo: soDoTuPassFail,
   },
   {
