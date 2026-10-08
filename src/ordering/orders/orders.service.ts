@@ -1511,118 +1511,162 @@ export class OrdersService {
 
     const isCod = order.payment_method === PaymentMethod.COD;
 
-    for (const [sellerId, { seller, items }] of bySeller) {
-      const previous = existingBySeller.get(sellerId);
-      if (previous && previous.status !== ShipmentStatus.FAILED) continue;
+    // SONG SONG theo người bán (B-19, audit B-production-readiness.md): vòng
+    // lặp tuần tự cũ khiến một seller chậm/treo chặn luôn mọi seller sau —
+    // request xác nhận treo tới 30s NHÂN số người bán. Mỗi tác vụ dưới đây chỉ
+    // đụng dòng vận đơn CỦA CHÍNH seller đó (UPDATE theo `id = previous.id`),
+    // nên song song giữa các seller KHÁC NHAU an toàn như tuần tự — chốt
+    // chống-tạo-trùng vẫn chỉ cạnh tranh giữa hai request cho CÙNG một seller,
+    // không đổi bởi thay đổi này (xem lại bài kiểm "bấm đúp" không đổi).
+    // Lỗi của một seller tự bắt trong try/catch riêng, không throw ra khỏi
+    // tác vụ của mình — một GHN từ chối không được làm Promise.all reject và
+    // chặn các seller còn lại.
+    await Promise.all(
+      Array.from(bySeller.entries()).map(async ([sellerId, { items }]) => {
+        const previous = existingBySeller.get(sellerId);
+        if (previous && previous.status !== ShipmentStatus.FAILED) return;
 
-      // Chốt dòng FAILED TRƯỚC khi gọi GHN (review 30/09). Hai yêu cầu tạo lại
-      // cùng lúc (bấm đúp) đều đọc thấy dòng FAILED; không chốt thì cả hai gọi
-      // GHN và GHN tạo HAI vận đơn thật cho một lô hàng, một cái mồ côi mà vẫn
-      // đi lấy hàng, thu hộ. UPDATE có điều kiện trên `error` vừa đọc chỉ đổi
-      // được dòng cho một yêu cầu (InnoDB khoá dòng, yêu cầu sau thấy error đã
-      // khác): nó được đi tiếp, yêu cầu kia nhận affected = 0 và bỏ qua.
-      // Sập giữa chừng thì dòng vẫn FAILED với error là mã chốt, lần tạo lại
-      // sau chốt lại được bình thường.
-      if (previous) {
-        const claim = `Đang tạo lại vận đơn (${randomUUID()})`;
-        const res = await this.shipmentRepository.update(
-          {
-            id: previous.id,
-            status: ShipmentStatus.FAILED,
-            error: previous.error ?? IsNull(),
-          },
-          { error: claim },
-        );
-        if (!res.affected) continue;
-        previous.error = claim;
-      }
+        // Chốt dòng FAILED TRƯỚC khi gọi GHN (review 30/09). Hai yêu cầu tạo lại
+        // cùng lúc (bấm đúp) đều đọc thấy dòng FAILED; không chốt thì cả hai gọi
+        // GHN và GHN tạo HAI vận đơn thật cho một lô hàng, một cái mồ côi mà vẫn
+        // đi lấy hàng, thu hộ. UPDATE có điều kiện trên `error` vừa đọc chỉ đổi
+        // được dòng cho một yêu cầu (InnoDB khoá dòng, yêu cầu sau thấy error đã
+        // khác): nó được đi tiếp, yêu cầu kia nhận affected = 0 và bỏ qua.
+        // Sập giữa chừng thì dòng vẫn FAILED với error là mã chốt, lần tạo lại
+        // sau chốt lại được bình thường.
+        if (previous) {
+          const claim = `Đang tạo lại vận đơn (${randomUUID()})`;
+          const res = await this.shipmentRepository.update(
+            {
+              id: previous.id,
+              status: ShipmentStatus.FAILED,
+              error: previous.error ?? IsNull(),
+            },
+            { error: claim },
+          );
+          if (!res.affected) return;
+          previous.error = claim;
+        }
 
-      const shop = shopByUser.get(sellerId);
-      const from =
-        shop &&
-        shop.pickup_district_name &&
-        shop.pickup_ward_name &&
-        shop.pickup_province_name &&
-        shop.pickup_address &&
-        shop.pickup_name &&
-        shop.pickup_phone
-          ? {
-              name: shop.pickup_name,
-              phone: shop.pickup_phone,
-              address: shop.pickup_address,
-              ward_name: shop.pickup_ward_name,
-              district_name: shop.pickup_district_name,
-              province_name: shop.pickup_province_name,
-            }
-          : undefined;
+        const shop = shopByUser.get(sellerId);
+        const from =
+          shop &&
+          shop.pickup_district_name &&
+          shop.pickup_ward_name &&
+          shop.pickup_province_name &&
+          shop.pickup_address &&
+          shop.pickup_name &&
+          shop.pickup_phone
+            ? {
+                name: shop.pickup_name,
+                phone: shop.pickup_phone,
+                address: shop.pickup_address,
+                ward_name: shop.pickup_ward_name,
+                district_name: shop.pickup_district_name,
+                province_name: shop.pickup_province_name,
+              }
+            : undefined;
 
-      // GHN yêu cầu price/cod_amount là SỐ NGUYÊN. TypeORM trả cột decimal dạng
-      // chuỗi ("100000.00"), truyền thẳng vào GHN sẽ bị từ chối — ép Number +
-      // làm tròn ở mọi con số gửi đi.
-      const codAmount = isCod
-        ? Math.round(items.reduce((sum, i) => sum + Number(i.subtotal), 0))
-        : 0;
+        // GHN yêu cầu price/cod_amount là SỐ NGUYÊN. TypeORM trả cột decimal dạng
+        // chuỗi ("100000.00"), truyền thẳng vào GHN sẽ bị từ chối — ép Number +
+        // làm tròn ở mọi con số gửi đi.
+        const codAmount = isCod
+          ? Math.round(items.reduce((sum, i) => sum + Number(i.subtotal), 0))
+          : 0;
 
+        try {
+          const ghnOrder = await this.goiGhnVoiThuLai(() =>
+            this.ghnService.createOrder({
+              // Cố định theo (đơn, người bán): timeout phía GHN không có nghĩa là
+              // chưa tạo (test máy ảo 05/10: request "vẫn đang xử lý" sau timeout).
+              // Tạo lại với cùng mã thì GHN trả vận đơn cũ, không sinh vận đơn trùng.
+              client_order_code: `${order.order_code}-${sellerId}`,
+              to_name: order.receiver_name,
+              to_phone: order.receiver_phone,
+              to_address: order.shipping_address,
+              to_ward_code: order.ghn_ward_code,
+              to_district_id: order.ghn_district_id,
+              weight: items.reduce((s, i) => s + 200 * i.quantity, 0),
+              cod_amount: codAmount,
+              items: items.map((item) => ({
+                name: item.product_name,
+                quantity: item.quantity,
+                weight: 200,
+                price: Math.round(Number(item.price)),
+              })),
+              from,
+            }),
+          );
+          // GhnService trả `any` (body GHN); chốt kiểu một lần ở đây.
+          const trackingCode = (ghnOrder as { order_code: string }).order_code;
+
+          await this.shipmentRepository.save(
+            previous
+              ? Object.assign(previous, {
+                  tracking_code: trackingCode,
+                  cod_amount: codAmount,
+                  status: ShipmentStatus.CREATED,
+                  error: null,
+                })
+              : this.shipmentRepository.create({
+                  order: { id: order.id } as Order,
+                  seller: { id: sellerId } as User,
+                  tracking_code: trackingCode,
+                  cod_amount: codAmount,
+                  status: ShipmentStatus.CREATED,
+                }),
+          );
+
+          // Giữ tương thích: UI cũ đọc order.tracking_code. Đơn một người bán vẫn
+          // thấy mã như trước; đơn nhiều người bán lấy mã đầu tiên làm đại diện.
+          // Nhiều tác vụ song song cùng đọc/ghi field này của CÙNG một object
+          // `order` — không hại gì: tranh chấp duy nhất là "seller nào thành đại
+          // diện", mà comment này đã nói rõ không quan trọng ai thắng.
+          if (!order.tracking_code) order.tracking_code = trackingCode;
+        } catch (err) {
+          const message = ghnErrorMessage(err);
+          this.logger.error(
+            `Tạo vận đơn GHN thất bại cho người bán ${sellerId} (đơn ${order.id}): ${message}`,
+          );
+          await this.shipmentRepository.save(
+            previous
+              ? Object.assign(previous, { cod_amount: codAmount, error: message })
+              : this.shipmentRepository.create({
+                  order: { id: order.id } as Order,
+                  seller: { id: sellerId } as User,
+                  cod_amount: codAmount,
+                  status: ShipmentStatus.FAILED,
+                  error: message,
+                }),
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Thử lại cho ĐÚNG một loại lỗi: không có `response` — nghĩa là không rõ
+   * GHN có nhận request hay không (timeout, đứt mạng giữa đường; timeout
+   * GHN vừa giảm 30s→10s ở `GhnModule` để một seller chậm không còn treo cả
+   * request xác nhận, bù lại bằng đúng cái retry này). Lỗi CÓ `response` là
+   * GHN đã trả lời (vd 400 "quận ngừng phục vụ") — thử lại không đổi được kết
+   * quả, chỉ tốn thêm round-trip, nên ném ngay.
+   *
+   * An toàn để gọi lại CÙNG request: `client_order_code` cố định theo (đơn,
+   * người bán) ở trên, và GHN chống trùng theo đúng mã này (đo sandbox 05/10,
+   * xem bài kiểm "tạo lại sau timeout không được sinh vận đơn trùng") — gọi
+   * lại sau timeout trả về vận đơn CŨ, không tạo vận đơn thứ hai.
+   */
+  private async goiGhnVoiThuLai<T>(goi: () => Promise<T>): Promise<T> {
+    const BACKOFF_MS = [300, 900];
+    for (let lanThu = 0; ; lanThu++) {
       try {
-        const ghnOrder = await this.ghnService.createOrder({
-          // Cố định theo (đơn, người bán): timeout phía GHN không có nghĩa là
-          // chưa tạo (test máy ảo 05/10: request "vẫn đang xử lý" sau timeout).
-          // Tạo lại với cùng mã thì GHN trả vận đơn cũ, không sinh vận đơn trùng.
-          client_order_code: `${order.order_code}-${sellerId}`,
-          to_name: order.receiver_name,
-          to_phone: order.receiver_phone,
-          to_address: order.shipping_address,
-          to_ward_code: order.ghn_ward_code,
-          to_district_id: order.ghn_district_id,
-          weight: items.reduce((s, i) => s + 200 * i.quantity, 0),
-          cod_amount: codAmount,
-          items: items.map((item) => ({
-            name: item.product_name,
-            quantity: item.quantity,
-            weight: 200,
-            price: Math.round(Number(item.price)),
-          })),
-          from,
-        });
-        // GhnService trả `any` (body GHN); chốt kiểu một lần ở đây.
-        const trackingCode = (ghnOrder as { order_code: string }).order_code;
-
-        await this.shipmentRepository.save(
-          previous
-            ? Object.assign(previous, {
-                tracking_code: trackingCode,
-                cod_amount: codAmount,
-                status: ShipmentStatus.CREATED,
-                error: null,
-              })
-            : this.shipmentRepository.create({
-                order: { id: order.id } as Order,
-                seller: { id: sellerId } as User,
-                tracking_code: trackingCode,
-                cod_amount: codAmount,
-                status: ShipmentStatus.CREATED,
-              }),
-        );
-
-        // Giữ tương thích: UI cũ đọc order.tracking_code. Đơn một người bán vẫn
-        // thấy mã như trước; đơn nhiều người bán lấy mã đầu tiên làm đại diện.
-        if (!order.tracking_code) order.tracking_code = trackingCode;
+        return await goi();
       } catch (err) {
-        const message = ghnErrorMessage(err);
-        this.logger.error(
-          `Tạo vận đơn GHN thất bại cho người bán ${sellerId} (đơn ${order.id}): ${message}`,
-        );
-        await this.shipmentRepository.save(
-          previous
-            ? Object.assign(previous, { cod_amount: codAmount, error: message })
-            : this.shipmentRepository.create({
-                order: { id: order.id } as Order,
-                seller: { id: sellerId } as User,
-                cod_amount: codAmount,
-                status: ShipmentStatus.FAILED,
-                error: message,
-              }),
-        );
+        const coResponse =
+          (err as { response?: unknown })?.response !== undefined;
+        if (coResponse || lanThu >= BACKOFF_MS.length) throw err;
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[lanThu]));
       }
     }
   }
