@@ -69,9 +69,14 @@ export class Address {
   // tinyint(1) -> driver mysql2 trả 0/1. Không có transformer thì API trả
   // `"is_default": 1`, app gửi lại nguyên giá trị và UpdateAddressDto
   // (@IsBoolean) từ chối: không ai sửa được địa chỉ (lỗi H-04, 30/09).
+  //
+  // KHÔNG khai `width: 1`: từ MySQL 8 trở đi driver bỏ hẳn display width khỏi
+  // introspection (xem `isDefaultColumnWidth` trong TypeORM — trả `true` tuyệt
+  // đối với MySQL ≥ 8.0.0), nên cột DB không bao giờ còn "width" để so, còn
+  // entity thì luôn có. `check:drift` thấy lệch vĩnh viễn dù schema thật không
+  // đổi gì — khai `width` tường minh trên MySQL 8+ chỉ tự tạo ra lệch giả.
   @Column({
     type: 'tinyint',
-    width: 1,
     default: 0,
     transformer: {
       to: (v?: boolean | null) => (v == null ? v : v ? 1 : 0),
