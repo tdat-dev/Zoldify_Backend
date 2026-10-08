@@ -98,27 +98,31 @@ describe('B-19: tạo vận đơn GHN theo từng người bán phải chạy SO
     let goiAChuaResolve = true;
     let bDaDuocGoiTrongLucAConTreo = false;
 
-    const createOrder = jest.fn().mockImplementation((dto: { client_order_code?: string }) => {
-      if (dto.client_order_code?.endsWith(`-${SELLER_A.id}`)) {
-        // Seller A: trả một promise KHÔNG BAO GIỜ tự resolve trong bài kiểm —
-        // mô phỏng một cuộc gọi GHN đang treo (chậm/timeout).
-        return new Promise((resolve) => {
-          (createOrder as unknown as { _resolveA: () => void })._resolveA =
-            () => {
-              goiAChuaResolve = false;
-              resolve({ order_code: 'A-CODE' });
-            };
-        });
-      }
-      if (dto.client_order_code?.endsWith(`-${SELLER_B.id}`)) {
-        // Nếu tới đây mà seller A còn đang treo, nghĩa là B được gọi SONG
-        // SONG với A — đúng cái cần chứng minh. Vòng lặp tuần tự cũ sẽ
-        // KHÔNG BAO GIỜ gọi tới B vì await A không bao giờ xong.
-        bDaDuocGoiTrongLucAConTreo = goiAChuaResolve;
-        return Promise.resolve({ order_code: 'B-CODE' });
-      }
-      throw new Error('client_order_code không khớp seller nào trong bài kiểm');
-    });
+    const createOrder = jest
+      .fn()
+      .mockImplementation((dto: { client_order_code?: string }) => {
+        if (dto.client_order_code?.endsWith(`-${SELLER_A.id}`)) {
+          // Seller A: trả một promise KHÔNG BAO GIỜ tự resolve trong bài kiểm —
+          // mô phỏng một cuộc gọi GHN đang treo (chậm/timeout).
+          return new Promise((resolve) => {
+            (createOrder as unknown as { _resolveA: () => void })._resolveA =
+              () => {
+                goiAChuaResolve = false;
+                resolve({ order_code: 'A-CODE' });
+              };
+          });
+        }
+        if (dto.client_order_code?.endsWith(`-${SELLER_B.id}`)) {
+          // Nếu tới đây mà seller A còn đang treo, nghĩa là B được gọi SONG
+          // SONG với A — đúng cái cần chứng minh. Vòng lặp tuần tự cũ sẽ
+          // KHÔNG BAO GIỜ gọi tới B vì await A không bao giờ xong.
+          bDaDuocGoiTrongLucAConTreo = goiAChuaResolve;
+          return Promise.resolve({ order_code: 'B-CODE' });
+        }
+        throw new Error(
+          'client_order_code không khớp seller nào trong bài kiểm',
+        );
+      });
 
     const { svc, orderRepo } = makeService({ createOrder });
     orderRepo.findOne.mockResolvedValue(donHaiNguoiBan());
@@ -152,33 +156,52 @@ describe('B-19: lỗi mạng (không có response) được thử lại; lỗi G
 
     const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
     // Chỉ một người bán cho bài kiểm này — đơn giản hoá việc đọc kết quả save.
-    const donMotNguoiBan = { ...donHaiNguoiBan(), items: [donHaiNguoiBan().items[0]] };
+    const donMotNguoiBan = {
+      ...donHaiNguoiBan(),
+      items: [donHaiNguoiBan().items[0]],
+    };
     orderRepo.findOne.mockResolvedValue(donMotNguoiBan);
 
     await svc.retryGhnShipments(7, nguoiGoiLaSellerA() as never);
 
     expect(createOrder).toHaveBeenCalledTimes(2); // 1 lần hỏng + 1 lần thử lại
-    const saved = shipmentRepo.save.mock.calls.map((c) => c[0] as { status: string });
+    const saved = shipmentRepo.save.mock.calls.map(
+      (c) => c[0] as { status: string },
+    );
     expect(saved).toContainEqual(
-      expect.objectContaining({ status: ShipmentStatus.CREATED, tracking_code: 'OK-SAU-RETRY' }),
+      expect.objectContaining({
+        status: ShipmentStatus.CREATED,
+        tracking_code: 'OK-SAU-RETRY',
+      }),
     );
   });
 
   it('GHN từ chối thật (400, có response) → ném ngay, KHÔNG thử lại', async () => {
-    const loiGhnTuChoi = Object.assign(new Error('Request failed with status code 400'), {
-      isAxiosError: true,
-      response: { status: 400, data: { message: 'Không tìm thấy thông tin quận' } },
-    });
+    const loiGhnTuChoi = Object.assign(
+      new Error('Request failed with status code 400'),
+      {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: { message: 'Không tìm thấy thông tin quận' },
+        },
+      },
+    );
     const createOrder = jest.fn().mockRejectedValue(loiGhnTuChoi);
 
     const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
-    const donMotNguoiBan = { ...donHaiNguoiBan(), items: [donHaiNguoiBan().items[0]] };
+    const donMotNguoiBan = {
+      ...donHaiNguoiBan(),
+      items: [donHaiNguoiBan().items[0]],
+    };
     orderRepo.findOne.mockResolvedValue(donMotNguoiBan);
 
     await svc.retryGhnShipments(7, nguoiGoiLaSellerA() as never);
 
     expect(createOrder).toHaveBeenCalledTimes(1); // không thử lại lỗi từ chối thật
-    const saved = shipmentRepo.save.mock.calls.map((c) => c[0] as { status: string; error?: string });
+    const saved = shipmentRepo.save.mock.calls.map(
+      (c) => c[0] as { status: string; error?: string },
+    );
     expect(saved).toContainEqual(
       expect.objectContaining({ status: ShipmentStatus.FAILED }),
     );
