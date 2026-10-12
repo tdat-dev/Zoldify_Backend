@@ -3486,9 +3486,7 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {
-                      "type": "object"
-                    }
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
