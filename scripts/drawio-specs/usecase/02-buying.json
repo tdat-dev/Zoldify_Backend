@@ -1,0 +1,63 @@
+{
+  "id": "UC02",
+  "title": "Buying",
+  "actor": "Buyer",
+  "cases": [
+    {
+      "label": "Browse & search items",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "View item details"
+        },
+        {
+          "kind": "extend",
+          "label": "Filter by category & condition"
+        }
+      ]
+    },
+    {
+      "label": "Manage cart"
+    },
+    {
+      "label": "Place an order",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Choose delivery address"
+        },
+        {
+          "kind": "include",
+          "label": "Quote shipping fee",
+          "system": "Shipping Provider\n«system» GHN"
+        },
+        {
+          "kind": "extend",
+          "label": "Pay online",
+          "system": "Payment Gateway\n«system» PayOS"
+        }
+      ]
+    },
+    {
+      "label": "Track an order",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Confirm receipt"
+        }
+      ]
+    },
+    {
+      "label": "Cancel an order",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Refund to wallet"
+        }
+      ]
+    },
+    {
+      "label": "Review a product"
+    }
+  ]
+}

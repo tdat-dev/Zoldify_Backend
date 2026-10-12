@@ -1,0 +1,62 @@
+{
+  "id": "UC03",
+  "title": "Selling",
+  "actor": "Seller",
+  "cases": [
+    {
+      "label": "Set up shop",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Set pickup address"
+        }
+      ]
+    },
+    {
+      "label": "List an item for sale",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Upload photos"
+        }
+      ]
+    },
+    {
+      "label": "Manage listings",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Update stock"
+        },
+        {
+          "kind": "extend",
+          "label": "Remove a listing"
+        }
+      ]
+    },
+    {
+      "label": "Confirm an order",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Create GHN shipment",
+          "system": "Shipping Provider\n«system» GHN"
+        },
+        {
+          "kind": "extend",
+          "label": "Retry failed shipment",
+          "system": "Shipping Provider\n«system» GHN"
+        }
+      ]
+    },
+    {
+      "label": "Cancel a sale",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Refund the buyer"
+        }
+      ]
+    }
+  ]
+}

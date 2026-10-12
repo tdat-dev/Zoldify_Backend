@@ -1,0 +1,60 @@
+{
+  "id": "UC05",
+  "title": "Admin Dashboard",
+  "actor": "Administrator",
+  "cases": [
+    {
+      "label": "Manage users",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Change role"
+        },
+        {
+          "kind": "extend",
+          "label": "Lock / unlock account"
+        }
+      ]
+    },
+    {
+      "label": "Manage categories",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Add / edit / delete category"
+        }
+      ]
+    },
+    {
+      "label": "Moderate listings",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Remove a listing"
+        }
+      ]
+    },
+    {
+      "label": "Review withdrawal requests",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Approve or reject"
+        },
+        {
+          "kind": "extend",
+          "label": "Complete payout"
+        }
+      ]
+    },
+    {
+      "label": "Reconcile the ledger"
+    },
+    {
+      "label": "Configure settings"
+    },
+    {
+      "label": "View statistics & audit log"
+    }
+  ]
+}

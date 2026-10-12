@@ -1,0 +1,42 @@
+{
+  "id": "UC06",
+  "title": "Messaging & Notifications",
+  "actor": "User",
+  "cases": [
+    {
+      "label": "Exchange messages",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Open a conversation"
+        },
+        {
+          "kind": "extend",
+          "label": "Mark as read"
+        }
+      ]
+    },
+    {
+      "label": "View notifications",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Mark all as read"
+        }
+      ]
+    },
+    {
+      "label": "Receive push notifications",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Register device token",
+          "system": "Notification Service\n«system» FCM"
+        }
+      ]
+    },
+    {
+      "label": "Follow a seller"
+    }
+  ]
+}

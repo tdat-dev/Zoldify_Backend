@@ -1,0 +1,37 @@
+{
+  "id": "UC04",
+  "title": "Wallet & Payments",
+  "actor": "User",
+  "cases": [
+    {
+      "label": "Top up wallet",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Create payment link",
+          "system": "Payment Gateway\n«system» PayOS"
+        },
+        {
+          "kind": "extend",
+          "label": "Cancel payment link",
+          "system": "Payment Gateway\n«system» PayOS"
+        }
+      ]
+    },
+    {
+      "label": "View wallet & transactions"
+    },
+    {
+      "label": "Request a withdrawal",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Enter bank details"
+        }
+      ]
+    },
+    {
+      "label": "View withdrawal history"
+    }
+  ]
+}

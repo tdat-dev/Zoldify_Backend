@@ -1,0 +1,50 @@
+{
+  "id": "UC01",
+  "title": "Account & Authentication",
+  "actor": "User",
+  "cases": [
+    {
+      "label": "Register an account",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Verify email with OTP"
+        }
+      ]
+    },
+    {
+      "label": "Sign in",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Sign in with Google"
+        }
+      ]
+    },
+    {
+      "label": "Reset password",
+      "rel": [
+        {
+          "kind": "include",
+          "label": "Verify reset OTP"
+        }
+      ]
+    },
+    {
+      "label": "Manage profile",
+      "rel": [
+        {
+          "kind": "extend",
+          "label": "Change password"
+        },
+        {
+          "kind": "extend",
+          "label": "Manage addresses"
+        }
+      ]
+    },
+    {
+      "label": "Sign out"
+    }
+  ]
+}
