@@ -42,7 +42,7 @@ const report = (file, msg) => {
 };
 
 if (!fs.existsSync(DIR)) {
-  console.error(`Không thấy ${DIR}. Chạy: node scripts/make-drawio.mjs`);
+  console.error(`Không thấy ${DIR}.`);
   process.exit(1);
 }
 
@@ -62,18 +62,27 @@ if (!files.length) {
 // 20 ảnh PNG vẫn còn trong renders/, nên nhìn thư mục ảnh cũng không thấy
 // thiếu gì. Chỉ lúc cần SỬA một sơ đồ mới phát hiện không còn nguồn để mở.
 //
-// Danh sách lấy từ CHÍNH `make-drawio.mjs` chứ không chép tay: chép tay thì
-// thêm sơ đồ mới vào bộ sinh mà quên cập nhật ở đây là bộ kiểm lại mù tiếp.
-const GENERATOR = path.join(ROOT, 'scripts', 'make-drawio.mjs');
-if (fs.existsSync(GENERATOR)) {
-  const nguon = fs.readFileSync(GENERATOR, 'utf8');
-  const canCo = [...new Set([...nguon.matchAll(/'([\w.-]+\.drawio)'/g)].map((m) => m[1]))];
+// Danh sách lấy từ CHÍNH các bộ sinh chứ không chép tay: chép tay thì thêm sơ
+// đồ mới vào bộ sinh mà quên cập nhật ở đây là bộ kiểm lại mù tiếp.
+//
+// 12/10 nhóm bỏ `make-drawio.mjs` cùng 16 sơ đồ cũ, chỉ giữ bốn file cho slide.
+// Ba file do `drawio-class/sequence/usecase.mjs` sinh, nên đọc tên từ chúng.
+// File activity vẽ tay, không có bộ sinh nào khai, nên ghi thẳng ở VE_TAY.
+const VE_TAY = ['activity_zoldify.drawio'];
+const BO_SINH = fs
+  .readdirSync(path.join(ROOT, 'scripts'))
+  .filter((f) => /drawio.*\.mjs$/.test(f) && !['check-drawio.mjs', 'shoot-drawio.mjs'].includes(f));
+{
+  const khai = BO_SINH.flatMap((f) =>
+    [...fs.readFileSync(path.join(ROOT, 'scripts', f), 'utf8').matchAll(/'([\w.-]+\.drawio)'/g)].map((m) => m[1]),
+  );
+  const canCo = [...new Set([...khai, ...VE_TAY])];
   const thieu = canCo.filter((f) => !files.includes(f));
   for (const f of thieu) {
-    report(f, 'bộ sinh khai file này mà thư mục không có — chạy `node scripts/make-drawio.mjs`');
+    report(f, 'bộ sinh (hoặc VE_TAY) khai file này mà thư mục không có');
   }
   console.log(
-    `  Bộ sinh khai ${canCo.length} sơ đồ · thư mục có ${files.length} file · ` +
+    `  Cần có ${canCo.length} sơ đồ · thư mục có ${files.length} file · ` +
       (thieu.length ? `\x1b[31mthiếu ${thieu.length}\x1b[0m` : 'không thiếu'),
   );
 }
