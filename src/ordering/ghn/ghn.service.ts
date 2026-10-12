@@ -86,7 +86,13 @@ export class GhnService {
     return data;
   }
 
-  /** Danh sách tỉnh/thành. */
+  /**
+   * Danh sách tỉnh/thành, chỉ giữ tỉnh chọn được: IsEnable = 1 và còn ít nhất
+   * một quận đang phục vụ. GHN sandbox có tỉnh rác ("Test - Alert - Tỉnh - 001"
+   * thiếu IsEnable, "Hà Nội 02" không còn quận nào), chọn vào chỉ thấy trống.
+   * Tải quận của một tỉnh bị lỗi thì GIỮ tỉnh đó, như isServiceable: GHN chập
+   * chờn không được làm mất cả danh sách.
+   */
   async getProvinces() {
     return this.cached('provinces', async () => {
       const res = await firstValueFrom(
@@ -94,7 +100,29 @@ export class GhnService {
           headers: this.getHeaders(),
         }),
       );
-      return res.data.data;
+      const all = (
+        (res.data.data ?? []) as Array<{
+          ProvinceID: number;
+          IsEnable?: number;
+        }>
+      ).filter((p) => p.IsEnable === 1);
+      // Kiểm quận từng tỉnh, 8 tỉnh một lượt cho khỏi dồn GHN. Kết quả quận
+      // vào luôn cache nên lần mở ô chọn quận sau không gọi lại.
+      const keep: boolean[] = [];
+      for (let i = 0; i < all.length; i += 8) {
+        const batch = all.slice(i, i + 8);
+        keep.push(
+          ...(await Promise.all(
+            batch.map((p) =>
+              this.getDistricts(p.ProvinceID).then(
+                (ds) => ds.length > 0,
+                () => true,
+              ),
+            ),
+          )),
+        );
+      }
+      return all.filter((_, i) => keep[i]);
     });
   }
 
