@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 import { ShipmentStatus } from './entities/order-shipment.entity';
@@ -352,6 +352,53 @@ describe('GHN: không cho chọn quận/phường mà GHN đã ngừng phục v�
     ]);
     const ws = (await ghn.getWards(1680)) as Array<{ WardCode: string }>;
     expect(ws.map((w) => w.WardCode)).toEqual(['220117']);
+  });
+
+  // Test máy ảo 07/10: ô chọn tỉnh hiện "Hà Nội 02" và "Test - Alert - Tỉnh -
+  // 001" của GHN sandbox. Đo live: tỉnh rác thứ hai thiếu hẳn IsEnable, tỉnh
+  // thứ nhất có IsEnable 1 nhưng không còn quận nào phục vụ, chọn vào là trống.
+  function ghnProvinces(
+    provinces: unknown[],
+    districtsOf: Record<number, unknown[] | Error>,
+  ) {
+    const http = {
+      get: jest.fn(() => of({ data: { data: provinces } })),
+      post: jest.fn((_url: string, body: { province_id: number }) => {
+        const d = districtsOf[body.province_id] ?? [];
+        return d instanceof Error
+          ? throwError(() => d)
+          : of({ data: { data: d } });
+      }),
+    };
+    return new GhnService(http as never);
+  }
+  const quanChay = { DistrictID: 1, Status: 1, SupportType: 3 };
+  const quanNgung = { DistrictID: 2, Status: 2, SupportType: 0 };
+
+  it('bỏ tỉnh thiếu IsEnable và tỉnh không còn quận nào phục vụ', async () => {
+    const ghn = ghnProvinces(
+      [
+        { ProvinceID: 268, ProvinceName: 'Hưng Yên', IsEnable: 1, Status: 1 },
+        { ProvinceID: 2002, ProvinceName: 'Hà Nội 02', IsEnable: 1, Status: 1 },
+        {
+          ProvinceID: 298,
+          ProvinceName: 'Test - Alert - Tỉnh - 001',
+          Status: 1,
+        },
+      ],
+      { 268: [quanChay], 2002: [quanNgung], 298: [quanChay] },
+    );
+    const ps = (await ghn.getProvinces()) as Array<{ ProvinceID: number }>;
+    expect(ps.map((p) => p.ProvinceID)).toEqual([268]);
+  });
+
+  it('tải quận của một tỉnh bị lỗi thì vẫn giữ tỉnh đó', async () => {
+    const ghn = ghnProvinces(
+      [{ ProvinceID: 268, ProvinceName: 'Hưng Yên', IsEnable: 1, Status: 1 }],
+      { 268: new Error('GHN timeout') },
+    );
+    const ps = (await ghn.getProvinces()) as Array<{ ProvinceID: number }>;
+    expect(ps.map((p) => p.ProvinceID)).toEqual([268]);
   });
 });
 
