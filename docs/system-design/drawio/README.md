@@ -8,9 +8,9 @@ chỉ `--force` mới đè, và nó sẽ xoá mọi chỉnh tay.
 
 Kiểm trước khi giao: `npm run drawio:check`.
 
-### Class và Sequence: sinh từ script, không sửa tay
+### Use case chi tiết, Class và Sequence: sinh từ script, không sửa tay
 
-Hai file này vẽ theo ký pháp UML 2.5 của uml-diagrams.org (đen trắng, khung `class` / `sd`,
+Ba file này vẽ theo ký pháp UML 2.5 của uml-diagrams.org (đen trắng, khung `class` / `sd`,
 multiplicity hai đầu, thanh kích hoạt, `alt`/`opt`/`loop`/`break`), đối chiếu từng luồng với code.
 Muốn sửa thì sửa nguồn rồi sinh lại, đừng kéo thả trong draw.io vì lần sinh sau sẽ đè:
 
@@ -18,6 +18,11 @@ Muốn sửa thì sửa nguồn rồi sinh lại, đừng kéo thả trong draw.
 |---|---|---|
 | `08-class-diagram.drawio` | `scripts/drawio-class.mjs` (toạ độ, thuộc tính, quan hệ) | `node scripts/drawio-class.mjs` |
 | `Sequence-Diagrams.drawio` | `scripts/drawio-specs/sequence/NN-*.json`, mỗi file một trang | `node scripts/drawio-sequence.mjs` |
+| `05-use-case-diagram.drawio`, các trang UC01 đến UC06 | `scripts/drawio-specs/usecase/NN-*.json`, mỗi file một trang | `node scripts/drawio-usecase.mjs` |
+
+Riêng file use case: trang đầu (tổng quan) là bản vẽ tay, script giữ nguyên nó và chỉ thay
+các trang UC phía sau. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
+giữa, use case `«include»` / `«extend»` bên phải, actor hệ thống ngoài (GHN, PayOS, FCM) ngoài cùng.
 
 Class dùng `scripts/drawio-grid.mjs`: script tự từ chối ghi file nếu có đường nối xiên,
 cắt nhau, hay đi xuyên qua hộp khác.
@@ -30,7 +35,7 @@ Thứ tự lấy đúng theo `3. Project Templates/Project Presentation Template
 
 | File | Slide | Chương báo cáo |
 |---|---|---|
-| `05-use-case-diagram.drawio` | 5 | II: Analyze System Requirements |
+| `05-use-case-diagram.drawio` *(7 trang: tổng quan + UC01 đến UC06)* | 5 | II: Analyze System Requirements |
 | `activity_zoldify.drawio` *(15 trang, nhóm vẽ tay)* | 6 | II |
 | `08-class-diagram.drawio` *(3 trang: Domain Model, Enumerations, Money Services)* | 8 | III: Design Details |
 | `Sequence-Diagrams.drawio` *(14 trang, slide 9 dùng trang Payment)* | 9 | III |
