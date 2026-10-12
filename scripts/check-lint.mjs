@@ -44,7 +44,7 @@ import { ESLint } from 'eslint';
 // trong mã vai A (products.service 61, orders.service 34, payos 27,
 // chat.gateway 26). Không tự sửa được bằng `--fix` (chỉ 3/26 ở chat.gateway là
 // prettier), và sửa tay là chạm mã của vai A. Để lại cho một đợt dọn riêng.
-const BASELINE = 521;
+const BASELINE = 519;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);
