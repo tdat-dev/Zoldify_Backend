@@ -10,10 +10,7 @@ import {
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import {
-  LoginUserDto,
-  RegisterUserDto,
-} from '@identity/users/dto/create-user.dto';
+import { LoginUserDto } from '@identity/users/dto/create-user.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { LocalAuthGuard } from './local-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
@@ -92,17 +89,11 @@ export class AuthController {
     return this.authService.verifyRegisterOtp(dto.email, dto.otp, dto.password);
   }
 
-  @Public()
-  @Throttle({
-    short: { limit: 1, ttl: 1000 },
-    medium: { limit: 5, ttl: 60000 },
-  })
-  @ApiEntity(AuthUserDto)
-  @Post('register')
-  @ResponseMessage('Đăng ký thành công')
-  handleRegister(@Body() registerUserDto: RegisterUserDto) {
-    return this.authService.register(registerUserDto);
-  }
+  // KHÔNG còn POST /auth/register (B-05, M-04). Route đó tạo tài khoản ngay
+  // mà không chứng minh gì về email, nên ai cũng đăng ký trước được email của
+  // người khác rồi chờ chủ thật tới. Cả ba client đều đăng ký qua send-otp và
+  // verify-otp ở trên; hàm gọi /auth/register còn sót trong mã web, admin và
+  // app nhưng không màn hình nào gọi tới (kiểm 25/10).
 
   @Public()
   // Cùng mức với đăng nhập mật khẩu: mỗi lần gọi là một lần hỏi Google, và

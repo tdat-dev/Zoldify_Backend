@@ -80,10 +80,10 @@ export class UsersService {
     return { message: 'Xóa tài khoản thành công' };
   }
 
-  // `emailVerified` mặc định false: giữ nguyên hành vi của đường đăng ký
-  // công khai POST /auth/register (không OTP, chưa chứng minh gì về email).
-  // Chỉ AuthService.verifyRegisterOtp gọi với true, sau khi người dùng đã gõ
-  // đúng mã OTP gửi về chính email đó.
+  // `emailVerified` mặc định false: người gọi phải tự nói là đã chứng minh
+  // email. POST /auth/register (không OTP) đã bị gỡ; hiện chỉ
+  // AuthService.verifyRegisterOtp gọi hàm này, với true, sau khi người dùng đã
+  // gõ đúng mã OTP gửi về chính email đó.
   async register(registerUserDto: RegisterUserDto, emailVerified = false) {
     const { full_name, email, password, phone_number } = registerUserDto;
     const existingUser = await this.userRepository.findOne({ where: { email } });

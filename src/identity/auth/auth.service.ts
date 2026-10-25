@@ -9,7 +9,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '@identity/users/users.service';
-import { RegisterUserDto } from '@identity/users/dto/create-user.dto';
 import { IUser } from '@identity/users/users.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -149,8 +148,9 @@ export class AuthService {
     if (data.otp !== otp)
       throw new BadRequestException('Mã OTP không chính xác');
 
-    // true: tài khoản này vừa chứng minh quyền sở hữu email bằng mã OTP,
-    // khác với POST /auth/register thường (không OTP, chưa chứng minh gì).
+    // true: tài khoản này vừa chứng minh quyền sở hữu email bằng mã OTP. Đây
+    // giờ là đường đăng ký công khai duy nhất (POST /auth/register không OTP
+    // đã bị gỡ, xem auth.controller.ts).
     const newUser = await this.usersService.register(
       {
         full_name: data.full_name,
@@ -162,16 +162,6 @@ export class AuthService {
 
     await this.cacheManager.del(`register_otp_${email}`);
 
-    return {
-      id: newUser.id,
-      email: newUser.email,
-      full_name: newUser.full_name,
-      role: newUser.role,
-    };
-  }
-
-  async register(registerUserDto: RegisterUserDto) {
-    const newUser = await this.usersService.register(registerUserDto);
     return {
       id: newUser.id,
       email: newUser.email,
