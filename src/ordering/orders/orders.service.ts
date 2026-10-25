@@ -33,6 +33,7 @@ import {
   In,
   IsNull,
   LessThan,
+  Not,
   QueryFailedError,
 } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -951,6 +952,9 @@ export class OrdersService {
     });
 
     if (ketQua.doiThanh) {
+      if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
+        await this.baoVanDonMoCoi(order.id, ketQua.doiThanh);
+      }
       throw new ConflictException(
         `Đơn hàng vừa chuyển sang "${ketQua.doiThanh}" trong lúc bạn thao tác. ` +
           'Tải lại đơn rồi thử lại.',
@@ -1391,6 +1395,52 @@ export class OrdersService {
     return Object.fromEntries(
       touched.map((f) => [f, dto[f]]),
     ) as Partial<Order>;
+  }
+
+  /**
+   * Vận đơn GHN vừa tạo cho một lần xác nhận KHÔNG thành, vì đơn đã bị huỷ
+   * (hoặc hoàn tiền) trong lúc chờ GHN trả lời.
+   *
+   * Vận đơn đó vẫn sống bên GHN: tài xế vẫn tới lấy hàng, vẫn thu hộ, trong
+   * khi tiền đã hoàn và hàng đã về kho ở phía mình. Không tự gọi API huỷ của
+   * GHN ở đây (chưa có trong `GhnService`, và gọi mạng thêm một vòng trong
+   * đường lỗi là đổi một sự cố thành hai). Nên: log ERROR để có người đọc, và
+   * ghi thẳng vào cột `error` của vận đơn để người bán/admin nhìn thấy trên
+   * màn đơn hàng. Gỡ khi `GhnService` có hàm huỷ vận đơn.
+   */
+  private async baoVanDonMoCoi(
+    orderId: number,
+    trangThai: OrderStatus,
+  ): Promise<void> {
+    if (
+      trangThai !== OrderStatus.CANCELLED &&
+      trangThai !== OrderStatus.REFUNDED
+    ) {
+      return;
+    }
+    const moCoi = await this.shipmentRepository.find({
+      where: {
+        order: { id: orderId },
+        status: ShipmentStatus.CREATED,
+        tracking_code: Not(IsNull()),
+      },
+    });
+    if (!moCoi.length) return;
+
+    const ma = moCoi.map((s) => s.tracking_code).join(', ');
+    this.logger.error(
+      `Đơn #${orderId} đã sang "${trangThai}" trong lúc tạo vận đơn GHN. ` +
+        `Vận đơn ${ma} không còn đơn sống đứng sau: CẦN HUỶ TAY TRÊN GHN, nếu ` +
+        'không tài xế vẫn tới lấy hàng và thu hộ.',
+    );
+    await this.shipmentRepository.update(
+      { id: In(moCoi.map((s) => s.id)) },
+      {
+        error:
+          `Đơn đã ${trangThai === OrderStatus.CANCELLED ? 'huỷ' : 'hoàn tiền'} ` +
+          'trong lúc tạo vận đơn. Cần huỷ vận đơn này trên GHN bằng tay.',
+      },
+    );
   }
 
   /**
