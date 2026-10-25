@@ -501,4 +501,80 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
       is_paid: 1,
     });
   });
+
+  /** Lô có vận đơn GHN thật, với trạng thái và mốc giao tuỳ chọn. */
+  async function taoLoGhn(
+    orderId: number,
+    status: ShipmentStatus,
+    deliveredAt?: Date,
+  ): Promise<void> {
+    const repo = ds.getRepository(OrderShipment);
+    await repo.save(
+      repo.create({
+        order: { id: orderId } as Order,
+        seller: { id: sellerId } as User,
+        tracking_code: `GHN-${orderId}`,
+        cod_amount: GIA,
+        status,
+        delivered_at: deliveredAt,
+      }),
+    );
+  }
+
+  /**
+   * E. Huỷ đơn khi kiện hàng đã nằm trong tay GHN.
+   *
+   * Cron huỷ đơn quá hạn đã bỏ qua đơn có mã vận đơn (tasks.service.ts), vì
+   * huỷ lúc đó là hoàn tiền người mua trong khi món hàng vẫn đang đi tới nhà
+   * họ. Nút huỷ của người mua và "huỷ bán" của người bán thì không kiểm gì.
+   */
+  it('E: không huỷ được đơn đã có vận đơn GHN đang đi', async () => {
+    const orderId = await taoDonDaTra();
+    await taoLoGhn(orderId, ShipmentStatus.CREATED);
+
+    await expect(orders.cancel(orderId, nguoiMua())).rejects.toThrow(
+      /vận đơn/i,
+    );
+    await expect(orders.cancelSale(orderId, nguoiBan())).rejects.toThrow(
+      /vận đơn/i,
+    );
+
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CONFIRMED);
+    expect(await viCua(buyerId)).toBe(0n);
+  });
+
+  /**
+   * E. Đơn đã huỷ không được thành "đã giao".
+   *
+   * `confirmShipmentReceived` không nhìn trạng thái đơn, và
+   * `reconcileOrderDelivered` đặt DELIVERED chỉ với điều kiện "chưa phải
+   * DELIVERED". Đơn huỷ còn một lô GHN sống (vận đơn mồ côi, xem B) thì người
+   * mua bấm "đã nhận" là đơn huỷ thành đơn giao xong.
+   */
+  it('E: xác nhận đã nhận trên đơn đã huỷ bị từ chối, đơn vẫn là huỷ', async () => {
+    const orderId = await taoDonDaTra();
+    await orders.cancel(orderId, nguoiMua());
+    await taoLoGhn(orderId, ShipmentStatus.DELIVERED, new Date());
+
+    await expect(
+      orders.confirmShipmentReceived(orderId, sellerId, nguoiMua()),
+    ).rejects.toThrow();
+
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CANCELLED);
+  });
+
+  it('E: tự xác nhận sau N ngày bỏ qua đơn đã huỷ', async () => {
+    const orderId = await taoDonDaTra();
+    await orders.cancel(orderId, nguoiMua());
+    const muoiNgayTruoc = new Date(Date.now() - 10 * 24 * 3600 * 1000);
+    await taoLoGhn(orderId, ShipmentStatus.DELIVERED, muoiNgayTruoc);
+
+    await orders.autoConfirmDueShipments();
+
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CANCELLED);
+    const [lo] = await ds.getRepository(OrderShipment).find({
+      where: { order: { id: orderId } },
+    });
+    expect(lo.status).toBe(ShipmentStatus.DELIVERED);
+  });
 });
