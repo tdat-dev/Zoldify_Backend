@@ -864,6 +864,9 @@ export class OrdersService {
     const { order, actors } = await this.findOneForActor(id, user);
     const isAdmin = actors.includes(OrderActor.ADMIN);
     const nextStatus = updateOrderDto.status;
+    // Trạng thái lúc ĐỌC. Mọi kiểm tra bên dưới đứng trên nó, nên lúc ghi phải
+    // chứng minh nó vẫn còn đúng (khối khoá dòng phía dưới).
+    const trangThaiDaDoc = order.status;
 
     if (nextStatus) {
       assertTransitionAllowed(order.status, nextStatus, actors);
@@ -888,33 +891,72 @@ export class OrdersService {
       order.tracking_code = updateOrderDto.tracking_code;
     }
 
-    this.applyDeliveryInfo(order, updateOrderDto, actors);
+    const giaoHang = this.applyDeliveryInfo(order, updateOrderDto, actors);
 
     // Tạo vận đơn GHN khi người bán xác nhận — MỘT vận đơn cho MỖI người bán,
     // gửi từ địa chỉ của chính họ. Lỗi GHN KHÔNG chặn việc xác nhận: vận đơn
     // không phải tiền, thiếu thì điền tay sau được. Idempotent theo (đơn, người
     // bán) nên gọi lại không tạo trùng.
+    //
+    // Chạy TRƯỚC và NGOÀI khoá dòng bên dưới: đây là lời gọi mạng, timeout 10s
+    // nhân số lần thử lại. Giữ `FOR UPDATE` suốt quãng đó là bắt mọi thao tác
+    // khác trên đơn (huỷ, webhook tiền về) xếp hàng chờ GHN.
     if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
       await this.createGhnShipmentsPerSeller(order);
     }
 
-    // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU — không đảo ngược.
+    // CHỐT CHUYỂN TRẠNG THÁI DƯỚI KHOÁ DÒNG, CHỈ GHI ĐÚNG CỘT VỪA ĐỔI.
     //
-    // Thứ tự cũ gọi `createOrderEscrows` rồi mới đặt `is_paid`, nên lúc hàm đó
-    // chạy thì database vẫn ghi đơn là CHƯA trả tiền. Nay `createOrderEscrows`
-    // từ chối đúng trường hợp ấy (xem lời giải thích trong `escrows.service.ts`),
-    // nên phải lưu cờ xuống trước.
-    const vuaDanhDauDaTra = updateOrderDto.is_paid === true && !order.is_paid;
-    if (vuaDanhDauDaTra) {
-      order.is_paid = true;
-      order.paid_at = new Date();
-    }
+    // Bản cũ `save(order)` NGUYÊN entity đọc từ đầu hàm, sau cả lời gọi GHN.
+    // Trong quãng đó người mua huỷ đơn (hoàn kho, CANCELLED, commit xong) thì
+    // lần lưu này ghi đè về CONFIRMED: đơn sống lại trên số hàng đã trả về kho.
+    // Webhook PayOS đặt `is_paid = 1` giữa chừng cũng bị kéo về 0. Đo bằng hai
+    // bài kiểm B trong `dua-trang-thai-don.spec.ts`.
+    //
+    // Nay: khoá dòng, đọc lại trạng thái. Khác lúc đọc thì quyết định phía trên
+    // đã đứng trên dữ liệu cũ, trả 409 cho người gọi tải lại chứ không đoán hộ.
+    const ketQua = await this.dataSource.transaction(async (em) => {
+      const chot = await em.findOne(Order, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!chot) throw new NotFoundException('Không tìm thấy đơn hàng');
+      if (chot.status !== trangThaiDaDoc) {
+        return { doiThanh: chot.status };
+      }
 
-    if (nextStatus) {
-      order.status = nextStatus;
-    }
+      const thayDoi: Partial<Order> = { ...giaoHang };
+      // Mã vận đơn: người gọi điền tay, hoặc vừa được GHN cấp ở trên.
+      if (order.tracking_code !== chot.tracking_code) {
+        thayDoi.tracking_code = order.tracking_code;
+      }
 
-    await this.orderRepository.save(order);
+      // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU — không đảo ngược.
+      //
+      // Thứ tự cũ gọi `createOrderEscrows` rồi mới đặt `is_paid`, nên lúc hàm
+      // đó chạy thì database vẫn ghi đơn là CHƯA trả tiền. Nay
+      // `createOrderEscrows` từ chối đúng trường hợp ấy (xem lời giải thích
+      // trong `escrows.service.ts`), nên phải lưu cờ xuống trước.
+      const daTra = updateOrderDto.is_paid === true && !chot.is_paid;
+      if (daTra) {
+        thayDoi.is_paid = true;
+        thayDoi.paid_at = new Date();
+      }
+      if (nextStatus) thayDoi.status = nextStatus;
+
+      if (Object.keys(thayDoi).length) {
+        await em.update(Order, { id }, thayDoi);
+      }
+      return { vuaDanhDauDaTra: daTra };
+    });
+
+    if (ketQua.doiThanh) {
+      throw new ConflictException(
+        `Đơn hàng vừa chuyển sang "${ketQua.doiThanh}" trong lúc bạn thao tác. ` +
+          'Tải lại đơn rồi thử lại.',
+      );
+    }
+    const vuaDanhDauDaTra = ketQua.vuaDanhDauDaTra === true;
 
     if (vuaDanhDauDaTra) {
       // Đường THỦ CÔNG: admin khẳng định tiền đã về (chủ yếu là đơn COD do
@@ -1313,7 +1355,7 @@ export class OrdersService {
     order: Order,
     dto: UpdateOrderDto,
     actors: OrderActor[],
-  ): void {
+  ): Partial<Order> {
     const fields = [
       'shipping_address',
       'receiver_name',
@@ -1324,7 +1366,7 @@ export class OrdersService {
     ] as const;
 
     const touched = fields.filter((f) => dto[f] !== undefined);
-    if (!touched.length) return;
+    if (!touched.length) return {};
 
     const isAdmin = actors.includes(OrderActor.ADMIN);
     if (!isAdmin) {
@@ -1344,6 +1386,11 @@ export class OrdersService {
     for (const field of touched) {
       (order as any)[field] = dto[field];
     }
+    // Trả riêng phần vừa đổi để người gọi ghi ĐÚNG những cột này, không lưu
+    // cả entity (xem khối khoá dòng trong `updateStatus`).
+    return Object.fromEntries(
+      touched.map((f) => [f, dto[f]]),
+    ) as Partial<Order>;
   }
 
   /**
