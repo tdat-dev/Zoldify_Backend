@@ -488,8 +488,17 @@ export class PayosService {
       }
 
       if (!isSuccess) {
-        payment.status = PaymentStatus.FAILED;
-        await em.save(Payment, payment);
+        // CHỈ HẠ PAYMENT CÒN PENDING. Webhook "không thành công" có thể tới SAU
+        // webhook thành công (PayOS gửi lại, tới sai thứ tự). Bản cũ ghi đè
+        // thẳng FAILED lên payment SUCCESS: tiền vẫn nằm trong sổ, còn chứng từ
+        // nói là chưa trả (bài kiểm C cuối trong `tien-ve-tre.spec.ts`).
+        // Điều kiện nằm trong WHERE nên một lần thành công commit chen giữa
+        // cũng không bị hạ.
+        await em.update(
+          Payment,
+          { id: payment.id, status: PaymentStatus.PENDING },
+          { status: PaymentStatus.FAILED },
+        );
         return {
           processed: false as const,
           reason: 'Payment not successful' as const,
