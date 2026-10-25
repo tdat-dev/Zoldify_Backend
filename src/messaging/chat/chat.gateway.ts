@@ -15,6 +15,24 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { SendMessageSocketDto } from './dto/send-message.dto';
+
+/**
+ * Nhịp gửi tin tối đa của MỘT socket: 10 tin trong 10 giây.
+ *
+ * Bản trước không có giới hạn nào: một vòng lặp phía client bắn hàng nghìn tin
+ * mỗi giây, mỗi tin là một INSERT messages, một UPDATE users.last_seen và một
+ * thông báo cho người nhận. ThrottlerGuard của HTTP không chạy cho socket. Người
+ * thật gõ tin mua bán không tới một tin mỗi giây kéo dài, nên mức này không
+ * chạm tới luồng thật. Đếm theo socket (giữ trong client.data), không theo
+ * user: đủ để chặn vòng lặp, và không cần Redis. Nợ: một người mở nhiều socket
+ * thì được nhân lên; muốn chặn theo user trên cả cụm thì chuyển sang bộ đếm
+ * Redis như throttler HTTP.
+ */
+const NHIP_TOI_DA = 10;
+const CUA_SO_NHIP_MS = 10_000;
 
 @Injectable()
 @WebSocketGateway({ cors: { origin: '*' }, namespace: '/chat' })
@@ -185,14 +203,46 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.leave(`conv_${conversationId}`);
   }
 
+  /** true nếu socket còn được gửi tin trong cửa sổ hiện tại (xem NHIP_TOI_DA). */
+  private conTrongNhip(client: Socket): boolean {
+    const data = client.data as { nhipGui?: number[] };
+    const bayGio = Date.now();
+    const gan = (data.nhipGui ?? []).filter((t) => bayGio - t < CUA_SO_NHIP_MS);
+    if (gan.length >= NHIP_TOI_DA) {
+      data.nhipGui = gan;
+      return false;
+    }
+    gan.push(bayGio);
+    data.nhipGui = gan;
+    return true;
+  }
+
   @SubscribeMessage('send_message')
   async handleMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { conversationId: number; content: string; images?: string[] },
+    raw: { conversationId: number; content: string; images?: string[] },
   ) {
     const user = client.data.user;
     if (!user) return;
+
+    // Đếm cả lần gửi sai dữ liệu: nếu không thì bắn payload hỏng liên tục là
+    // một cách né giới hạn nhịp.
+    if (!this.conTrongNhip(client)) {
+      client.emit('error', 'Bạn gửi tin quá nhanh, vui lòng chờ một chút');
+      return;
+    }
+
+    // ValidationPipe toàn cục chỉ chạy cho HTTP, nên payload socket phải tự
+    // kiểm. Dùng chung luật với POST .../messages (SendMessageDto).
+    const payload = plainToInstance(SendMessageSocketDto, raw ?? {});
+    const loi = await validate(payload);
+    if (loi.length) {
+      const dauTien = Object.values(loi[0].constraints ?? {})[0];
+      client.emit('error', dauTien ?? 'Tin nhắn không hợp lệ');
+      return;
+    }
+
     try {
       const message = await this.chatService.sendMessage(
         payload.conversationId,
