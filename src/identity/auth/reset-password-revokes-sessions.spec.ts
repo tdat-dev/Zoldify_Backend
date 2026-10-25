@@ -82,6 +82,21 @@ describe('resetPassword thu hồi phiên cũ', () => {
     });
   });
 
+  // Gõ đúng OTP gửi về hộp thư là đã chứng minh sở hữu email. Đây cũng là
+  // đường duy nhất để chủ thật lấy lại một tài khoản bị "chiếm trước" (kẻ xấu
+  // đăng ký email của họ khi chưa có OTP): /auth/firebase từ chối nối vào tài
+  // khoản chưa xác minh, và chỉ mở lại sau khi bước này đánh dấu xác minh.
+  it('đánh dấu email đã xác minh sau khi đặt lại bằng OTP', async () => {
+    const { service, updateCalls } = makeService();
+
+    await service.resetPassword('a@b.com', '123456', 'matkhaumoi123');
+
+    expect(updateCalls).toContainEqual({
+      id: 7,
+      patch: expect.objectContaining({ email_verified: true }) as unknown,
+    });
+  });
+
   it('tài khoản bị khoá vẫn đặt lại được mật khẩu, không nhận 401', async () => {
     const { service, user, updateUserToken } = makeService();
     user.is_locked = true;
