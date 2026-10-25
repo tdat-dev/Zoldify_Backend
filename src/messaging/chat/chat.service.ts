@@ -35,16 +35,33 @@ export class ChatService {
 
     const product = await this.productRepository.findOne({
       where: { id: product_id },
+      relations: ['seller'],
     });
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
+    }
+
+    // NGƯỜI BÁN LẤY TỪ SẢN PHẨM, KHÔNG LẤY TỪ BODY.
+    //
+    // Bản trước dùng nguyên seller_id client gửi, nên mở được hội thoại "về
+    // sản phẩm X" với một người bất kỳ không liên quan tới X: nhắn rác tới ai
+    // cũng được, kèm sản phẩm của người khác cho trông như thật. Web và app
+    // đều gửi seller_id đúng là người bán của sản phẩm, nên seller_id trong
+    // body giờ chỉ còn dùng để chặn ca tự nhắn với mình; giữ trường đó trong
+    // DTO để client cũ không bị forbidNonWhitelisted từ chối.
+    const sellerId = product.seller?.id;
+    if (!sellerId) {
+      throw new BadRequestException('Sản phẩm không có người bán');
+    }
+    if (sellerId === user.id || seller_id === user.id) {
+      throw new BadRequestException('Bạn không thể nhắn tin với chính mình');
     }
 
     // Kiểm tra đã có conversation giữa buyer và seller về product này chưa
     const existing = await this.conversationRepository.findOne({
       where: {
         buyer: { id: user.id },
-        seller: { id: seller_id },
+        seller: { id: sellerId },
         product: { id: product_id },
       },
     });
@@ -55,7 +72,7 @@ export class ChatService {
 
     const conversation = this.conversationRepository.create({
       buyer: { id: user.id },
-      seller: { id: seller_id },
+      seller: { id: sellerId },
       product: { id: product_id },
     });
 
