@@ -943,6 +943,15 @@ export class OrdersService {
       // `createOrderEscrows` từ chối đúng trường hợp ấy (xem lời giải thích
       // trong `escrows.service.ts`), nên phải lưu cờ xuống trước.
       const daTra = updateOrderDto.is_paid === true && !chot.is_paid;
+      // Đơn đã huỷ/hoàn tiền: hàng đã về kho, ký quỹ sinh ra lúc này nằm
+      // `holding` mãi mãi vì đơn đóng rồi, không đường nào giải ngân hay hoàn
+      // được nữa (bài kiểm H).
+      if (daTra && DA_DONG_KHONG_GIAO.includes(chot.status)) {
+        throw new BadRequestException(
+          `Đơn hàng đang ở trạng thái "${chot.status}" nên không ghi nhận đã ` +
+            'thu tiền được. Nếu tiền thật đã về, cần hoàn tay cho người mua.',
+        );
+      }
       if (daTra) {
         thayDoi.is_paid = true;
         thayDoi.paid_at = new Date();
@@ -965,6 +974,19 @@ export class OrdersService {
       if (Object.keys(thayDoi).length) {
         await em.update(Order, { id }, thayDoi);
       }
+
+      // Đường THỦ CÔNG: admin khẳng định tiền đã về (chủ yếu là đơn COD do GHN
+      // thu hộ). Không có webhook nào đưa tiền vào két nên phải ghi bút toán đó
+      // ở đây, nếu không lần giải ngân đầu tiên kéo escrow_hold xuống âm. Xem
+      // lời giải thích đầy đủ trong escrows.service.ts.
+      //
+      // CÙNG transaction với `is_paid`, và SAU câu UPDATE ở trên để
+      // `createOrderEscrows` đọc thấy cờ đã bật. Bản cũ ghi két trong một
+      // transaction riêng sau khi cờ đã lưu: bước này hỏng thì đơn "đã trả" mà
+      // két rỗng, và lần bấm lại thấy cờ đã bật nên không bao giờ ghi két nữa.
+      if (daTra) {
+        await this.escrowsService.createOrderEscrowsWithExternalFunding(id, em);
+      }
       return { vuaDanhDauDaTra: daTra };
     });
 
@@ -976,15 +998,6 @@ export class OrdersService {
         `Đơn hàng vừa chuyển sang "${ketQua.doiThanh}" trong lúc bạn thao tác. ` +
           'Tải lại đơn rồi thử lại.',
       );
-    }
-    const vuaDanhDauDaTra = ketQua.vuaDanhDauDaTra === true;
-
-    if (vuaDanhDauDaTra) {
-      // Đường THỦ CÔNG: admin khẳng định tiền đã về (chủ yếu là đơn COD do
-      // GHN thu hộ). Không có webhook nào đưa tiền vào két nên phải ghi bút
-      // toán đó ở đây, nếu không lần giải ngân đầu tiên kéo escrow_hold xuống
-      // âm. Xem lời giải thích đầy đủ trong escrows.service.ts.
-      await this.escrowsService.createOrderEscrowsWithExternalFunding(order.id);
     }
 
     // Tiền đi sau khi trạng thái đã lưu. Lỗi ở đây được NÉM RA, không nuốt:
