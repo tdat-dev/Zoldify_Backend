@@ -43,7 +43,11 @@ import { GhnService, ghnErrorMessage } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Escrow, EscrowStatus } from '@money/escrows/entities/escrow.entity';
 import { PayosService } from '@money/payos/payos.service';
-import { assertTransitionAllowed, OrderActor } from './order-status.policy';
+import {
+  assertTransitionAllowed,
+  DA_DONG_KHONG_GIAO,
+  OrderActor,
+} from './order-status.policy';
 import {
   normalizePagination,
   decodeCursor,
@@ -1092,6 +1096,15 @@ export class OrdersService {
         'Lô hàng này chưa gửi được, chưa thể xác nhận đã nhận',
       );
     }
+    // Đơn đã huỷ hoặc đã hoàn tiền thì không còn gì để "nhận". Không chặn ở
+    // đây thì một lô GHN sống sót (vận đơn mồ côi) đủ để kéo đơn huỷ sang
+    // `delivered` qua `reconcileOrderDelivered` bên dưới.
+    if (DA_DONG_KHONG_GIAO.includes(order.status)) {
+      throw new BadRequestException(
+        `Đơn hàng đang ở trạng thái "${order.status}" nên không xác nhận ` +
+          'đã nhận hàng được.',
+      );
+    }
 
     await this.escrowsService.release(orderId, sellerId);
 
@@ -1124,13 +1137,17 @@ export class OrdersService {
       active.every((s) => s.status === ShipmentStatus.RECEIVED);
     if (!allReceived) return;
 
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-    });
-    if (order && order.status !== OrderStatus.DELIVERED) {
-      order.status = OrderStatus.DELIVERED;
-      await this.orderRepository.save(order);
-    }
+    // MỘT câu UPDATE có điều kiện, không đọc-rồi-ghi: điều kiện cũ chỉ là
+    // "chưa phải delivered", nên đơn đã huỷ hoặc đã hoàn tiền cũng bị kéo sang
+    // delivered. Điều kiện nằm trong WHERE thì một lượt huỷ commit chen giữa
+    // cũng không bị ghi đè.
+    await this.orderRepository.update(
+      {
+        id: orderId,
+        status: Not(In([...DA_DONG_KHONG_GIAO, OrderStatus.DELIVERED])),
+      },
+      { status: OrderStatus.DELIVERED },
+    );
   }
 
   /**
@@ -1322,6 +1339,10 @@ export class OrdersService {
         status: ShipmentStatus.DELIVERED,
         received_at: IsNull(),
         delivered_at: LessThan(cutoff),
+        // Lô của đơn đã huỷ/hoàn tiền thì không tự chốt: chốt là giải ngân và
+        // đặt đơn sang delivered. Lô đó đã được đánh dấu cần xử lý tay (xem
+        // `baoVanDonMoCoi`), job không được tự quyết thay.
+        order: { status: Not(In(DA_DONG_KHONG_GIAO)) },
       },
       relations: ['seller', 'order'],
     });
