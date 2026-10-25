@@ -949,6 +949,19 @@ export class OrdersService {
       }
       if (nextStatus) thayDoi.status = nextStatus;
 
+      // HOÀN TIỀN, TRẢ KHO VÀ GHI `refunded`: CÙNG MỘT TRANSACTION.
+      //
+      // Bản cũ lưu `refunded` trước rồi mới hoàn tiền trong transaction riêng.
+      // Người bán đã tiêu hết số vừa nhận thì sổ cái từ chối lệnh đòi lại
+      // (đúng thiết kế), nhưng đơn đã nằm ở `refunded`: người mua thấy "đã
+      // hoàn tiền" mà ví không có đồng nào, và admin không bấm lại được vì bảng
+      // trạng thái chặn `refunded -> refunded`. Đo bằng bài kiểm F trong
+      // `dua-trang-thai-don.spec.ts`. Không có lời gọi mạng nào trong này nên
+      // giữ khoá dòng suốt quãng đó không sao.
+      if (nextStatus === OrderStatus.REFUNDED) {
+        await this.hoanTienVaTraKho(em, order, chot.status);
+      }
+
       if (Object.keys(thayDoi).length) {
         await em.update(Order, { id }, thayDoi);
       }
@@ -980,51 +993,56 @@ export class OrdersService {
     if (nextStatus === OrderStatus.DELIVERED) {
       await this.releaseEscrowOrExplain(order.id, 'giải ngân');
     }
-    // HOÀN TIỀN THÌ HÀNG CŨNG PHẢI VỀ KHO.
-    //
-    // `cancel()` hoàn kho, còn nhánh này thì không — hai đường cùng nghĩa "giao
-    // dịch không thành" mà chỉ một đường trả hàng lại. Đơn hoàn tiền để lại
-    // hàng bị trừ vĩnh viễn: người bán mất chỗ trên kệ mà không ai lấy hàng đi.
-    // Đo bằng TC-P1-07.
-    //
-    // Tiền và kho trong CÙNG một transaction: hoàn tiền hỏng (người bán đã tiêu
-    // hết số đã nhận) thì kho cũng không được cộng lại, nếu không thì kho phình
-    // ra hàng không có thật mà tiền vẫn chưa trả người mua.
-    if (nextStatus === OrderStatus.REFUNDED) {
-      await this.dataSource.transaction(async (em) => {
-        try {
-          await this.escrowsService.refund(order.id, em, true);
-        } catch (err) {
-          // CHỈ nuốt đúng một trường hợp, y như `applyCancellation` đã làm:
-          // đơn không có khoản ký quỹ nào để hoàn (đơn COD, hoặc đơn có từ
-          // trước khi hệ thống ký quỹ tồn tại). Hàng vẫn phải về kho — việc trừ
-          // kho xảy ra lúc đặt đơn, không phụ thuộc vào việc tiền đi đường nào.
-          //
-          // Mọi lỗi khác phải làm hỏng cả transaction: tiền chưa về mà kho đã
-          // cộng lại thì sàn vừa mất hàng lẫn tiền.
-          if (!(err instanceof NotFoundException)) throw err;
-          this.logger.warn(
-            `Đơn #${order.id} hoàn tiền nhưng không có khoản ký quỹ nào. ` +
-              'Vẫn trả hàng về kho, nhưng cần đối soát tay xem tiền ở đâu.',
-          );
-        }
-        for (const item of order.items ?? []) {
-          if (item.product) {
-            await em.increment(
-              Product,
-              { id: item.product.id },
-              'stock',
-              item.quantity,
-            );
-          }
-        }
-      });
-    }
 
     return this.orderRepository.findOne({
       where: { id: order.id },
       relations: ['user', 'items', 'items.product'],
     });
+  }
+
+  /**
+   * Nhánh `refunded` của `updateStatus`: hoàn tiền (đòi lại cả phần đã giải
+   * ngân) và trả hàng về kho. Chạy bên trong transaction chốt trạng thái.
+   *
+   * HOÀN TIỀN THÌ HÀNG CŨNG PHẢI VỀ KHO. `cancel()` hoàn kho, còn nhánh này
+   * từng không: đơn hoàn tiền để lại hàng bị trừ vĩnh viễn. Đo bằng TC-P1-07.
+   *
+   * NHƯNG KHÔNG CỘNG LẦN HAI. Bảng trạng thái cho `cancelled -> refunded`, và
+   * lúc huỷ thì kho đã được cộng lại rồi. Bản cũ cộng vô điều kiện: huỷ rồi
+   * hoàn tiền một đơn 2 món thì kho 48 -> 50 -> 52, phình ra 2 món không có
+   * thật (bài kiểm F). Nên đơn đi từ `cancelled` thì chỉ hoàn tiền.
+   */
+  private async hoanTienVaTraKho(
+    em: EntityManager,
+    order: Order,
+    trangThaiTruoc: OrderStatus,
+  ): Promise<void> {
+    try {
+      await this.escrowsService.refund(order.id, em, true);
+    } catch (err) {
+      // CHỈ nuốt đúng một trường hợp, y như `applyCancellation` đã làm: đơn
+      // không có khoản ký quỹ nào để hoàn (đơn COD, hoặc đơn có từ trước khi
+      // hệ thống ký quỹ tồn tại). Mọi lỗi khác phải làm hỏng cả transaction,
+      // kể cả việc ghi `refunded`: tiền chưa về thì đơn chưa được hoàn.
+      if (!(err instanceof NotFoundException)) throw err;
+      this.logger.warn(
+        `Đơn #${order.id} hoàn tiền nhưng không có khoản ký quỹ nào. ` +
+          'Cần đối soát tay xem tiền ở đâu.',
+      );
+    }
+
+    if (trangThaiTruoc === OrderStatus.CANCELLED) return;
+
+    for (const item of order.items ?? []) {
+      if (item.product) {
+        await em.increment(
+          Product,
+          { id: item.product.id },
+          'stock',
+          item.quantity,
+        );
+      }
+    }
   }
 
   /**
