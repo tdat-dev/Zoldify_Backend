@@ -45,6 +45,9 @@ const TEST_DB = {
 
 jest.setTimeout(60_000);
 
+/** Một dòng SQL thô. Khai kiểu một lần ở đây để không rải `any` ra cả file. */
+type Dong = { id: number; status: string; is_paid: number };
+
 describe('PayosService: tiền về trễ', () => {
   let ds: DataSource;
   let payos: PayosService;
@@ -154,9 +157,10 @@ describe('PayosService: tiền về trễ', () => {
       `INSERT INTO users (full_name, email, password, role) VALUES (?, ?, 'x', ?)`,
       [email, email, role],
     );
-    const [row] = await ds.query('SELECT id FROM users WHERE email = ?', [
-      email,
-    ]);
+    const [row] = await ds.query<Dong[]>(
+      'SELECT id FROM users WHERE email = ?',
+      [email],
+    );
     return row.id;
   }
 
@@ -169,13 +173,13 @@ describe('PayosService: tiền về trễ', () => {
        VALUES (?, ?, ?, ?, ?, 'payos', 0, 'T', '0900000000', 'addr')`,
       [code, buyerId, amount, amount, status],
     );
-    const [order] = await ds.query(
+    const [order] = await ds.query<Dong[]>(
       'SELECT id FROM orders WHERE order_code = ?',
       [code],
     );
 
     await ds.query(`INSERT INTO categories (name) VALUES ('c')`);
-    const [cat] = await ds.query(
+    const [cat] = await ds.query<Dong[]>(
       'SELECT id FROM categories ORDER BY id DESC LIMIT 1',
     );
     await ds.query(
@@ -183,7 +187,7 @@ describe('PayosService: tiền về trễ', () => {
        VALUES ('p', ?, 10, ?, ?)`,
       [amount, sellerId, cat.id],
     );
-    const [prod] = await ds.query(
+    const [prod] = await ds.query<Dong[]>(
       'SELECT id FROM products ORDER BY id DESC LIMIT 1',
     );
     await ds.query(
@@ -207,11 +211,11 @@ describe('PayosService: tiền về trễ', () => {
         `link-${order.id}`,
       ],
     );
-    const [payment] = await ds.query(
+    const [payment] = await ds.query<Dong[]>(
       'SELECT id FROM payments ORDER BY id DESC LIMIT 1',
     );
 
-    return { orderId: order.id as number, paymentId: payment.id as number };
+    return { orderId: order.id, paymentId: payment.id };
   }
 
   /**
@@ -253,11 +257,11 @@ describe('PayosService: tiền về trễ', () => {
       LedgerPurpose.ESCROW_HOLD,
     );
   const donLuc = async (id: number) => {
-    const [o] = await ds.query(
+    const [o] = await ds.query<Dong[]>(
       'SELECT status, is_paid FROM orders WHERE id = ?',
       [id],
     );
-    return { status: o.status as string, is_paid: Number(o.is_paid) };
+    return { status: o.status, is_paid: Number(o.is_paid) };
   };
 
   /**
@@ -366,9 +370,10 @@ describe('PayosService: tiền về trễ', () => {
       },
     });
 
-    const [p] = await ds.query('SELECT status FROM payments WHERE id = ?', [
-      paymentId,
-    ]);
+    const [p] = await ds.query<Dong[]>(
+      'SELECT status FROM payments WHERE id = ?',
+      [paymentId],
+    );
     expect(p.status).toBe(PaymentStatus.SUCCESS);
   });
 });

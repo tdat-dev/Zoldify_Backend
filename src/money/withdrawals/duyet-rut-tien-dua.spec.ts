@@ -36,6 +36,9 @@ const TEST_DB = {
 
 jest.setTimeout(60_000);
 
+/** Một dòng SQL thô. Khai kiểu một lần ở đây để không rải `any` ra cả file. */
+type Dong = { id: number; status: string; is_paid: number };
+
 describe('WithdrawalsService: hai admin bấm cùng lúc', () => {
   let ds: DataSource;
   let service: WithdrawalsService;
@@ -110,9 +113,10 @@ describe('WithdrawalsService: hai admin bấm cùng lúc', () => {
       `INSERT INTO users (full_name, email, password, role) VALUES (?, ?, 'x', ?)`,
       [email, email, role],
     );
-    const [row] = await ds.query('SELECT id FROM users WHERE email = ?', [
-      email,
-    ]);
+    const [row] = await ds.query<Dong[]>(
+      'SELECT id FROM users WHERE email = ?',
+      [email],
+    );
     return row.id;
   }
 
@@ -139,10 +143,11 @@ describe('WithdrawalsService: hai admin bấm cùng lúc', () => {
   }
 
   const trangThai = async (id: number): Promise<string> => {
-    const [w] = await ds.query('SELECT status FROM withdrawals WHERE id = ?', [
-      id,
-    ]);
-    return w.status as string;
+    const [w] = await ds.query<Dong[]>(
+      'SELECT status FROM withdrawals WHERE id = ?',
+      [id],
+    );
+    return w.status;
   };
 
   const viCon = () =>
