@@ -1836,6 +1836,32 @@ export class OrdersService {
         );
       }
 
+      // KIỆN HÀNG ĐÃ NẰM TRONG TAY GHN THÌ KHÔNG HUỶ ĐƯỢC NỮA.
+      //
+      // Cron huỷ đơn quá hạn đã tránh đúng trường hợp này từ lâu
+      // (`tasks.service.ts`, lọc `tracking_code IS NULL`), nhưng nút huỷ của
+      // người mua và "huỷ bán" của người bán thì không: người mua huỷ một đơn
+      // đã gửi đi là được hoàn tiền trong khi món hàng vẫn đang trên đường tới
+      // nhà họ, và GHN không hề biết đơn đã huỷ. Đo bằng bài kiểm E trong
+      // `dua-trang-thai-don.spec.ts`.
+      //
+      // Kiểm ở ĐÂY, dưới khoá dòng đơn, chứ không ở `assertCancellable`: ba
+      // đường huỷ đều đi qua đây, và đọc trong transaction thì không lọt qua
+      // khe giữa lúc kiểm và lúc huỷ. Lô FAILED không tính: GHN chưa nhận hàng.
+      const vanDonDangDi = await em.count(OrderShipment, {
+        where: {
+          order: { id: order.id },
+          tracking_code: Not(IsNull()),
+          status: Not(ShipmentStatus.FAILED),
+        },
+      });
+      if (vanDonDangDi > 0) {
+        throw new BadRequestException(
+          'Đơn hàng đã có vận đơn GHN đang giao nên không huỷ được nữa. ' +
+            'Liên hệ người bán hoặc quản trị viên để xử lý hoàn hàng.',
+        );
+      }
+
       // Đọc `is_paid` từ bản vừa khoá, không dùng bản nạp từ trước: tiền có thể
       // vừa về trong lúc chờ.
       order.is_paid = chot.is_paid;
