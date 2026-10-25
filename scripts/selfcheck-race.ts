@@ -102,6 +102,12 @@ interface DichVuThanhToan {
   create: (dto: unknown, user: unknown) => Promise<unknown>;
 }
 
+interface DichVuRutTien {
+  create: (userId: number, dto: unknown) => Promise<{ id: number }>;
+  approve: (id: number, adminId: number) => Promise<unknown>;
+  reject: (id: number, adminId: number, note?: string) => Promise<unknown>;
+}
+
 interface DichVuSoCai {
   getOrCreateAccount: (
     ownerType: string,
@@ -663,6 +669,70 @@ async function main() {
       ketR8 === BigInt(GIA_TIEN),
     `${N} đơn trả cùng lúc → ${traR8} lượt thành công, ${soDonTraR8} đơn đã trả (đúng: 1), ` +
       `ví còn ${viR8}, thấp nhất ${thapNhat}, két ${ketR8}`,
+  );
+
+  // ── R9: HAI ADMIN, MỘT LỆNH RÚT: DUYỆT VÀ TỪ CHỐI CÙNG LÚC ──────────────
+  //
+  // Hai admin cùng mở một lệnh rút đang chờ. Từ chối là trả tiền về ví người
+  // bán; duyệt là hứa sẽ chuyển khoản. Không khoá thì cả hai cùng thấy
+  // `pending` và cùng "thành công": tiền đã về ví theo lượt từ chối mà lệnh
+  // lại nằm ở `approved` theo lượt ghi sau, và admin đi chuyển khoản thật cho
+  // một khoản người bán vẫn còn tiêu được.
+  console.log(
+    '\n\x1b[1mR9 · Hai admin duyệt và từ chối một lệnh rút cùng lúc\x1b[0m',
+  );
+  const rutTien = lay<DichVuRutTien>(
+    '../src/money/withdrawals/withdrawals.service',
+    'WithdrawalsService',
+  );
+  const SO_RUT = 100_000;
+  await dungSanPham(ds, 5);
+  await donSachTien(ds);
+  await ds.query(
+    `INSERT INTO users (id, full_name, email, password, role)
+     VALUES (2, 'quan tri', 'admin@race.local', 'x', 'admin')`,
+  );
+  const congR9 = await soCai.getOrCreateAccount(
+    'external',
+    null,
+    'gateway_clearing',
+  );
+  const viBanR9 = await soCai.getOrCreateAccount('user', 1, 'available');
+  await soCai.post({
+    idempotencyKey: 'race:r9:nap',
+    type: 'topup',
+    entries: [
+      { accountId: Number(congR9.id), amount: -BigInt(SO_RUT) },
+      { accountId: Number(viBanR9.id), amount: BigInt(SO_RUT) },
+    ],
+  });
+  const lenh = await rutTien.create(1, {
+    amount: SO_RUT,
+    bank_name: 'VCB',
+    bank_account: '0123456789',
+    bank_holder: 'NGUOI BAN',
+  });
+  const thangR9 = await dongThoi(async (i) => {
+    if (i % 2) await rutTien.approve(lenh.id, 2);
+    else await rutTien.reject(lenh.id, 2, 'race r9');
+    return true;
+  });
+  const lenhR9 = await ds.query<Array<{ status: string }>>(
+    'SELECT status FROM withdrawals WHERE id = ?',
+    [lenh.id],
+  );
+  const conR9 = await soDu(ds, 'user', 1, 'available');
+  const giuR9 = await soDu(ds, 'user', 1, 'withdrawal_pending');
+  const trangThaiR9 = lenhR9[0].status;
+  // Tiền phải đứng đúng chỗ theo bên thắng, và không đồng nào sinh thêm.
+  const tienDungCho =
+    (trangThaiR9 === 'approved' && giuR9 === BigInt(SO_RUT) && conR9 === 0n) ||
+    (trangThaiR9 === 'rejected' && conR9 === BigInt(SO_RUT) && giuR9 === 0n);
+  chot(
+    'R9 rút tiền: duyệt và từ chối cùng lúc',
+    thangR9 === 1 && tienDungCho,
+    `${N} lượt → ${thangR9} lượt thành công (đúng: 1), lệnh ${trangThaiR9}, ` +
+      `ví ${conR9}, đang giữ ${giuR9}`,
   );
 
   await ds.destroy();
