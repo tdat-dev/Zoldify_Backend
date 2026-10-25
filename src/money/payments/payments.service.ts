@@ -136,6 +136,29 @@ export class PaymentsService {
       // thái đã trả, đợi giao hàng" — trả bằng ví hay bằng PayOS thì người mua
       // cũng đã trả xong, không có lý do gì để hai đường khác nhau.
       return this.dataSource.transaction(async (em) => {
+        // KHOÁ DÒNG ĐƠN, ĐỌC LẠI, CHỈ NHẬN ĐƠN `pending` CHƯA TRẢ.
+        //
+        // Phép kiểm phía trên chạy trên bản đọc không khoá và chỉ hỏi chủ đơn
+        // với `is_paid`. Đơn đã huỷ (hàng đã về kho) trả bằng ví được và bị
+        // đặt lại thành `confirmed`: đơn sống lại trên số hàng đã bán cho
+        // người khác. Kiểm thêm trạng thái trên bản đọc cũ cũng không đủ, vì
+        // lượt huỷ có thể commit ngay sau lúc đọc (bài kiểm D thứ hai trong
+        // `tra-bang-vi-don-da-dong.spec.ts`). Khoá đơn trước khi trừ ví, cùng
+        // thứ tự với `applyCancellation` (đơn rồi mới tới sổ cái).
+        const don = await em.findOne(Order, {
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!don || don.is_paid) {
+          throw new BadRequestException('Đơn hàng đã được thanh toán');
+        }
+        if (don.status !== OrderStatus.PENDING) {
+          throw new BadRequestException(
+            `Đơn hàng đang ở trạng thái "${don.status}" nên không thanh toán ` +
+              'được nữa.',
+          );
+        }
+
         // Khoá chống trùng tất định theo đơn: bấm thanh toán hai lần thì chỉ
         // trừ tiền một lần.
         await this.walletsService.deduct(
