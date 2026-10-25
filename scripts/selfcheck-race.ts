@@ -98,6 +98,19 @@ interface DichVuPayos {
   handleWebhook: (body: unknown) => Promise<unknown>;
 }
 
+interface DichVuThanhToan {
+  create: (dto: unknown, user: unknown) => Promise<unknown>;
+}
+
+interface DichVuSoCai {
+  getOrCreateAccount: (
+    ownerType: string,
+    ownerId: number | null,
+    purpose: string,
+  ) => Promise<{ id: number | string }>;
+  post: (input: unknown) => Promise<unknown>;
+}
+
 let failures = 0;
 const results = new Map<string, boolean>();
 const ok = (m: string) => console.log(`  \x1b[32m✓ PASS\x1b[0m  ${m}`);
@@ -580,6 +593,76 @@ async function main() {
       Number(donR7[0].is_paid) === 1,
     `${N} webhook → ${soButToanR7} bút toán (đúng: 1), két ${ketR7}, ví người mua ${viR7}, ` +
       `đơn ${donR7[0].status}/is_paid=${donR7[0].is_paid}`,
+  );
+
+  // ── R8: MỘT VÍ, NHIỀU ĐƠN, TRẢ CÙNG LÚC ─────────────────────────────────
+  //
+  // Ví người mua có đúng tiền cho MỘT đơn. Người mua mở N đơn khác nhau
+  // trên nhiều tab và bấm "trả bằng ví" ở tất cả cùng lúc. Mỗi đơn có khoá
+  // chống trùng riêng (`order_pay:<id>`), nên R3 không che được: thứ duy nhất
+  // chặn là `LedgerService.post` khoá tài khoản ví (`FOR UPDATE`) rồi mới kiểm
+  // "không được âm". Thiếu khoá thì mọi lượt cùng đọc thấy đủ tiền, nhiều đơn
+  // cùng được trả bằng một lần tiền.
+  console.log('\n\x1b[1mR8 · Một ví, nhiều đơn, trả bằng ví cùng lúc\x1b[0m');
+  const thanhToan = lay<DichVuThanhToan>(
+    '../src/money/payments/payments.service',
+    'PaymentsService',
+  );
+  const soCai = lay<DichVuSoCai>(
+    '../src/money/ledger/ledger.service',
+    'LedgerService',
+  );
+  await dungSanPham(ds, 50);
+  await donSachTien(ds);
+  for (let i = 1; i <= N; i++) {
+    await taoDonTien(ds, i, 'pending', false, 'wallet');
+  }
+  const congNap = await soCai.getOrCreateAccount(
+    'external',
+    null,
+    'gateway_clearing',
+  );
+  const viMua = await soCai.getOrCreateAccount(
+    'user',
+    NGUOI_MUA_TIEN,
+    'available',
+  );
+  await soCai.post({
+    idempotencyKey: 'race:r8:nap',
+    type: 'topup',
+    entries: [
+      { accountId: Number(congNap.id), amount: -BigInt(GIA_TIEN) },
+      { accountId: Number(viMua.id), amount: BigInt(GIA_TIEN) },
+    ],
+  });
+  const traR8 = await dongThoi(async (i) => {
+    await thanhToan.create(
+      { order_id: i + 1, payment_method: 'wallet' },
+      { id: NGUOI_MUA_TIEN, role: 'buyer' },
+    );
+    return true;
+  });
+  const daTraR8 = await ds.query<Array<{ n: number }>>(
+    'SELECT COUNT(*) AS n FROM orders WHERE is_paid = 1',
+  );
+  // Số dư thấp nhất từng xuất hiện trong sổ của ví, không chỉ số dư cuối:
+  // "chưa bao giờ âm" là bất biến, "cuối cùng không âm" thì chưa đủ.
+  const thapNhatR8 = await ds.query<Array<{ m: string | number | null }>>(
+    `SELECT MIN(e.balance_after) AS m FROM ledger_entries e
+     JOIN ledger_accounts a ON a.id = e.account_id
+     WHERE a.owner_type = 'user' AND a.owner_id = ? AND a.purpose = 'available'`,
+    [NGUOI_MUA_TIEN],
+  );
+  const viR8 = await soDu(ds, 'user', NGUOI_MUA_TIEN, 'available');
+  const ketR8 = await soDu(ds, 'platform', null, 'escrow_hold');
+  const soDonTraR8 = Number(daTraR8[0].n);
+  const thapNhat = BigInt(String(thapNhatR8[0].m ?? 0));
+  chot(
+    'R8 trả bằng ví: nhiều đơn, một ví chỉ đủ một đơn',
+    traR8 === 1 && soDonTraR8 === 1 && viR8 === 0n && thapNhat >= 0n &&
+      ketR8 === BigInt(GIA_TIEN),
+    `${N} đơn trả cùng lúc → ${traR8} lượt thành công, ${soDonTraR8} đơn đã trả (đúng: 1), ` +
+      `ví còn ${viR8}, thấp nhất ${thapNhat}, két ${ketR8}`,
   );
 
   await ds.destroy();
