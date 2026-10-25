@@ -138,12 +138,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  /**
+   * Chỉ người mua hoặc người bán của hội thoại được vào phòng (A-07).
+   *
+   * Bản trước join thẳng theo id client gửi. Mọi tin được phát vào phòng
+   * `conv_<id>` (receive_message), nên chỉ cần đăng nhập rồi đếm id từ 1 là
+   * nghe lén được mọi cuộc trò chuyện, trong khi HTTP GET .../messages đã kiểm
+   * thành viên từ lâu. Hội thoại không tồn tại và người ngoài nhận CÙNG một câu
+   * lỗi, để không dò được id nào có thật.
+   */
   @SubscribeMessage('join_conversation')
-  handleJoinConversation(
+  async handleJoinConversation(
     @ConnectedSocket() client: Socket,
     @MessageBody() conversationId: number,
   ) {
-    client.join(`conv_${conversationId}`);
+    const userId = (client.data as { user?: { id: number } }).user?.id;
+    const conv = await this.chatService.getConversationById(
+      Number(conversationId),
+    );
+    if (
+      !userId ||
+      !conv ||
+      (conv.buyer?.id !== userId && conv.seller?.id !== userId)
+    ) {
+      client.emit(
+        'error',
+        'Bạn không phải là thành viên của cuộc trò chuyện này',
+      );
+      return;
+    }
+    await client.join(`conv_${conv.id}`);
   }
 
   // Client yêu cầu server trả về danh sách userId đang online (để sync lần đầu)
