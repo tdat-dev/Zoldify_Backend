@@ -19,7 +19,11 @@ import { PlatformFeeService } from '@money/ledger/platform-fee.service';
 import { LedgerAccount } from '@money/ledger/entities/ledger-account.entity';
 import { LedgerEntry } from '@money/ledger/entities/ledger-entry.entity';
 import { LedgerTransaction } from '@money/ledger/entities/ledger-transaction.entity';
-import { LedgerOwnerType, LedgerPurpose } from '@money/ledger/ledger.types';
+import {
+  LedgerOwnerType,
+  LedgerPurpose,
+  LedgerTxType,
+} from '@money/ledger/ledger.types';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import {
   Product,
@@ -576,5 +580,79 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
       where: { order: { id: orderId } },
     });
     expect(lo.status).toBe(ShipmentStatus.DELIVERED);
+  });
+
+  const quanTri = (): IUser => ({
+    id: 999,
+    full_name: 'admin',
+    email: 'a@t.local',
+    role: UserRole.ADMIN,
+    avatar: '',
+  });
+
+  /**
+   * F. Hoàn tiền một đơn đã huỷ cộng kho lần thứ hai.
+   *
+   * Bảng trạng thái cho `cancelled -> refunded`, và nhánh REFUNDED của
+   * `updateStatus` cộng kho vô điều kiện. Nhưng huỷ đơn đã hoàn kho rồi: kho
+   * phình ra đúng số món của đơn, người sau đặt được hàng không có thật.
+   */
+  it('F: huỷ rồi hoàn tiền thì kho chỉ được cộng lại một lần', async () => {
+    const orderId = await taoDonDaTra(2);
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU - 2);
+
+    await orders.cancel(orderId, nguoiMua());
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
+
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.REFUNDED },
+      quanTri(),
+    );
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
+  });
+
+  /**
+   * F, mặt trạng thái: REFUNDED được LƯU TRƯỚC, hoàn tiền chạy SAU trong một
+   * transaction riêng.
+   *
+   * Người bán đã tiêu hết tiền vừa nhận thì lệnh đòi lại bị sổ cái từ chối
+   * (đúng như thiết kế), nhưng đơn đã nằm ở `refunded` rồi: người mua thấy
+   * "đã hoàn tiền" mà ví không có đồng nào, và admin không bấm lại được vì
+   * bảng trạng thái chặn `refunded -> refunded`.
+   */
+  it('F: hoàn tiền hỏng thì đơn không được ghi là đã hoàn tiền', async () => {
+    const orderId = await taoDonDaTra(1);
+    await taoLoDaGiao(orderId);
+    await orders.confirmShipmentReceived(orderId, sellerId, nguoiMua());
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.DELIVERED);
+
+    // Người bán rút sạch số vừa nhận.
+    const soDu = await viCua(sellerId);
+    const viBan = await ledger.getOrCreateAccount(
+      LedgerOwnerType.USER,
+      sellerId,
+      LedgerPurpose.AVAILABLE,
+    );
+    const nganHang = await ledger.getOrCreateAccount(
+      LedgerOwnerType.EXTERNAL,
+      null,
+      LedgerPurpose.BANK_EXTERNAL,
+    );
+    await ledger.post({
+      idempotencyKey: `test_rut_het:${sellerId}`,
+      type: LedgerTxType.ADJUSTMENT,
+      entries: [
+        { accountId: Number(viBan.id), amount: -soDu },
+        { accountId: Number(nganHang.id), amount: soDu },
+      ],
+    });
+
+    await expect(
+      orders.updateStatus(orderId, { status: OrderStatus.REFUNDED }, quanTri()),
+    ).rejects.toThrow();
+
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.DELIVERED);
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU - 1);
   });
 });
