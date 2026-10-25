@@ -8,7 +8,13 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Escrow, EscrowStatus } from './entities/escrow.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  FindOptionsWhere,
+  In,
+  Repository,
+} from 'typeorm';
 import { User, UserRole } from '@identity/users/entities/user.entity';
 import { IUser } from '@identity/users/users.interface';
 import { normalizePagination } from '@common/dto/pagination.dto';
@@ -261,10 +267,7 @@ export class EscrowsService {
       // nhận nhận hàng của một người bán thì chỉ khoản của người đó được chuyển.
       if (sellerId !== undefined) where.seller = { id: sellerId };
 
-      const escrows = await em.find(Escrow, {
-        where,
-        relations: ['seller'],
-      });
+      const escrows = await this.napVaKhoa(em, where, ['seller']);
 
       if (!escrows.length) {
         // Giải ngân theo người bán mà không còn khoản HOLDING nào = đã giải ngân
@@ -391,10 +394,10 @@ export class EscrowsService {
     doiLaiTuNguoiBan = false,
   ) {
     const run = async (em: EntityManager) => {
-      const tatCa = await em.find(Escrow, {
-        where: { order: { id: orderId } },
-        relations: ['buyer', 'seller'],
-      });
+      const tatCa = await this.napVaKhoa(em, { order: { id: orderId } }, [
+        'buyer',
+        'seller',
+      ]);
 
       if (!tatCa.length) {
         throw new NotFoundException('Không tìm thấy escrow nào để hoàn tiền');
@@ -531,6 +534,54 @@ export class EscrowsService {
     return manager ? run(manager) : this.dataSource.transaction(run);
   }
 
+  /**
+   * Đọc khoản ký quỹ VÀ khoá dòng (`SELECT ... FOR UPDATE`). Mọi quyết định
+   * "khoản này còn holding không" phải đứng trên kết quả của lần đọc này.
+   *
+   * VÌ SAO. `release` và `refund` từng đọc bằng `em.find` thường. Người mua
+   * bấm "đã nhận" và "huỷ" cùng lúc thì cả hai cùng thấy `holding`, cùng ghi
+   * sổ, và khoá chống trùng của sổ cái KHÔNG chặn hộ được vì hai bên dùng hai
+   * khoá khác nhau (`escrow_release:` và `escrow_refund:`). Đo bằng bài kiểm A
+   * trong `dua-trang-thai-don.spec.ts`: người bán nhận 100.000, người mua cũng
+   * được hoàn 100.000, két giữ hộ còn -100.000.
+   *
+   * Có khoá thì lượt đến sau phải chờ lượt trước commit, và lần đọc có khoá
+   * luôn trả bản MỚI NHẤT đã commit (khác đọc thường trong REPEATABLE READ,
+   * vốn trả ảnh chụp cũ): nó thấy `released` hoặc `refunded` và bỏ qua.
+   *
+   * Hai câu chứ không một: khoá kèm `relations` thì MySQL khoá luôn các dòng
+   * `users` bị JOIN vào (TypeORM không có `FOR UPDATE OF` cho MySQL), tức là
+   * khoá cả hồ sơ người mua lẫn người bán chỉ để chuyển tiền. Nên khoá riêng
+   * bảng escrows, rồi mới nạp quan hệ bằng câu đọc thường. Đọc thường ở câu thứ
+   * hai là an toàn vì chỉ lấy `buyer`/`seller`, hai cột không bao giờ đổi;
+   * `status` vẫn lấy từ câu có khoá.
+   */
+  private async napVaKhoa(
+    em: EntityManager,
+    where: FindOptionsWhere<Escrow>,
+    relations: Array<'buyer' | 'seller'>,
+  ): Promise<Escrow[]> {
+    const daKhoa = await em.find(Escrow, {
+      where,
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!daKhoa.length) return [];
+
+    const quanHe = new Map(
+      (
+        await em.find(Escrow, {
+          where: { id: In(daKhoa.map((e) => e.id)) },
+          relations,
+        })
+      ).map((e) => [e.id, e]),
+    );
+    for (const e of daKhoa) {
+      const day = quanHe.get(e.id);
+      for (const r of relations) if (day) e[r] = day[r];
+    }
+    return daKhoa;
+  }
+
   /** Chỉ admin. Dùng cho những chỗ nhìn được dữ liệu của mọi người. */
   private chiAdmin(user: IUser, viec: string): void {
     if (user?.role !== 'admin') {
@@ -573,7 +624,6 @@ export class EscrowsService {
       select: { buyer: SAFE_PARTY, seller: SAFE_PARTY },
     });
   }
-
 
   async findBySeller(
     sellerId: number,
