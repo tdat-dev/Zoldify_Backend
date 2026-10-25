@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { OrdersService } from './orders.service';
 import { Order, OrderStatus } from './entities/order.entity';
@@ -92,6 +93,7 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
   let sellerId: number;
   let categoryId: number;
   let productId: number;
+  let giuaGhn: (() => Promise<unknown>) | undefined;
 
   const GIA = 100_000;
   const KHO_BAN_DAU = 50;
@@ -178,9 +180,18 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
       new PlatformFeeService(ds),
     );
 
+    // `createOrder` là lời gọi mạng dài nhất trong `updateStatus`, nên cũng
+    // là cửa sổ rộng nhất để một thao tác khác chen vào. `giuaGhn` cho bài
+    // kiểm chạy đúng thao tác đó ở đúng chỗ ấy, một lần.
+    giuaGhn = undefined;
     const ghn = {
       calculateFee: () => Promise.resolve({ total: 0 }),
-      createOrder: () => Promise.resolve({ order_code: `GHN-${Date.now()}` }),
+      createOrder: async () => {
+        const chen = giuaGhn;
+        giuaGhn = undefined;
+        if (chen) await chen();
+        return { order_code: `GHN-${Date.now()}` };
+      },
       getOrderStatus: () => Promise.resolve('delivered'),
     } as unknown as GhnService;
 
@@ -257,12 +268,49 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     avatar: '',
   });
 
+  const nguoiBan = (): IUser => ({
+    id: sellerId,
+    full_name: 'seller',
+    email: 'seller@t.local',
+    role: UserRole.SELLER,
+    avatar: '',
+  });
+
   const donMacDinh = (): CreateOrderDto => ({
     shipping_address: 'so 1 duong A',
     receiver_name: 'Nguoi nhan',
     receiver_phone: '0900000000',
     payment_method: PaymentMethod.COD,
   });
+
+  const khoCua = async (pid: number): Promise<number> => {
+    const [p] = await ds.query<Array<{ stock: number }>>(
+      `SELECT stock FROM products WHERE id = ?`,
+      [pid],
+    );
+    return Number(p.stock);
+  };
+
+  const donLuc = async (
+    id: number,
+  ): Promise<{ status: string; is_paid: number }> => {
+    const [d] = await ds.query<Array<{ status: string; is_paid: number }>>(
+      `SELECT status, is_paid FROM orders WHERE id = ?`,
+      [id],
+    );
+    return { status: d.status, is_paid: Number(d.is_paid) };
+  };
+
+  /** Đơn chờ xác nhận, có địa chỉ GHN nên lúc xác nhận sẽ gọi tạo vận đơn. */
+  async function taoDonChoGhn(soLuong = 2): Promise<number> {
+    await themVaoGio(productId, soLuong);
+    const don = (await orders.create(donMacDinh(), nguoiMua())) as Order;
+    await ds.query(
+      `UPDATE orders SET ghn_district_id = 1442, ghn_ward_code = '20101' WHERE id = ?`,
+      [don.id],
+    );
+    return don.id;
+  }
 
   const ketGiuHo = () =>
     ledger.getBalance(
@@ -373,5 +421,62 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     const nguoiMuaDuocHoan = (await viCua(buyerId)) > 0n;
     expect([nguoiBanDuocTra, nguoiMuaDuocHoan].filter(Boolean)).toHaveLength(1);
     expect(await ketGiuHo()).toBe(0n);
+  });
+
+  /**
+   * B. Người bán xác nhận đơn trong lúc người mua huỷ.
+   *
+   * `updateStatus` đọc đơn, gọi GHN qua mạng (vài giây), rồi `save(order)`
+   * NGUYÊN entity đã đọc từ trước. Huỷ đơn commit xong trong khoảng đó (hoàn
+   * kho, CANCELLED) thì bị ghi đè ngược về CONFIRMED: đơn sống lại trong khi
+   * hàng đã về kho, người sau đặt được đúng món đó lần nữa.
+   */
+  it('B: huỷ chen vào giữa lúc xác nhận thì đơn không sống lại, trả 409', async () => {
+    const orderId = await taoDonChoGhn(2);
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU - 2);
+
+    giuaGhn = () => orders.cancel(orderId, nguoiMua());
+
+    await expect(
+      orders.updateStatus(
+        orderId,
+        { status: OrderStatus.CONFIRMED },
+        nguoiBan(),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CANCELLED);
+    // Hoàn kho đúng MỘT lần, bởi lượt huỷ.
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
+  });
+
+  /**
+   * B, mặt tiền: cùng cái `save(order)` cũ ghi đè luôn `is_paid`.
+   *
+   * Webhook PayOS commit `is_paid = 1` trong lúc người bán đang chờ GHN; lần
+   * lưu entity cũ kéo nó về 0. Tiền đã vào két mà đơn ghi là chưa trả.
+   *
+   * Chỗ chen dùng một câu UPDATE: thứ cần đo là "có một commit đáp xuống dòng
+   * này giữa lúc đọc và lúc ghi", không phải bản thân webhook (webhook có bài
+   * kiểm riêng ở `payos`).
+   */
+  it('B: tiền về giữa lúc xác nhận thì is_paid không bị ghi đè về 0', async () => {
+    const orderId = await taoDonChoGhn(1);
+
+    giuaGhn = () =>
+      ds.query(`UPDATE orders SET is_paid = 1, paid_at = NOW() WHERE id = ?`, [
+        orderId,
+      ]);
+
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.CONFIRMED },
+      nguoiBan(),
+    );
+
+    expect(await donLuc(orderId)).toEqual({
+      status: OrderStatus.CONFIRMED,
+      is_paid: 1,
+    });
   });
 });
