@@ -126,21 +126,47 @@ export class FirebaseService implements OnModuleInit {
     }
   }
 
+  /**
+   * Xác minh idToken Firebase và CHỈ nhận token Google có email đã xác minh.
+   *
+   * Bản trước trả về mỗi uid/email/phone/name/picture, vứt bỏ đúng hai trường
+   * quyết định token có được tin hay không, nên controller nối thẳng
+   * `decoded.email` vào `users.email` (lỗ chiếm tài khoản B-05):
+   *   - `firebase.sign_in_provider`: cả web lẫn app đều đăng nhập qua Google
+   *     (web signInWithPopup, app native Google Sign-In rồi
+   *     signInWithCredential), token thật luôn là 'google.com'. Project Firebase
+   *     mà bật thêm email/mật khẩu thì ai cũng tạo được tài khoản Firebase mang
+   *     email người khác; token đó không được đổi lấy JWT Zoldify.
+   *   - `email_verified`: Google luôn trả true cho tài khoản Gmail/Workspace.
+   *     false nghĩa là chưa ai chứng minh sở hữu email đó.
+   *   - token không có email thì bản cũ tra theo `phone_number || ''`, tức
+   *     tìm theo số điện thoại RỖNG: trúng bất kỳ tài khoản nào chưa khai số.
+   * Ba trường hợp đều từ chối ở đây, trước khi controller chạm tới database.
+   */
   async verifyIdToken(idToken: string) {
     if (!this.initialized) {
       throw new UnauthorizedException('Firebase chưa được cấu hình');
     }
+    let decoded: admin.auth.DecodedIdToken;
     try {
-      const decoded = await admin.auth().verifyIdToken(idToken);
-      return {
-        uid: decoded.uid,
-        email: decoded.email || '',
-        phone_number: decoded.phone_number || '',
-        name: decoded.name || '',
-        avatar: decoded.picture || '',
-      };
+      decoded = await admin.auth().verifyIdToken(idToken);
     } catch {
       throw new UnauthorizedException('Token không hợp lệ');
     }
+    if (decoded.firebase?.sign_in_provider !== 'google.com') {
+      throw new UnauthorizedException('Chỉ hỗ trợ đăng nhập bằng Google');
+    }
+    if (!decoded.email || decoded.email_verified !== true) {
+      throw new UnauthorizedException(
+        'Tài khoản Google chưa có email đã xác minh',
+      );
+    }
+    return {
+      uid: decoded.uid,
+      email: decoded.email,
+      phone_number: decoded.phone_number || '',
+      name: decoded.name || '',
+      avatar: decoded.picture || '',
+    };
   }
 }

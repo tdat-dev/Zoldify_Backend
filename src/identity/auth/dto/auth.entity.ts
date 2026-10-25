@@ -67,6 +67,15 @@ export class ChangePasswordDto {
   newPassword: string;
 }
 
+// 5. Đăng nhập Google qua Firebase. Bản trước đọc `@Body('idToken')` trần:
+// không kiểm kiểu, nên body `{ idToken: { ... } }` hay chuỗi rỗng vẫn đi thẳng
+// vào firebase-admin. DTO để ValidationPipe chặn ngay ở cửa.
+export class FirebaseLoginDto {
+  @IsString()
+  @IsNotEmpty({ message: 'idToken không được để trống' })
+  idToken: string;
+}
+
 // 6. Luồng Làm mới access token bằng refresh token
 export class RefreshTokenDto {
   @IsString()

@@ -6,6 +6,7 @@ import {
   Req,
   Body,
   Patch,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -22,6 +23,7 @@ import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
 import {
   ChangePasswordDto,
+  FirebaseLoginDto,
   RefreshTokenDto,
   ResetPasswordDto,
   SendOtpDto,
@@ -103,26 +105,45 @@ export class AuthController {
   }
 
   @Public()
+  // Cùng mức với đăng nhập mật khẩu: mỗi lần gọi là một lần hỏi Google, và
+  // route này tự TẠO tài khoản, nên không được để ai bắn liên tục.
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 10, ttl: 60000 },
+  })
   @ApiEntity(LoginResponseDto)
   @Post('firebase')
-  async firebaseLogin(@Body('idToken') idToken: string) {
-    // để test đăng nhập bằng firebase: google
-    const fbUser = await this.firebaseService.verifyIdToken(idToken);
+  async firebaseLogin(@Body() dto: FirebaseLoginDto) {
+    // verifyIdToken đã từ chối token không phải Google, không có email, hoặc
+    // email chưa xác minh. Tới đây email là thứ Google đã chứng minh.
+    const fbUser = await this.firebaseService.verifyIdToken(dto.idToken);
 
     let user = await this.userRepository.findOne({
-      where: fbUser.email
-        ? { email: fbUser.email }
-        : { phone_number: fbUser.phone_number },
+      where: { email: fbUser.email },
     });
+
+    // KHÔNG tự nối vào tài khoản có sẵn mà email chưa xác minh (B-05).
+    //
+    // Đó đúng là hình dạng của "chiếm trước": kẻ xấu đăng ký victim@gmail.com
+    // qua đường không OTP, rồi chờ. Chủ thật bấm "Đăng nhập Google", bản cũ
+    // nối vào đúng tài khoản ấy, và kẻ xấu vẫn đăng nhập được bằng mật khẩu nó
+    // đã đặt. Chủ thật lấy lại tài khoản bằng Quên mật khẩu: OTP gửi về chính
+    // hộp thư đó, đặt lại xong thì email được đánh dấu đã xác minh và mọi phiên
+    // cũ bị thu hồi.
+    if (user && !user.email_verified) {
+      throw new UnauthorizedException(
+        'Email này đã có tài khoản chưa xác minh. Vui lòng dùng "Quên mật khẩu" để lấy lại tài khoản trước khi đăng nhập bằng Google.',
+      );
+    }
 
     if (!user) {
       user = this.userRepository.create({
-        email: fbUser.email || `${fbUser.uid}@firebase.zoldify.com`,
+        email: fbUser.email,
         full_name: fbUser.name || 'User',
         password: '',
         avatar: fbUser.avatar,
         phone_number: fbUser.phone_number,
-        email_verified: !!fbUser.email,
+        email_verified: true,
       });
       user = await this.userRepository.save(user);
     } else if (fbUser.avatar && fbUser.avatar !== user.avatar) {
