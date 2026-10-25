@@ -227,7 +227,14 @@ export class AuthService {
     if (!user) throw new NotFoundException('Không tìm thấy tài khoản');
 
     const hashedPassword = this.usersService.hashPassword(newPassword);
-    await this.userRepository.update(user.id, { password: hashedPassword });
+    // email_verified = true: gõ đúng OTP gửi về hộp thư là đã chứng minh sở
+    // hữu email. Đây là đường chủ thật lấy lại tài khoản bị đăng ký trước bằng
+    // email của họ; /auth/firebase từ chối nối vào tài khoản chưa xác minh cho
+    // tới khi bước này chạy.
+    await this.userRepository.update(user.id, {
+      password: hashedPassword,
+      email_verified: true,
+    });
     await this.cacheManager.del(`forgot_otp_${email}`);
 
     // Thu hồi MỌI phiên đã phát trước lúc đặt lại mật khẩu: tăng
