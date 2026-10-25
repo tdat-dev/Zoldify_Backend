@@ -33,6 +33,18 @@ import { siteUrlChinh } from '@common/site-url';
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
   private payos: PayOS;
+  /**
+   * true khi không có PAYOS_CHECKSUM_KEY (thiếu hoặc toàn khoảng trắng).
+   *
+   * Khoá này là thứ DUY NHẤT phân biệt webhook thật của PayOS với một request
+   * ai đó tự dựng. Bản trước ép khoá thiếu thành '' rồi giao cho SDK, và việc
+   * chữ ký giả bị từ chối chỉ còn dựa vào một dòng bên trong @payos/node 2.0.5
+   * (`!key.length` thì trả null). Đổi bản SDK là webhook cộng tiền mở toang mà
+   * không ai biết. Giờ webhookKhongCoKhoa quyết định ở mã của mình: thiếu khoá
+   * thì từ chối MỌI webhook. Không ném lúc khởi động vì máy chủ thiếu khoá PayOS
+   * vẫn phải bán được đơn COD; thay vào đó log lỗi ngay khi dựng service.
+   */
+  private readonly webhookKhongCoKhoa: boolean;
 
   constructor(
     private readonly configService: ConfigService,
@@ -58,6 +70,13 @@ export class PayosService {
     const apiKey = this.configService.get<string>('PAYOS_API_KEY') || '';
     const checksumKey =
       this.configService.get<string>('PAYOS_CHECKSUM_KEY') || '';
+    this.webhookKhongCoKhoa = !checksumKey.trim();
+    if (this.webhookKhongCoKhoa) {
+      this.logger.error(
+        'Thiếu PAYOS_CHECKSUM_KEY: mọi webhook PayOS sẽ bị từ chối, thanh ' +
+          'toán qua PayOS sẽ không tự ghi nhận. Đặt khoá trong biến môi trường.',
+      );
+    }
     const baseURL =
       this.configService.get<string>('PAYOS_HOST') ||
       'https://api-merchant.payos.vn';
@@ -450,6 +469,14 @@ export class PayosService {
    * gửi thông báo hỏng thì không được phép làm rollback tiền.
    */
   async handleWebhook(rawBody: any) {
+    // Đóng trước khi chạm SDK: không có khoá thì không có cách nào phân biệt
+    // webhook thật với webhook giả (xem webhookKhongCoKhoa).
+    if (this.webhookKhongCoKhoa) {
+      this.logger.warn(
+        'Từ chối webhook PayOS: chưa cấu hình PAYOS_CHECKSUM_KEY',
+      );
+      return { success: false, message: 'Invalid signature' };
+    }
     let webhookData;
     try {
       webhookData = await this.payos.webhooks.verify(rawBody);
