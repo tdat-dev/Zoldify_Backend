@@ -8,6 +8,7 @@ import { User } from '@identity/users/entities/user.entity';
 import { HttpModule } from '@nestjs/axios';
 import { WalletsModule } from '@money/wallets/wallets.module';
 import { EscrowsModule } from '@money/escrows/escrows.module';
+import { PayosModule } from '@money/payos/payos.module';
 
 @Module({
   imports: [
@@ -17,6 +18,9 @@ import { EscrowsModule } from '@money/escrows/escrows.module';
     // Trả đơn bằng ví phải tách ký quỹ giống hệt đường PayOS — xem
     // `processOrderPayment` trong payments.service.ts.
     EscrowsModule,
+    // Trả bằng ví xong phải đóng link PayOS còn treo của đơn, dùng chung hàm
+    // `voidOpenLinkForOrder` với đường huỷ đơn.
+    PayosModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService],

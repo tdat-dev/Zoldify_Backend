@@ -156,6 +156,7 @@ describe('PaymentsService — người mua không được tự chuyển tiền 
       wallets,
       escrows,
       ds,
+      { voidOpenLinkForOrder: () => Promise.resolve(false) } as never,
     );
   });
 

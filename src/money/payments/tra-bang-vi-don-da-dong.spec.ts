@@ -145,13 +145,7 @@ describe('PaymentsService: trả bằng ví cho đơn đã đóng', () => {
     );
 
     dongLink = jest.fn(() => Promise.resolve(true));
-    // Ép kiểu hàm dựng: bản vá D thêm tham số PayosService vào cuối. Ép ở đây
-    // để file này biên dịch được ở CẢ HAI phía của bản vá, tức là bài kiểm đỏ
-    // vì hành vi chứ không đỏ vì sai kiểu.
-    const TaoPayments = PaymentsService as unknown as new (
-      ...args: unknown[]
-    ) => PaymentsService;
-    payments = new TaoPayments(
+    payments = new PaymentsService(
       ds.getRepository(Payment),
       ds.getRepository(Order),
       ds.getRepository(User),

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -21,9 +22,12 @@ import {
 import { WalletsService } from '@money/wallets/wallets.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
+import { PayosService } from '@money/payos/payos.service';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
@@ -35,6 +39,7 @@ export class PaymentsService {
     private readonly escrowsService: EscrowsService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly payosService: PayosService,
   ) {}
 
   async create(createPaymentDto: CreatePaymentDto, user: IUser) {
@@ -135,7 +140,7 @@ export class PaymentsService {
       // `status = confirmed` theo quyết định của Đạt 24/09: "Confirmed là trạng
       // thái đã trả, đợi giao hàng" — trả bằng ví hay bằng PayOS thì người mua
       // cũng đã trả xong, không có lý do gì để hai đường khác nhau.
-      return this.dataSource.transaction(async (em) => {
+      const daTra = await this.dataSource.transaction(async (em) => {
         // KHOÁ DÒNG ĐƠN, ĐỌC LẠI, CHỈ NHẬN ĐƠN `pending` CHƯA TRẢ.
         //
         // Phép kiểm phía trên chạy trên bản đọc không khoá và chỉ hỏi chủ đơn
@@ -193,6 +198,23 @@ export class PaymentsService {
           }),
         );
       });
+
+      // ĐÓNG LINK PayOS CÒN TREO, SAU KHI ĐÃ COMMIT.
+      //
+      // Người mua tạo link PayOS rồi đổi ý trả bằng ví: link cũ vẫn mở, quét
+      // nốt mã QR là trả lần hai. Webhook có lưới đỡ (tiền thừa vào ví người
+      // mua, xem `applyPaidPayment`), nhưng đóng link thì khỏi phải đỡ. Dùng
+      // đúng hàm mà huỷ đơn dùng. Ngoài transaction vì đây là lời gọi mạng, và
+      // cố gắng hết sức: hỏng thì chỉ log, tiền đã trừ đúng rồi.
+      try {
+        await this.payosService.voidOpenLinkForOrder(orderId);
+      } catch (err) {
+        this.logger.warn(
+          `Không đóng được link PayOS còn treo của đơn #${orderId}: ` +
+            `${(err as Error).message}`,
+        );
+      }
+      return daTra;
     }
 
     const payment = this.paymentRepository.create({

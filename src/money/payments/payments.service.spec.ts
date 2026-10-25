@@ -55,6 +55,7 @@ describe('PaymentsService — không có đường tự nạp ví', () => {
     wallets,
     escrows,
     dataSource,
+    { voidOpenLinkForOrder: () => Promise.resolve(false) } as never,
   );
 
   it('gửi amount thì bị từ chối, ví không hề bị chạm vào', async () => {
