@@ -65,6 +65,7 @@ interface DichVuDon {
 
 async function layDichVuDon(): Promise<{
   svc: DichVuDon;
+  lay: <T>(duongDan: string, ten: string) => T;
   dong: () => Promise<void>;
 }> {
   require('reflect-metadata');
@@ -77,10 +78,21 @@ async function layDichVuDon(): Promise<{
   });
   return {
     svc: app.get(OrdersService) as DichVuDon,
+    // R6..R9 cần thêm các service tiền. Lấy từ CÙNG bộ tiêm phụ thuộc, cùng
+    // lý do R1/R4 lấy `OrdersService` ở đây: đo mã thật, không đo bản chép.
+    lay: <T>(duongDan: string, ten: string): T =>
+      app.get(require(duongDan)[ten]) as T,
     dong: () => app.close() as Promise<void>,
   };
 }
 /* eslint-enable */
+
+/** Đúng phần mặt tiền của từng service tiền mà R6..R9 gọi tới. */
+interface DichVuKyQuy {
+  createOrderEscrowsWithExternalFunding: (orderId: number) => Promise<unknown>;
+  release: (orderId: number, sellerId?: number) => Promise<unknown>;
+  refund: (orderId: number) => Promise<unknown>;
+}
 
 let failures = 0;
 const results = new Map<string, boolean>();
@@ -173,6 +185,85 @@ async function khoHienTai(ds: DataSource): Promise<number> {
   return Number(r[0].stock);
 }
 
+/** Số tiền của đơn trong R6..R9. Nhỏ và tròn để đọc kết quả bằng mắt. */
+const GIA_TIEN = 1000;
+const NGUOI_MUA_TIEN = 100;
+
+/**
+ * Dọn các bảng tiền trước mỗi kịch bản R6..R9.
+ *
+ * `dungSanPham` chỉ dọn bảng hàng và đơn. Sổ cái, ký quỹ, payment, lệnh rút
+ * mà để lại từ kịch bản trước thì số dư đầu vào không còn là 0, và phép so
+ * "két giữ hộ = 0" ở cuối kịch bản sau đo nhầm cả phần tiền của kịch bản trước.
+ */
+async function donSachTien(ds: DataSource) {
+  await ds.query('SET FOREIGN_KEY_CHECKS = 0');
+  for (const t of [
+    'ledger_entries',
+    'ledger_transactions',
+    'ledger_accounts',
+    'escrows',
+    'payments',
+    'withdrawals',
+    'order_shipments',
+  ]) {
+    await ds.query(`DELETE FROM ${t}`);
+  }
+  await ds.query('SET FOREIGN_KEY_CHECKS = 1');
+  await ds.query(
+    `INSERT INTO users (id, full_name, email, password, role)
+     VALUES (?, 'mua tien', 'tien@race.local', 'x', 'buyer')`,
+    [NGUOI_MUA_TIEN],
+  );
+}
+
+/** Một đơn một món (sản phẩm 1 của người bán 1), giá `GIA_TIEN`. */
+async function taoDonTien(
+  ds: DataSource,
+  id: number,
+  status: string,
+  daTra: boolean,
+  phuongThuc = 'cod',
+) {
+  await ds.query(
+    `INSERT INTO orders (id, order_code, user_id, total_amount, final_amount, status,
+                         payment_method, receiver_name, receiver_phone, shipping_address, is_paid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'a', '0900000000', 'x', ?)`,
+    [
+      id,
+      `ORD-TIEN-${id}`,
+      NGUOI_MUA_TIEN,
+      GIA_TIEN,
+      GIA_TIEN,
+      status,
+      phuongThuc,
+      daTra ? 1 : 0,
+    ],
+  );
+  await ds.query(
+    `INSERT INTO order_items (order_id, product_id, product_name, price, quantity, subtotal)
+     VALUES (?, 1, 'mon cuoi', ?, 1, ?)`,
+    [id, GIA_TIEN, GIA_TIEN],
+  );
+}
+
+/** Số dư một tài khoản sổ cái, đọc thẳng bảng. Chưa có tài khoản = 0. */
+async function soDu(
+  ds: DataSource,
+  ownerType: string,
+  ownerId: number | null,
+  purpose: string,
+): Promise<bigint> {
+  const r = await ds.query<Array<{ balance: string | number }>>(
+    `SELECT balance FROM ledger_accounts
+     WHERE owner_type = ? AND purpose = ? AND ${
+       ownerId === null ? 'owner_id IS NULL' : 'owner_id = ?'
+     }`,
+    ownerId === null ? [ownerType, purpose] : [ownerType, purpose, ownerId],
+  );
+  return r.length ? BigInt(String(r[0].balance)) : 0n;
+}
+
 /** Chạy `ham` N lần đồng thời, nuốt lỗi lẻ, trả về số lần "thành công". */
 async function dongThoi(
   ham: (i: number) => Promise<boolean>,
@@ -193,7 +284,7 @@ function chot(ten: string, dat: boolean, chiTiet: string) {
 async function main() {
   console.log('\x1b[1m═══ TỰ KIỂM ĐUA — nhiều người cùng lúc ═══\x1b[0m');
   const ds = await AppDataSource.initialize();
-  const { svc, dong } = await layDichVuDon();
+  const { svc, lay, dong } = await layDichVuDon();
   console.log(`Kết nối DB: ${ds.options.database} · ${N} người đồng thời\n`);
 
   // ── R1: gọi THẲNG orders.create ───────────────────────────────────────────
@@ -378,6 +469,44 @@ async function main() {
     'R5 orders.create — một người bấm nhiều lần, một giỏ',
     soDonR5 === 1 && khoR5 === 49,
     `${N} lượt bấm → ${soDonR5} đơn (đúng phải là 1), kho còn ${khoR5} (đúng phải là 49)`,
+  );
+
+  // ── R6: GIẢI NGÂN VÀ HOÀN TIỀN CÙNG LÚC TRÊN MỘT ĐƠN ĐÃ TRẢ ──────────────
+  //
+  // Người mua bấm "đã nhận hàng" (giải ngân cho người bán) và "huỷ đơn" (hoàn
+  // tiền cho mình) cùng lúc. Hai đường dùng HAI khoá chống trùng khác nhau
+  // (`escrow_release:` và `escrow_refund:`), nên R3 không che được: thứ duy
+  // nhất đứng giữa là khoá dòng ký quỹ trong `EscrowsService`. Thiếu khoá thì
+  // cả hai cùng thấy `holding`, tiền đi cả hai đường và két giữ hộ âm.
+  //
+  // Gọi thẳng tầng ký quỹ, không qua `confirmShipmentReceived`/`cancel`: từ
+  // khi huỷ bị chặn với đơn có vận đơn GHN đang đi, hai nút đó hiếm khi cùng
+  // hợp lệ, nhưng tầng ký quỹ vẫn phải tự đứng vững (`autoConfirmDueShipments`
+  // cũng gọi `release` mà không qua đơn).
+  console.log(
+    '\n\x1b[1mR6 · Giải ngân và hoàn tiền cùng lúc trên một đơn đã trả\x1b[0m',
+  );
+  const kyQuy = lay<DichVuKyQuy>(
+    '../src/money/escrows/escrows.service',
+    'EscrowsService',
+  );
+  await dungSanPham(ds, 5);
+  await donSachTien(ds);
+  await taoDonTien(ds, 1, 'confirmed', true);
+  await kyQuy.createOrderEscrowsWithExternalFunding(1);
+  await dongThoi(async (i) => {
+    if (i % 2) await kyQuy.release(1, 1);
+    else await kyQuy.refund(1);
+    return true;
+  });
+  const banNhanR6 = await soDu(ds, 'user', 1, 'available');
+  const muaNhanR6 = await soDu(ds, 'user', NGUOI_MUA_TIEN, 'available');
+  const ketR6 = await soDu(ds, 'platform', null, 'escrow_hold');
+  chot(
+    'R6 ký quỹ: giải ngân và hoàn tiền cùng lúc',
+    banNhanR6 > 0n !== muaNhanR6 > 0n && ketR6 === 0n,
+    `người bán nhận ${banNhanR6}, người mua được hoàn ${muaNhanR6}, két giữ hộ ${ketR6} ` +
+      '(đúng: chỉ một bên nhận, két về 0)',
   );
 
   await ds.destroy();
