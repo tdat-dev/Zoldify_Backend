@@ -82,19 +82,56 @@ export class ShopService {
     return this.shopRepository.findOne({ where: { id: shop.id } });
   }
 
+  /**
+   * Thông tin shop cho route CÔNG KHAI GET /shop/:sellerId.
+   *
+   * Dựng bằng DANH SÁCH TRẮNG chứ không trả thẳng dòng `shops`. Bản trước trả
+   * nguyên dòng kèm `relations: ['user']`, tức:
+   *   - các cột pickup_*: đây là sàn C2C, người bán gửi hàng từ NHÀ MÌNH, nên
+   *     pickup_address/pickup_phone/pickup_name là địa chỉ nhà và số riêng của
+   *     họ, phơi cho người chưa đăng nhập. Chủ shop đọc chúng qua GET /shop/me;
+   *     web và app không đọc pickup_* từ route này (kiểm 25/10).
+   *   - nguyên dòng users của chủ shop: email, số điện thoại, vai trò,
+   *     token_version.
+   * Danh sách trắng thay vì xoá từng cột: thêm cột nhạy cảm mới vào bảng shops
+   * thì nó không tự lọt ra.
+   */
   async getShopInfo(sellerId: number) {
-    let shop = await this.shopRepository.findOne({
+    const shopDb = await this.shopRepository.findOne({
       where: { user: { id: sellerId } },
       relations: ['user'],
     });
 
-    if (!shop) {
+    let shop: Record<string, unknown>;
+    if (shopDb) {
+      shop = {
+        id: shopDb.id,
+        name: shopDb.name,
+        slug: shopDb.slug,
+        description: shopDb.description,
+        logo: shopDb.logo,
+        banner: shopDb.banner,
+        phone: shopDb.phone,
+        address: shopDb.address,
+        status: shopDb.status,
+        created_at: shopDb.created_at,
+        updated_at: shopDb.updated_at,
+        user: shopDb.user
+          ? {
+              id: shopDb.user.id,
+              full_name: shopDb.user.full_name,
+              avatar: shopDb.user.avatar,
+              created_at: shopDb.user.created_at,
+            }
+          : undefined,
+      };
+    } else {
       const user = await this.userRepository.findOne({
         where: { id: sellerId },
-        select: ['id', 'full_name', 'avatar', 'email', 'created_at'],
+        select: ['id', 'full_name', 'avatar', 'created_at'],
       });
       if (!user) throw new BadRequestException('Không tìm thấy shop');
-      shop = { name: user.full_name, logo: user.avatar } as any;
+      shop = { name: user.full_name, logo: user.avatar };
     }
 
     const [productCount, followerCount] = await Promise.all([
@@ -159,6 +196,12 @@ export class ShopService {
       if (!orderMap.has(item.order.id)) {
         orderMap.set(item.order.id, {
           ...item.order,
+          // Người bán chỉ cần biết ai nhận (receiver_* đã có trên đơn), không
+          // cần email, số điện thoại tài khoản, vai trò của người mua. Cùng
+          // cách cắt với OrdersService.findOne khi người gọi chỉ là người bán.
+          user: item.order.user
+            ? { id: item.order.user.id, full_name: item.order.user.full_name }
+            : item.order.user,
           items: [],
         });
       }
