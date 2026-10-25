@@ -451,6 +451,28 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
   });
 
   /**
+   * B, hậu quả còn lại: vận đơn GHN đã tạo xong cho một lần xác nhận thua.
+   *
+   * Đơn không sống lại nữa, nhưng vận đơn bên GHN thì vẫn sống: tài xế vẫn tới
+   * lấy hàng của một đơn đã huỷ. Ít nhất nó phải được đánh dấu trên chính dòng
+   * vận đơn để người bán/admin nhìn thấy mà huỷ tay.
+   */
+  it('B: vận đơn GHN mồ côi sau khi thua lượt huỷ phải được đánh dấu', async () => {
+    const orderId = await taoDonChoGhn(1);
+    giuaGhn = () => orders.cancel(orderId, nguoiMua());
+
+    await orders
+      .updateStatus(orderId, { status: OrderStatus.CONFIRMED }, nguoiBan())
+      .catch(() => undefined);
+
+    const lo = await ds.getRepository(OrderShipment).find({
+      where: { order: { id: orderId } },
+    });
+    expect(lo).toHaveLength(1);
+    expect(lo[0].error ?? '').toMatch(/huỷ.*GHN/);
+  });
+
+  /**
    * B, mặt tiền: cùng cái `save(order)` cũ ghi đè luôn `is_paid`.
    *
    * Webhook PayOS commit `is_paid = 1` trong lúc người bán đang chờ GHN; lần
