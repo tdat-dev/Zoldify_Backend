@@ -655,4 +655,63 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     expect((await donLuc(orderId)).status).toBe(OrderStatus.DELIVERED);
     expect(await khoCua(productId)).toBe(KHO_BAN_DAU - 1);
   });
+
+  async function taoDonCod(): Promise<number> {
+    await themVaoGio(productId, 1);
+    const don = (await orders.create(donMacDinh(), nguoiMua())) as Order;
+    return don.id;
+  }
+
+  const soKyQuy = async (orderId: number): Promise<number> => {
+    const [{ n }] = await ds.query<Array<{ n: number }>>(
+      'SELECT COUNT(*) AS n FROM escrows WHERE order_id = ?',
+      [orderId],
+    );
+    return Number(n);
+  };
+
+  /**
+   * H. Admin ghi nhận "đã thu tiền" trên một đơn đã huỷ.
+   *
+   * Nhánh `is_paid` không nhìn trạng thái: đơn đã huỷ (hàng đã về kho) vẫn
+   * được ghi tiền vào két và sinh khoản ký quỹ `holding` mà không đường nào
+   * giải ngân hay hoàn được nữa, vì đơn đã đóng.
+   */
+  it('H: không ghi nhận đã thu tiền cho đơn đã huỷ', async () => {
+    const orderId = await taoDonCod();
+    await orders.cancel(orderId, nguoiMua());
+
+    await expect(
+      orders.updateStatus(orderId, { is_paid: true }, quanTri()),
+    ).rejects.toThrow();
+
+    expect((await donLuc(orderId)).is_paid).toBe(0);
+    expect(await soKyQuy(orderId)).toBe(0);
+    expect(await ketGiuHo()).toBe(0n);
+  });
+
+  /**
+   * H. `is_paid` được lưu TRƯỚC, ghi két + tách ký quỹ chạy SAU trong một
+   * transaction riêng.
+   *
+   * Bước sau hỏng thì đơn đã là "đã trả tiền" mà két rỗng, không ký quỹ. Admin
+   * bấm lại thì `vuaDanhDauDaTra` ra false (cờ đã bật) nên bước ghi két không
+   * bao giờ chạy lại: người bán không bao giờ được giải ngân đơn này.
+   */
+  it('H: ghi két hỏng giữa chừng thì bấm lại được và tiền vào đủ', async () => {
+    const orderId = await taoDonCod();
+    jest
+      .spyOn(escrows, 'createOrderEscrowsWithExternalFunding')
+      .mockRejectedValueOnce(new Error('sập giữa chừng'));
+
+    await expect(
+      orders.updateStatus(orderId, { is_paid: true }, quanTri()),
+    ).rejects.toThrow('sập giữa chừng');
+
+    await orders.updateStatus(orderId, { is_paid: true }, quanTri());
+
+    expect((await donLuc(orderId)).is_paid).toBe(1);
+    expect(await soKyQuy(orderId)).toBe(1);
+    expect(await ketGiuHo()).toBe(BigInt(GIA));
+  });
 });
