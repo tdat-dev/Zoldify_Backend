@@ -80,8 +80,12 @@ describe('Danh sách theo dõi công khai không lộ thông tin cá nhân', () 
   it('followers chỉ có id, full_name, avatar, created_at', async () => {
     const { result } = await service.getFollowers(SHOP);
     expect(result).toHaveLength(1);
+    // So trên đúng thứ client nhận: JSON. Thực thể TypeORM khai sẵn mọi thuộc
+    // tính (giá trị undefined) nên Object.keys của bản ghi chưa SELECT cột vẫn
+    // liệt kê "email"; JSON.stringify bỏ undefined, nên đây mới là phép đo.
+    const traRa = JSON.parse(JSON.stringify(result[0])) as object;
     expect(result[0].id).toBe(KHACH);
-    for (const k of Object.keys(result[0])) {
+    for (const k of Object.keys(traRa)) {
       expect(COT_DUOC_PHEP).toContain(k);
     }
   });
@@ -89,8 +93,12 @@ describe('Danh sách theo dõi công khai không lộ thông tin cá nhân', () 
   it('following chỉ có id, full_name, avatar, created_at', async () => {
     const { result } = await service.getFollowing(KHACH);
     expect(result).toHaveLength(1);
+    // So trên đúng thứ client nhận: JSON. Thực thể TypeORM khai sẵn mọi thuộc
+    // tính (giá trị undefined) nên Object.keys của bản ghi chưa SELECT cột vẫn
+    // liệt kê "email"; JSON.stringify bỏ undefined, nên đây mới là phép đo.
+    const traRa = JSON.parse(JSON.stringify(result[0])) as object;
     expect(result[0].id).toBe(SHOP);
-    for (const k of Object.keys(result[0])) {
+    for (const k of Object.keys(traRa)) {
       expect(COT_DUOC_PHEP).toContain(k);
     }
   });
