@@ -18,6 +18,7 @@ import { Public } from '@common/decorators/public.decorator';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { ShippingQuoteDto } from './dto/shipping-quote.dto';
+import { SimGhnDto } from './dto/sim-ghn.dto';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
@@ -105,12 +106,14 @@ export class OrdersController {
     return this.ordersService.updateStatus(+id, updateOrderDto, user);
   }
 
+  // Quyền theo phase (shipping: người bán hoặc admin; delivered: chỉ admin) và
+  // công tắc GHN_SIMULATOR nằm trong OrdersService.simulateGhnStatus.
   @UseGuards(JwtAuthGuard)
   @ResponseMessage("Gia lap trang thai GHN thanh cong")
   @Patch(":id/sim-ghn")
   simGhn(
     @Param("id") id: string,
-    @Body() body: { phase: "shipping" | "delivered" },
+    @Body() body: SimGhnDto,
     @User() user: IUser,
   ) {
     return this.ordersService.simulateGhnStatus(+id, body.phase, user);
