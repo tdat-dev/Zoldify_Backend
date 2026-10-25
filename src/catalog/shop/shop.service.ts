@@ -17,6 +17,7 @@ import {
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import type { IUser } from '@identity/users/users.interface';
+import { normalizePagination } from '@common/dto/pagination.dto';
 
 @Injectable()
 export class ShopService {
@@ -144,11 +145,19 @@ export class ShopService {
     return { ...shop, productCount, followerCount };
   }
 
-  async getShopProducts(sellerId: number, page: number, limit: number) {
+  async getShopProducts(sellerId: number, rawPage: number, rawLimit: number) {
+    // Route công khai: không ép thì ?limit=1000000 nạp cả kho hàng của shop vào
+    // RAM, và ?page=-3 cho skip âm. Ép về [1, MAX_PAGE_SIZE] như mọi danh sách
+    // khác; mặc định 20 giữ nguyên hành vi cũ của controller.
+    const {
+      page,
+      size: limit,
+      offset,
+    } = normalizePagination(rawPage, rawLimit, 20);
     const [result, total] = await this.productRepository.findAndCount({
       where: { seller: { id: sellerId }, status: ProductStatus.ACTIVE },
       relations: ['category'],
-      skip: (page - 1) * limit,
+      skip: offset,
       take: limit,
       order: { created_at: 'DESC' },
     });
@@ -166,8 +175,8 @@ export class ShopService {
 
   async getSellerOrders(
     sellerId: number,
-    page: number,
-    limit: number,
+    rawPage: number,
+    rawLimit: number,
     status: string | undefined,
     user: IUser, // BẮT BUỘC: guard mặc định mở (fail-open) nếu tuỳ chọn — dữ liệu người khác chảy ra im lặng
   ) {
@@ -178,6 +187,14 @@ export class ShopService {
       throw new ForbiddenException('Bạn không có quyền xem đơn hàng này');
     }
 
+    // Cùng trần với getShopProducts: mỗi dòng ở đây kéo theo đơn, người mua và
+    // sản phẩm, nên limit không trần còn đắt hơn.
+    const {
+      page,
+      size: limit,
+      offset,
+    } = normalizePagination(rawPage, rawLimit, 20);
+
     const where: any = { product: { seller: { id: sellerId } } };
     if (status) {
       where.order = { status };
@@ -186,7 +203,7 @@ export class ShopService {
     const [items, total] = await this.orderItemRepository.findAndCount({
       where,
       relations: ['order', 'order.user', 'product'],
-      skip: (page - 1) * limit,
+      skip: offset,
       take: limit,
       order: { id: 'DESC' },
     });
