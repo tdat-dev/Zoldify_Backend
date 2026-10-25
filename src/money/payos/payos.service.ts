@@ -24,10 +24,11 @@ import {
   PaymentMethod,
 } from '@common/enums/payment.enum';
 import { OrderStatus } from '@ordering/orders/entities/order.entity';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { NotificationType } from '@messaging/notifications/entities/notification.entity';
 import { siteUrlChinh } from '@common/site-url';
+import type { IUser } from '@identity/users/users.interface';
 
 @Injectable()
 export class PayosService {
@@ -236,11 +237,19 @@ export class PayosService {
 
   // ============ QUERY ============
 
-  async getOrderStatus(orderId: number) {
+  /**
+   * `user` để KIỂM QUYỀN (IDOR). Bản trước chỉ có JwtAuthGuard nên ai đăng
+   * nhập cũng hỏi được đơn của người khác đã trả tiền chưa, trả lúc nào, và
+   * payos_order_code; id đơn tăng dần nên quét được cả bảng. Người lạ nhận 404
+   * như đơn không tồn tại, không phải 403 xác nhận là đơn có thật.
+   */
+  async getOrderStatus(orderId: number, user: IUser) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
+      relations: ['user'],
     });
-    if (!order) {
+    const laAdmin = user.role === UserRole.ADMIN;
+    if (!order || (!laAdmin && order.user?.id !== user.id)) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
     const payment = await this.paymentRepository.findOne({
