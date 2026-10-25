@@ -94,6 +94,10 @@ interface DichVuKyQuy {
   refund: (orderId: number) => Promise<unknown>;
 }
 
+interface DichVuPayos {
+  handleWebhook: (body: unknown) => Promise<unknown>;
+}
+
 let failures = 0;
 const results = new Map<string, boolean>();
 const ok = (m: string) => console.log(`  \x1b[32m✓ PASS\x1b[0m  ${m}`);
@@ -507,6 +511,75 @@ async function main() {
     banNhanR6 > 0n !== muaNhanR6 > 0n && ketR6 === 0n,
     `người bán nhận ${banNhanR6}, người mua được hoàn ${muaNhanR6}, két giữ hộ ${ketR6} ` +
       '(đúng: chỉ một bên nhận, két về 0)',
+  );
+
+  // ── R7: PayOS GỬI CÙNG MỘT WEBHOOK N LẦN CÙNG LÚC ───────────────────────
+  //
+  // PayOS gửi lại webhook khi không nhận được 200 kịp, và `refreshOrderStatus`
+  // đi cùng một đường. Mỗi lượt đọc payment thấy `pending` (đọc không khoá),
+  // nên cả N lượt đều đi tới `applyPaidPayment`. Thứ chặn ghi trùng là khoá
+  // chống trùng TẤT ĐỊNH `payos:<orderCode>:<paymentLinkId>` (cùng cơ chế R3)
+  // cộng khoá dòng đơn: lượt sau thấy đơn đã trả thì cũng chỉ còn ghi được
+  // đúng khoá đó, và bị UNIQUE từ chối.
+  //
+  // Gọi `handleWebhook` thật. Chỉ thay đúng bước kiểm chữ ký (cần khoá
+  // checksum thật của PayOS), và trả lại nguyên bản ngay sau kịch bản.
+  console.log('\n\x1b[1mR7 · Cùng một webhook PayOS tới N lần cùng lúc\x1b[0m');
+  const payos = lay<DichVuPayos>(
+    '../src/money/payos/payos.service',
+    'PayosService',
+  );
+  const vo = payos as unknown as { payos: unknown };
+  const payosGoc = vo.payos;
+  vo.payos = {
+    webhooks: {
+      verify: (body: { data: unknown }) => Promise.resolve(body.data),
+    },
+  };
+  await dungSanPham(ds, 5);
+  await donSachTien(ds);
+  await taoDonTien(ds, 1, 'pending', false, 'payos');
+  await ds.query(
+    `INSERT INTO payments (order_id, user_id, amount, payment_method, status, type,
+                           payos_order_code, payos_payment_link_id)
+     VALUES (1, ?, ?, 'payos', 'pending', 'order_payment', '1', 'link-1')`,
+    [NGUOI_MUA_TIEN, GIA_TIEN],
+  );
+  try {
+    await dongThoi(async () => {
+      await payos.handleWebhook({
+        success: true,
+        data: {
+          orderCode: 1,
+          paymentLinkId: 'link-1',
+          code: '00',
+          reference: 'REF-R7',
+        },
+      });
+      return true;
+    });
+  } finally {
+    vo.payos = payosGoc;
+  }
+  const butToanR7 = await ds.query<Array<{ n: number }>>(
+    `SELECT COUNT(*) AS n FROM ledger_transactions
+     WHERE reference_type = 'order' AND reference_id = '1'`,
+  );
+  const donR7 = await ds.query<Array<{ status: string; is_paid: number }>>(
+    'SELECT status, is_paid FROM orders WHERE id = 1',
+  );
+  const ketR7 = await soDu(ds, 'platform', null, 'escrow_hold');
+  const viR7 = await soDu(ds, 'user', NGUOI_MUA_TIEN, 'available');
+  const soButToanR7 = Number(butToanR7[0].n);
+  chot(
+    'R7 webhook PayOS: cùng một lần trả tiền gửi tới nhiều lần',
+    soButToanR7 === 1 &&
+      ketR7 === BigInt(GIA_TIEN) &&
+      viR7 === 0n &&
+      donR7[0].status === 'confirmed' &&
+      Number(donR7[0].is_paid) === 1,
+    `${N} webhook → ${soButToanR7} bút toán (đúng: 1), két ${ketR7}, ví người mua ${viR7}, ` +
+      `đơn ${donR7[0].status}/is_paid=${donR7[0].is_paid}`,
   );
 
   await ds.destroy();
