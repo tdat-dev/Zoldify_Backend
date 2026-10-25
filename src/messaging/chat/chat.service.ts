@@ -335,14 +335,29 @@ export class ChatService {
       throw new NotFoundException('Không tìm thấy cuộc trò chuyện');
     }
 
-    // Đánh dấu đã đọc tất cả tin nhắn chưa đọc trong conversation này
-    await this.messageRepository.update(
-      {
-        conversation: { id: conversationId },
-        is_read: false,
-      },
-      { is_read: true },
-    );
+    // Cùng điều kiện thành viên với getMessages/sendMessage. Bản trước không
+    // kiểm, nên ai đăng nhập cũng xoá được chấm đỏ của hội thoại người khác.
+    if (
+      conversation.buyer?.id !== user.id &&
+      conversation.seller?.id !== user.id
+    ) {
+      throw new BadRequestException(
+        'Bạn không phải là thành viên của cuộc trò chuyện này',
+      );
+    }
+
+    // Chỉ đánh dấu tin của NGƯỜI KIA. Bản trước đánh dấu mọi tin chưa đọc, kể
+    // cả tin người gọi vừa gửi: người mua mở hội thoại là tin của họ thành đã
+    // đọc, người bán không bao giờ thấy chấm đỏ. Đếm chưa đọc
+    // (getUnreadCount, demChuaDocTheoLo) đã loại tin của chính mình từ lâu.
+    await this.messageRepository
+      .createQueryBuilder()
+      .update(Message)
+      .set({ is_read: true })
+      .where('conversation_id = :conversationId', { conversationId })
+      .andWhere('is_read = 0')
+      .andWhere('sender_id <> :userId', { userId: user.id })
+      .execute();
 
     return 'Đã đánh dấu tất cả tin nhắn đã đọc';
   }
