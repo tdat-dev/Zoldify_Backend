@@ -936,7 +936,7 @@ export class OrdersService {
         thayDoi.tracking_code = order.tracking_code;
       }
 
-      // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU — không đảo ngược.
+      // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU, không đảo ngược.
       //
       // Thứ tự cũ gọi `createOrderEscrows` rồi mới đặt `is_paid`, nên lúc hàm
       // đó chạy thì database vẫn ghi đơn là CHƯA trả tiền. Nay
