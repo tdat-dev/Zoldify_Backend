@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PayosService } from './payos.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { Public } from '@common/decorators/public.decorator';
@@ -83,6 +84,12 @@ export class PayosController {
     return this.payosService.getOrderStatus(+orderId, user);
   }
 
+  // Không throttle: đây là lối dự phòng khi webhook trễ, người mua bấm nó ngay
+  // sau khi chuyển khoản. Họ thường đi qua NAT của nhà mạng (nhiều người chung
+  // một IP), nên trần throttle theo IP sẽ chặn đúng lúc họ cần biết tiền đã
+  // vào chưa. Route có JWT và chỉ đọc đơn của chính người gọi; nếu bị lạm
+  // dụng thì gắn trần theo user, đừng gỡ dòng này.
+  @SkipThrottle()
   @UseGuards(JwtAuthGuard)
   @Get('refresh/:orderId')
   @ResponseMessage('Refresh trạng thái PayOS thành công')
@@ -119,6 +126,13 @@ export class PayosController {
    * POST /payos/webhook (PUBLIC, không cần JWT)
    * PayOS gửi raw JSON, cần verify signature
    */
+  // KHÔNG THROTTLE WEBHOOK. Mọi webhook tới từ vài IP của PayOS, nên giờ cao
+  // điểm vài chục giao dịch cùng phút là đủ chạm trần ThrottlerGuard toàn cục
+  // tính theo IP: PayOS nhận 429, tin "đã trả tiền" rơi mất, đơn kẹt pending
+  // tới khi cron huỷ dù người mua đã chuyển khoản. Webhook tự xác thực bằng
+  // chữ ký và chống trùng bằng idempotency_key của sổ cái, nên không cần trần.
+  // Bảo trì cũng không chặn nó: xem danh sách lối mở ở MaintenanceGuard.
+  @SkipThrottle()
   @Public()
   @Post('webhook')
   @HttpCode(HttpStatus.OK)

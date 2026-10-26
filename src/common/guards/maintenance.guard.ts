@@ -29,6 +29,8 @@ export const MAINTENANCE_KEY = 'maintenance_mode';
  *  3. /settings/public — chính là chỗ frontend đọc cờ. Chặn nó thì middleware
  *     không biết site đang bảo trì, và không ai được chuyển tới trang thông báo.
  *  4. GET /settings — bảng quản trị đọc trạng thái công tắc để vẽ đúng.
+ *  5. POST /payos/webhook và GET /payos/refresh/:id — tiền người mua đã chuyển
+ *     thì phải ghi nhận được (rà soát 26/10, xem chỗ xét `alwaysOpen`).
  *
  * ĐỌC CÓ NHỚ TẠM: cờ này bị hỏi ở MỌI request. Truy vấn database mỗi lần là
  * thêm một round-trip cho mỗi lượt gọi API chỉ để đọc một chữ "true"/"false".
@@ -101,7 +103,17 @@ export class MaintenanceGuard implements CanActivate {
       path.includes('/auth/') ||
       path.endsWith('/settings/public') ||
       (req.method === 'GET' && path.endsWith('/settings')) ||
-      path.endsWith('/health');
+      path.endsWith('/health') ||
+      // TIỀN ĐÃ CHUYỂN THÌ PHẢI GHI NHẬN ĐƯỢC, KỂ CẢ LÚC BẢO TRÌ.
+      //
+      // Bảo trì không chặn được người mua ĐÃ quét QR từ trước khi bật công
+      // tắc: tiền vẫn rời tài khoản họ. Chặn webhook thì PayOS nhận 503 và tin
+      // đó rơi mất (PayOS không hứa gửi lại mãi), đơn kẹt pending tới khi cron
+      // huỷ, người mua mất tiền tới lúc có người đối soát tay. Nút "kiểm tra
+      // lại" (`GET /payos/refresh/:id`) là lối dự phòng của chính việc đó.
+      // Cả hai chỉ ghi qua `applyPaidPayment`, có khoá dòng và idempotency_key.
+      (req.method === 'POST' && path.endsWith('/payos/webhook')) ||
+      (req.method === 'GET' && /\/payos\/refresh\/[^/]+$/.test(path));
     if (alwaysOpen) return true;
 
     if (!(await this.isMaintenanceOn())) return true;
