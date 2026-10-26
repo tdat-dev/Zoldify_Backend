@@ -435,6 +435,9 @@ describe('PayosService: tiền về trễ', () => {
         success: true,
         data: {
           orderCode: orderId,
+          // PayOS thật luôn gửi `amount`; từ rà soát 26/10 nó phải khớp
+          // payment.amount thì mới được ghi sổ.
+          amount: 100_000,
           paymentLinkId: `link-${orderId}`,
           code: '00',
           reference: 'REF-R8',

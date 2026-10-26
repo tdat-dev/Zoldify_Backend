@@ -586,6 +586,9 @@ async function main() {
         success: true,
         data: {
           orderCode: 1,
+          // PayOS thật luôn gửi `amount`; từ rà soát 26/10 nó phải khớp
+          // payment.amount thì mới được ghi sổ.
+          amount: GIA_TIEN,
           paymentLinkId: 'link-1',
           code: '00',
           reference: 'REF-R7',
