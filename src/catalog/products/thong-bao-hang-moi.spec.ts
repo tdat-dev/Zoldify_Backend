@@ -164,11 +164,19 @@ describe('Báo hàng mới cho người theo dõi', () => {
 
   it('worker báo đủ mọi người theo dõi, theo lô, không quá 10 lời gọi cùng lúc, một người hỏng không chặn người khác', async () => {
     const nguoi = await taoNguoiTheoDoi(45);
+    let khongChoDay = 0;
     let dangChay = 0;
     let caoNhat = 0;
     const daBao: number[] = [];
     const thongBao = {
-      create: async (dto: { user_id: number }) => {
+      create: async (
+        dto: { user_id: number },
+        tuyChon?: { choDayPush?: boolean },
+      ) => {
+        // Review 26/10 mục 9: trần 10 lời gọi chỉ có nghĩa nếu mỗi lời gọi
+        // CHỜ cả lần đẩy FCM. Không chờ thì create xong ngay, FCM chạy nền
+        // không giới hạn, và trần chỉ còn đếm câu INSERT.
+        if (!tuyChon?.choDayPush) khongChoDay++;
         dangChay++;
         caoNhat = Math.max(caoNhat, dangChay);
         await new Promise((r) => setTimeout(r, 5));
@@ -193,5 +201,6 @@ describe('Báo hàng mới cho người theo dõi', () => {
       nguoi.filter((id) => id !== nguoi[7]).sort((a, b) => a - b),
     );
     expect(kq).toEqual({ da_bao: 44, hong: 1 });
+    expect(khongChoDay).toBe(0);
   });
 });

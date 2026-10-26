@@ -45,4 +45,43 @@ describe('NotificationsService.create: đẩy push hỏng thì log, không nổ'
     );
     canhBao.mockRestore();
   });
+
+  /**
+   * Review 26/10 mục 9. Job báo hàng mới đặt trần 10 lời gọi cùng lúc, nhưng
+   * `create` không chờ lần đẩy FCM: trần chỉ chặn câu INSERT, còn FCM bị gọi
+   * dồn không giới hạn. Job cần một cách gọi CHỜ đẩy xong (không đổi hành vi
+   * của mọi nơi gọi khác).
+   */
+  it('create(..., { choDayPush: true }) chỉ xong khi lần đẩy FCM đã xong; hỏng thì vẫn không ném', async () => {
+    let dayXong = false;
+    const svc = new NotificationsService(
+      {
+        create: (x: unknown) => x,
+        save: (x: object) => Promise.resolve({ id: 2, ...x }),
+      } as never,
+      {
+        find: () => Promise.resolve([{ token: 'tok-1' }]),
+        delete: () => Promise.resolve({}),
+      } as never,
+      {
+        sendPush: async () => {
+          await new Promise((r) => setTimeout(r, 30));
+          dayXong = true;
+          return [];
+        },
+      } as never,
+    );
+    const goi = (
+      svc as unknown as {
+        create: (d: object, o: { choDayPush: boolean }) => Promise<unknown>;
+      }
+    ).create;
+
+    await goi.call(
+      svc,
+      { user_id: 9, type: 'system', title: 't', content: 'c' },
+      { choDayPush: true },
+    );
+    expect(dayXong).toBe(true);
+  });
 });
