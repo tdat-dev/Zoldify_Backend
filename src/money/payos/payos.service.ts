@@ -522,31 +522,40 @@ export class PayosService {
    * người mua thay vì hồi sinh đơn.
    */
   async voidOpenLinkForOrder(orderId: number): Promise<boolean> {
-    const payment = await this.paymentRepository.findOne({
+    // MỌI link pending, không chỉ một (review 26/10). Từ khi orderCode theo
+    // từng lần tạo link (PAYOS_MA_GOC), một đơn có thể có nhiều link cùng
+    // sống; `findOne` cũ đóng một cái và để cái kia nhận tiền cho đơn đã huỷ.
+    const dangMo = await this.paymentRepository.find({
       where: {
         order: { id: orderId },
         type: PaymentType.ORDER_PAYMENT,
         status: PaymentStatus.PENDING,
       },
     });
-    if (!payment?.payos_order_code) return false;
 
-    try {
-      await this.payos.paymentRequests.cancel(
-        Number(payment.payos_order_code),
-        'Order cancelled',
-      );
-      payment.status = PaymentStatus.FAILED;
-      await this.paymentRepository.save(payment);
-      return true;
-    } catch (err) {
-      this.logger.warn(
-        `Không huỷ được link PayOS ${payment.payos_order_code} của đơn #${orderId}: ` +
-          `${err.message}. Link còn sống, nhưng trả tiền vào đó sẽ rơi vào ví ` +
-          'người mua chứ không hồi sinh đơn.',
-      );
-      return false;
+    let daDong = false;
+    for (const payment of dangMo) {
+      if (!payment.payos_order_code) continue;
+      try {
+        await this.payos.paymentRequests.cancel(
+          Number(payment.payos_order_code),
+          'Order cancelled',
+        );
+        // Chỉ hạ dòng còn pending: webhook thành công có thể vừa commit.
+        await this.paymentRepository.update(
+          { id: payment.id, status: PaymentStatus.PENDING },
+          { status: PaymentStatus.FAILED },
+        );
+        daDong = true;
+      } catch (err) {
+        this.logger.warn(
+          `Không huỷ được link PayOS ${payment.payos_order_code} của đơn #${orderId}: ` +
+            `${(err as Error).message}. Link còn sống, nhưng trả tiền vào đó sẽ ` +
+            'rơi vào ví người mua chứ không hồi sinh đơn.',
+        );
+      }
     }
+    return daDong;
   }
 
   // ============ WEBHOOK ============
