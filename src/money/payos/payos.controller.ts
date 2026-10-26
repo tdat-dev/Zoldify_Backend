@@ -12,7 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { PayosService } from './payos.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { Public } from '@common/decorators/public.decorator';
@@ -84,12 +84,17 @@ export class PayosController {
     return this.payosService.getOrderStatus(+orderId, user);
   }
 
-  // Không throttle: đây là lối dự phòng khi webhook trễ, người mua bấm nó ngay
-  // sau khi chuyển khoản. Họ thường đi qua NAT của nhà mạng (nhiều người chung
-  // một IP), nên trần throttle theo IP sẽ chặn đúng lúc họ cần biết tiền đã
-  // vào chưa. Route có JWT và chỉ đọc đơn của chính người gọi; nếu bị lạm
-  // dụng thì gắn trần theo user, đừng gỡ dòng này.
-  @SkipThrottle()
+  // TRẦN RIÊNG, KHÔNG BỎ QUA (review 26/10). Mỗi lần gọi là một lần hỏi API
+  // PayOS; bỏ throttle hẳn thì một vòng lặp ở client (hay một kẻ cố ý) đốt
+  // hạn mức API của cả merchant. Trần này đếm THEO IP như bộ đếm toàn cục
+  // (bộ theo người dùng cần tracker riêng, chưa làm): đủ cho vài người mua
+  // chung NAT nhà mạng cùng hỏi lại 3-5 giây một lần, chặn được vòng lặp
+  // hỏng. Bảo trì vẫn mở route này: xem MaintenanceGuard.
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 15, ttl: 10_000 },
+    long: { limit: 60, ttl: 60_000 },
+  })
   @UseGuards(JwtAuthGuard)
   @Get('refresh/:orderId')
   @ResponseMessage('Refresh trạng thái PayOS thành công')
@@ -132,7 +137,11 @@ export class PayosController {
   // tới khi cron huỷ dù người mua đã chuyển khoản. Webhook tự xác thực bằng
   // chữ ký và chống trùng bằng idempotency_key của sổ cái, nên không cần trần.
   // Bảo trì cũng không chặn nó: xem danh sách lối mở ở MaintenanceGuard.
-  @SkipThrottle()
+  //
+  // PHẢI NÊU TÊN CẢ BA BỘ ĐẾM. `@SkipThrottle()` không tham số chỉ đặt bộ
+  // `default`, mà app.module chỉ khai `short`/`medium`/`long`: bản đầu viết
+  // vậy và webhook vẫn bị đếm đủ ba bộ (review 26/10).
+  @SkipThrottle({ short: true, medium: true, long: true })
   @Public()
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
