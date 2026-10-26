@@ -331,4 +331,21 @@ describe('PaymentsService: trả bằng ví cho đơn đã đóng', () => {
 
     expect(dem()).toBe(1);
   });
+
+  /**
+   * Review 4: \`deduct(..., em)\` kết thúc bằng \`this.getBalance(userId)\`, mà
+   * hàm đó đọc bằng \`dataSource.manager\` với HAI câu song song. Đang giữ một
+   * kết nối cho transaction, nó mượn thêm hai kết nối nữa từ pool (giới hạn
+   * 15): đủ người trả bằng ví cùng lúc là pool tự cạn, mọi request treo chờ
+   * kết nối mà chính chúng đang giữ. Người gọi duy nhất còn bỏ qua kết quả.
+   */
+  it('review 4: trả bằng ví không mượn thêm kết nối để đọc số dư', async () => {
+    const orderId = await taoDonChuaTra(OrderStatus.PENDING);
+    await napVi(buyerId, TIEN_HANG);
+    const docSoDu = jest.spyOn(WalletsService.prototype, 'getBalance');
+
+    await traBangVi(orderId);
+
+    expect(docSoDu).not.toHaveBeenCalled();
+  });
 });
