@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { UnauthorizedException } from '@nestjs/common';
+import { HttpException, UnauthorizedException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { AuthController } from './auth.controller';
@@ -189,6 +189,60 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
     expect(authService.login).toHaveBeenCalledWith(
       expect.objectContaining({ id: 7 }),
     );
+  });
+});
+
+/**
+ * Email thuộc một tài khoản đã XOÁ MỀM: findOne mặc định bỏ qua dòng có
+ * deleted_at, nên controller tưởng chưa có ai và INSERT dòng mới, đâm vào khoá
+ * UNIQUE(email) mà dòng đã xoá vẫn giữ. Người dùng nhận 500 "Internal server
+ * error" thay vì một câu nói rõ chuyện gì xảy ra.
+ */
+describe('POST /auth/firebase với email của tài khoản đã xoá', () => {
+  beforeEach(() => verifyIdToken.mockReset());
+
+  it('trả 4xx rõ ràng, không đâm vào khoá UNIQUE', async () => {
+    verifyIdToken.mockResolvedValue(googleToken());
+    const daXoa = {
+      id: 7,
+      email: 'nan-nhan@gmail.com',
+      email_verified: true,
+      deleted_at: new Date(),
+    };
+    const userRepository = {
+      findOne: jest.fn((o: { withDeleted?: boolean }) =>
+        Promise.resolve(o.withDeleted ? daXoa : null),
+      ),
+      create: jest.fn((x: object) => x),
+      save: jest.fn(() =>
+        Promise.reject(
+          Object.assign(new Error("Duplicate entry for key 'email'"), {
+            code: 'ER_DUP_ENTRY',
+          }),
+        ),
+      ),
+      update: jest.fn(),
+    };
+    const firebase = new FirebaseService();
+    (firebase as unknown as { initialized: boolean }).initialized = true;
+    const controller = new AuthController(
+      { login: jest.fn() } as never,
+      firebase,
+      userRepository as never,
+    );
+
+    const loi: unknown = await controller
+      .firebaseLogin({ idToken: 'tok' })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    expect(loi).toBeInstanceOf(HttpException);
+    const status = (loi as HttpException).getStatus();
+    expect(status).toBeGreaterThanOrEqual(400);
+    expect(status).toBeLessThan(500);
+    expect(userRepository.save).not.toHaveBeenCalled();
   });
 });
 
