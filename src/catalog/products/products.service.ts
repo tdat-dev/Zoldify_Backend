@@ -695,7 +695,15 @@ export class ProductsService {
   async findOne(id: number) {
     const key = this.detailKey(id);
     const cached = await this.cacheGet<Product>(key);
-    if (cached) return cached;
+    if (cached) {
+      // ĐẾM CẢ LƯỢT TRÚNG CACHE. Tới 26/10 lời gọi đếm nằm SAU dòng này, dù
+      // comment trên nó viết "bỏ trước khi kiểm cache": TTL chi tiết 60 giây
+      // nên mỗi phút mỗi sản phẩm chỉ đếm được một lượt xem, và sắp xếp
+      // `most_viewed` thật ra đang sắp theo số lần cache hết hạn. Đo bằng
+      // `cache-va-dem-sau-dat-huy.spec.ts`: 3 lượt xem, đếm được 1.
+      await this.demLuotXem(id);
+      return cached;
+    }
 
     const product = await this.productRepository.findOne({
       where: { id },
@@ -712,24 +720,28 @@ export class ProductsService {
       throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
     }
 
-    // Tăng view_count bằng Redis INCR (atomic, không race condition).
-    // Key: `view_count:{productId}`. Flush về MySQL theo batch mỗi 5 phút
-    // bởi job `flush-view-count` trong worker.
-    // BỎ TRƯỚC KHI KIỂM CACHE: TTL 60s khiến chỉ lượt đầu tiên mỗi phút được đếm
-    // nếu để sau `if (cached) return cached;` — phá vỡ sort=most_viewed.
-    const viewCountKey = `view_count:${id}`;
-    if (this.redis) {
-      try {
-        await this.redis.incr(viewCountKey);
-      } catch (err) {
-        // on('error') chỉ bắt sự kiện kết nối, không bắt lệnh bị từ chối.
-        // Đo được: "Stream isn't writeable and enableOfflineQueue options is false"
-        // Fail-open: Redis lỗi không được làm route 500.
-      }
-    }
+    // Lượt trượt cache: đếm SAU khi biết sản phẩm có thật, để id bậy không đẻ
+    // khoá `view_count:*` rác trong Redis.
+    await this.demLuotXem(id);
 
     await this.cacheSet(key, product, PRODUCT_DETAIL_TTL);
     return product;
+  }
+
+  /**
+   * Tăng view_count bằng Redis INCR (atomic, không race condition).
+   * Key: `view_count:{productId}`. Flush về MySQL theo batch mỗi 5 phút bởi
+   * job `flush-view-count` trong worker.
+   */
+  private async demLuotXem(id: number): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.incr(`view_count:${id}`);
+    } catch {
+      // on('error') chỉ bắt sự kiện kết nối, không bắt lệnh bị từ chối.
+      // Đo được: "Stream isn't writeable and enableOfflineQueue options is false"
+      // Fail-open: Redis lỗi không được làm route 500.
+    }
   }
 
   async update(id: number, updateProductDto: UpdateProductDto, user: IUser) {
