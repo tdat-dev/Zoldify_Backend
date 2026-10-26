@@ -548,8 +548,14 @@ async function main() {
     '../src/money/payos/payos.service',
     'PayosService',
   );
-  const vo = payos as unknown as { payos: unknown };
+  // Từ b250e7b, thiếu PAYOS_CHECKSUM_KEY thì handleWebhook từ chối TRƯỚC khi
+  // tới SDK (cờ webhookKhongCoKhoa). Môi trường tự kiểm không có khoá thật, nên
+  // ngoài việc thay SDK còn phải tạm hạ cờ đó; không thì R7 đỏ vì 0 bút toán
+  // chứ không phải vì ghi trùng. Trả lại cả hai ngay sau kịch bản.
+  const vo = payos as unknown as { payos: unknown; webhookKhongCoKhoa: boolean };
   const payosGoc = vo.payos;
+  const coGoc = vo.webhookKhongCoKhoa;
+  vo.webhookKhongCoKhoa = false;
   vo.payos = {
     webhooks: {
       verify: (body: { data: unknown }) => Promise.resolve(body.data),
@@ -579,6 +585,7 @@ async function main() {
     });
   } finally {
     vo.payos = payosGoc;
+    vo.webhookKhongCoKhoa = coGoc;
   }
   const butToanR7 = await ds.query<Array<{ n: number }>>(
     `SELECT COUNT(*) AS n FROM ledger_transactions
