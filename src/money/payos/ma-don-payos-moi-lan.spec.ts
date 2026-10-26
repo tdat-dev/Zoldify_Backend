@@ -52,6 +52,7 @@ describe('PayosService: orderCode mới cho mỗi lần tạo link', () => {
   let payos: PayosService;
   let buyerId: number;
   let daDung: Set<number>;
+  let daHuy: number[];
 
   beforeAll(async () => {
     ds = new DataSource({
@@ -99,6 +100,10 @@ describe('PayosService: orderCode mới cho mỗi lần tạo link', () => {
     );
     (payos as unknown as { payos: unknown }).payos = {
       paymentRequests: {
+        cancel: (orderCode: number) => {
+          daHuy.push(Number(orderCode));
+          return Promise.resolve({});
+        },
         create: (req: TaoLink) => {
           if (daDung.has(req.orderCode)) {
             return Promise.reject(
@@ -154,6 +159,7 @@ describe('PayosService: orderCode mới cho mỗi lần tạo link', () => {
     );
     buyerId = u.id;
     daDung = new Set();
+    daHuy = [];
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -244,6 +250,27 @@ describe('PayosService: orderCode mới cho mỗi lần tạo link', () => {
       [`payos:${b.orderCode}:${b.paymentLinkId}`],
     );
     expect(Number(n)).toBe(1);
+  });
+
+  /**
+   * Review 26/10 mục 6. Mỗi lần tạo link nay ra một orderCode mới, nên một
+   * đơn có thể có NHIỀU link pending cùng sống. `voidOpenLinkForOrder` (gọi
+   * khi huỷ đơn) chỉ `findOne` nên đóng đúng một link: link còn lại vẫn trả
+   * tiền vào được cho một đơn đã huỷ.
+   */
+  it('huỷ đơn đóng MỌI link pending của đơn, không chỉ một', async () => {
+    const id = await taoDon();
+    const a = await payos.createOrderPaymentLink(id, buyerId);
+    const b = await payos.createOrderPaymentLink(id, buyerId);
+
+    await payos.voidOpenLinkForOrder(id);
+
+    expect(daHuy.sort()).toEqual([a.orderCode, b.orderCode].sort());
+    const [{ n }] = await ds.query<Array<{ n: number }>>(
+      `SELECT COUNT(*) AS n FROM payments WHERE order_id = ? AND status = 'pending'`,
+      [id],
+    );
+    expect(Number(n)).toBe(0);
   });
 
   it('hai lần nạp ví cách nhau 10^7 ms không ra cùng một orderCode', async () => {
