@@ -881,6 +881,7 @@ export class OrdersService {
     // Trạng thái lúc ĐỌC. Mọi kiểm tra bên dưới đứng trên nó, nên lúc ghi phải
     // chứng minh nó vẫn còn đúng (khối khoá dòng phía dưới).
     const trangThaiDaDoc = order.status;
+    const maVanDonDaDoc = order.tracking_code;
 
     if (nextStatus) {
       assertTransitionAllowed(order.status, nextStatus, actors);
@@ -940,8 +941,13 @@ export class OrdersService {
       }
 
       const thayDoi: Partial<Order> = { ...giaoHang };
-      // Mã vận đơn: người gọi điền tay, hoặc vừa được GHN cấp ở trên.
-      if (order.tracking_code !== chot.tracking_code) {
+      // Mã vận đơn: CHỈ ghi khi chính yêu cầu này đổi nó. Bản đầu ghi hễ
+      // khác database, nên một yêu cầu chỉ đổi trạng thái kéo mã vừa được lần
+      // tạo lại vận đơn song song điền về null (bài kiểm "review 9").
+      if (updateOrderDto.tracking_code !== undefined) {
+        thayDoi.tracking_code = updateOrderDto.tracking_code;
+      } else if (order.tracking_code !== maVanDonDaDoc && !chot.tracking_code) {
+        // GHN vừa cấp ở trên, và chưa ai điền mã nào khác trong lúc chờ.
         thayDoi.tracking_code = order.tracking_code;
       }
 
@@ -1490,9 +1496,7 @@ export class OrdersService {
     }
     // Trả riêng phần vừa đổi để người gọi ghi ĐÚNG những cột này, không lưu
     // cả entity (xem khối khoá dòng trong `updateStatus`).
-    return Object.fromEntries(
-      touched.map((f) => [f, dto[f]]),
-    ) as Partial<Order>;
+    return Object.fromEntries(touched.map((f) => [f, dto[f]]));
   }
 
   /**
