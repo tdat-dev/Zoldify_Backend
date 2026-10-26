@@ -104,9 +104,13 @@ export class ProductsService {
     // socket sau mỗi lần nối (cả lần nối lại). Đo 26/10: có REDIS_URL thì mọi
     // spec dựng service này giữ jest tới hết hạn 10 phút của nghiem-thu dù đã
     // xanh hết; api và worker vẫn sống nhờ HTTP server và kết nối BullMQ.
-    this.redis.on('connect', () => {
+    // Giữ đúng client vừa mở, đừng đọc lại thuộc tính lúc sự kiện tới: spec
+    // thay thuộc tính bằng bản giả trước lúc nối xong thì unref rơi vào bản giả,
+    // socket thật giữ jest sống tới hết hạn (đo 26/10, cache-va-dem-sau-dat-huy).
+    const client = this.redis;
+    client.on('connect', () => {
       (
-        this.redis as unknown as { stream?: { unref?: () => void } }
+        client as unknown as { stream?: { unref?: () => void } }
       ).stream?.unref?.();
     });
     this.redis.on('error', (err) => {

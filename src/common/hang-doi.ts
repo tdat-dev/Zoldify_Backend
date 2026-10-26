@@ -58,9 +58,13 @@ export class HangDoiViecNen implements OnApplicationShutdown {
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
     });
-    this.conn.on('connect', () => {
+    // Giữ đúng client vừa mở, đừng đọc lại thuộc tính lúc sự kiện tới: spec
+    // thay thuộc tính bằng bản giả trước lúc nối xong thì unref rơi vào bản giả,
+    // socket thật giữ jest sống tới hết hạn (đo 26/10, cache-va-dem-sau-dat-huy).
+    const conn = this.conn;
+    conn.on('connect', () => {
       (
-        this.conn as unknown as { stream?: { unref?: () => void } }
+        conn as unknown as { stream?: { unref?: () => void } }
       ).stream?.unref?.();
     });
     this.conn.on('error', () => {
