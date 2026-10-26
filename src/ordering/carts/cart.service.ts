@@ -94,6 +94,12 @@ export class CartService {
       // Cộng không ăn: hoặc chưa có dòng, hoặc có rồi mà cộng thêm thì vượt kho.
       const hienTai = await this.dongVaKho(user.id, product_id);
       if (hienTai) {
+        // Dòng có rồi mà cộng vẫn còn chỗ: phép cộng vừa trượt chỉ vì dòng do
+        // một request song song chèn chưa kịp commit lúc ta UPDATE (thấy 0
+        // dòng), rồi commit ngay trước lúc ta đọc lại. CI 26/10 bắt đúng ca
+        // này: 5 lần thêm đầu cùng lúc, kho 50, một lần nhận nhầm "chỉ thêm
+        // được 49 cái nữa". Còn chỗ thì quay lại cộng, chỉ báo khi thật vượt.
+        if (hienTai.quantity + muonThem <= hienTai.stock) continue;
         throw new BadRequestException(
           this.cauVuotKho(hienTai.quantity, hienTai.stock),
         );
