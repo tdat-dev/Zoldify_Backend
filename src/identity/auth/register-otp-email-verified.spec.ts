@@ -48,6 +48,8 @@ describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
     const service = makeAuthService(repo, {
       otp: '123456',
       full_name: 'Bên mua',
+      sai: 0,
+      het_han: Date.now() + 60_000,
     });
 
     await service.verifyRegisterOtp('a@b.com', '123456', 'matkhau123');

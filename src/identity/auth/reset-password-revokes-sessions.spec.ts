@@ -42,7 +42,14 @@ describe('resetPassword thu hồi phiên cũ', () => {
     };
 
     const cacheManager = {
-      get: jest.fn(() => Promise.resolve('123456')),
+      // Bản ghi OTP dạng mới: mã, số lần sai, mốc hết hạn (xem kiemOtp).
+      get: jest.fn(() =>
+        Promise.resolve({
+          otp: '123456',
+          sai: 0,
+          het_han: Date.now() + 60_000,
+        }),
+      ),
       del: jest.fn(),
     };
 

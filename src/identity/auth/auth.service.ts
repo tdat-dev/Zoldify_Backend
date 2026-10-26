@@ -16,7 +16,7 @@ import { User } from '@identity/users/entities/user.entity';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { MailerService } from '@nestjs-modules/mailer';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomInt, randomUUID } from 'crypto';
 import { emailChuanHoaHoacLoi } from '@common/email';
 
 /**
@@ -31,6 +31,25 @@ import { emailChuanHoaHoacLoi } from '@common/email';
  */
 const bamRefresh = (token: string) =>
   createHash('sha256').update(token).digest('hex');
+
+/** OTP sống 5 phút. */
+const OTP_SONG_MS = 300_000;
+/**
+ * Số lần gõ sai tối đa cho MỘT mã OTP; lần sai thứ 5 là mã bị xoá.
+ *
+ * Bản trước không đếm: throttle chặn 5 lần/phút mỗi IP, nên kẻ đoán có nhiều
+ * IP thử được bao nhiêu mã trong 5 phút là chuyện của số máy, không phải của
+ * thiết kế, trong khi cả không gian chỉ có 900.000 mã. Đếm lưu CÙNG bản ghi
+ * OTP, nên yêu cầu mã mới là bắt đầu lại từ 0.
+ *
+ * NỢ: đọc rồi ghi hai bước, không nguyên tử. Nhiều request sai bắn đúng cùng
+ * lúc có thể đếm hụt vài lần; vẫn bị trần throttle chặn. Muốn chính xác tuyệt
+ * đối thì đếm bằng INCR của Redis.
+ */
+const SO_LAN_SAI_TOI_DA = 5;
+
+/** Bản ghi OTP trong cache: mã, số lần sai, mốc hết hạn (ms). */
+type BanGhiOtp = { otp: string; sai: number; het_han: number };
 
 @Injectable()
 export class AuthService {
@@ -73,6 +92,51 @@ export class AuthService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private readonly mailerService: MailerService,
   ) {}
+
+  /**
+   * OTP 6 số từ crypto.randomInt. Bản trước dùng Math.random: V8 sinh nó bằng
+   * xorshift128+, không phải nguồn ngẫu nhiên cho bí mật (đủ mẫu đầu ra là
+   * suy ra được các số kế tiếp).
+   */
+  private sinhOtp(): string {
+    return randomInt(100000, 1000000).toString();
+  }
+
+  private banGhiOtpMoi(otp: string): BanGhiOtp {
+    return { otp, sai: 0, het_han: Date.now() + OTP_SONG_MS };
+  }
+
+  /**
+   * So OTP gõ vào với bản trong cache. Đúng thì trả bản ghi (người gọi tự xoá
+   * sau khi dùng xong). Sai thì tăng đếm và ghi lại với THỜI GIAN CÒN LẠI (ghi
+   * với TTL đầy đủ là mỗi lần đoán sai lại gia hạn mã thêm 5 phút); sai tới
+   * SO_LAN_SAI_TOI_DA thì xoá hẳn mã.
+   */
+  private async kiemOtp<T extends BanGhiOtp>(
+    khoa: string,
+    otp: string,
+  ): Promise<T> {
+    const data = await this.cacheManager.get<T>(khoa);
+    const conLai =
+      data && typeof data === 'object' ? data.het_han - Date.now() : 0;
+    // !(conLai > 0) chứ không conLai <= 0: bản ghi kiểu cũ (trước bản vá, không
+    // có het_han) cho NaN, mà NaN <= 0 là false, tức lọt qua kiểm hết hạn.
+    if (!data || !(conLai > 0)) {
+      throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');
+    }
+    if (data.otp !== otp) {
+      const sai = (data.sai ?? 0) + 1;
+      if (sai >= SO_LAN_SAI_TOI_DA) {
+        await this.cacheManager.del(khoa);
+        throw new BadRequestException(
+          'Nhập sai mã OTP quá 5 lần, vui lòng yêu cầu mã mới',
+        );
+      }
+      await this.cacheManager.set(khoa, { ...data, sai }, conLai);
+      throw new BadRequestException('Mã OTP không chính xác');
+    }
+    return data;
+  }
 
   async validateUser(email: string, pass: string): Promise<any> {
     // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
@@ -142,11 +206,11 @@ export class AuthService {
     const existing = await this.userRepository.findOne({ where: { email } });
     if (existing) throw new BadRequestException('Email đã được đăng ký');
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = this.sinhOtp();
     await this.cacheManager.set(
       `register_otp_${email}`,
-      { otp, full_name },
-      300000,
+      { ...this.banGhiOtpMoi(otp), full_name },
+      OTP_SONG_MS,
     );
 
     await this.send(
@@ -172,14 +236,10 @@ export class AuthService {
     // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
     // mail (email giả dạng IDN, xem common/email.ts).
     email = emailChuanHoaHoacLoi(email);
-    const data = await this.cacheManager.get<{
-      otp: string;
-      full_name: string;
-    }>(`register_otp_${email}`);
-    if (!data)
-      throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');
-    if (data.otp !== otp)
-      throw new BadRequestException('Mã OTP không chính xác');
+    const data = await this.kiemOtp<BanGhiOtp & { full_name: string }>(
+      `register_otp_${email}`,
+      otp,
+    );
 
     // true: tài khoản này vừa chứng minh quyền sở hữu email bằng mã OTP. Đây
     // giờ là đường đăng ký công khai duy nhất (POST /auth/register không OTP
@@ -222,13 +282,17 @@ export class AuthService {
     // route đã bị throttle 5 lần/phút.)
     if (!user) return { message: 'Mã OTP đã được gửi đến email của bạn' };
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = this.sinhOtp();
     // Khoá theo ID TÀI KHOẢN, gửi tới EMAIL TRONG DB, không dùng chuỗi gõ vào.
     // findOne trên collation bỏ dấu, bỏ hoa thường có thể trả về tài khoản mà
     // email KHÁC chuỗi người gọi gõ (victim@gmaïl.com khớp victim@gmail.com).
     // OTP chứng minh sở hữu hộp thư của TÀI KHOẢN, nên chỉ được tới địa chỉ
     // đó; gửi theo chuỗi gõ vào là gửi mã đặt lại cho hộp thư của kẻ khác.
-    await this.cacheManager.set(`forgot_otp_${user.id}`, otp, 300000);
+    await this.cacheManager.set(
+      `forgot_otp_${user.id}`,
+      this.banGhiOtpMoi(otp),
+      OTP_SONG_MS,
+    );
 
     await this.send(
       user.email,
@@ -260,13 +324,9 @@ export class AuthService {
     // Không có tài khoản thì trả đúng câu "OTP hết hạn" như khi sai OTP, để
     // route này không thành công cụ dò email nào đã đăng ký.
     const user = await this.userRepository.findOne({ where: { email } });
-    const savedOtp = user
-      ? await this.cacheManager.get<string>(`forgot_otp_${user.id}`)
-      : undefined;
-    if (!user || !savedOtp)
+    if (!user)
       throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');
-    if (savedOtp !== otp)
-      throw new BadRequestException('Mã OTP không chính xác');
+    await this.kiemOtp(`forgot_otp_${user.id}`, otp);
 
     const hashedPassword = this.usersService.hashPassword(newPassword);
     // email_verified = true: gõ đúng OTP gửi về hộp thư là đã chứng minh sở
