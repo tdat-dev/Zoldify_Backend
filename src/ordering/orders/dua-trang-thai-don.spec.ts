@@ -714,4 +714,62 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     expect(await soKyQuy(orderId)).toBe(1);
     expect(await ketGiuHo()).toBe(BigInt(GIA));
   });
+
+  /**
+   * Thử khoá NGAY (NOWAIT) dòng đơn và dòng người bán từ một kết nối khác.
+   * Trả về tên những bảng đang bị ai đó giữ khoá.
+   */
+  async function dongDangBiKhoa(orderId: number): Promise<string[]> {
+    const qr = ds.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+    const biKhoa: string[] = [];
+    try {
+      for (const [bang, id] of [
+        ['orders', orderId],
+        ['users', sellerId],
+      ] as const) {
+        try {
+          await qr.query(
+            `SELECT id FROM ${bang} WHERE id = ? FOR UPDATE NOWAIT`,
+            [id],
+          );
+        } catch {
+          biKhoa.push(bang);
+        }
+      }
+    } finally {
+      await qr.rollbackTransaction();
+      await qr.release();
+    }
+    return biKhoa;
+  }
+
+  /**
+   * Review 1: khoá ký quỹ khoá lây dòng `orders` và dòng `users` của người bán.
+   *
+   * `em.find` với `where: { order: { id } }` sinh LEFT JOIN sang bảng quan hệ,
+   * và `FOR UPDATE` của MySQL khoá MỌI dòng nó đọc, kể cả dòng JOIN. Giữ khoá
+   * dòng người bán S trong lúc chờ khoá két giữ hộ là đủ để tạo vòng chờ với
+   * một webhook đang giữ két và chèn ký quỹ cho đơn khác của S (kiểm khoá
+   * ngoại cần khoá chia sẻ trên dòng S): MySQL ném 1213, API trả 500.
+   */
+  it('review 1: release giữ khoá ký quỹ nhưng không khoá dòng đơn, dòng người bán', async () => {
+    const orderId = await taoDonDaTra();
+    let biKhoa: string[] | undefined;
+    const goc = ledger.getOrCreateAccount.bind(ledger) as (
+      ...a: Parameters<LedgerService['getOrCreateAccount']>
+    ) => ReturnType<LedgerService['getOrCreateAccount']>;
+    jest
+      .spyOn(ledger, 'getOrCreateAccount')
+      .mockImplementation(async (...a) => {
+        // Lần đầu tới đây là lúc `release` đã khoá ký quỹ, chưa ghi sổ.
+        if (biKhoa === undefined) biKhoa = await dongDangBiKhoa(orderId);
+        return goc(...a);
+      });
+
+    await escrows.release(orderId, sellerId);
+
+    expect(biKhoa).toEqual([]);
+  });
 });
