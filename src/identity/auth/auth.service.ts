@@ -17,6 +17,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { MailerService } from '@nestjs-modules/mailer';
 import { createHash, randomUUID } from 'crypto';
+import { emailChuanHoaHoacLoi } from '@common/email';
 
 /**
  * Băm refresh token trước khi lưu vào users.refresh_token.
@@ -74,6 +75,9 @@ export class AuthService {
   ) {}
 
   async validateUser(email: string, pass: string): Promise<any> {
+    // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
+    // mail (email giả dạng IDN, xem common/email.ts).
+    email = emailChuanHoaHoacLoi(email);
     const user = await this.usersService.findOneByEmail(email);
     if (user) {
       const isValid = this.usersService.isValidPassword(pass, user.password);
@@ -132,6 +136,9 @@ export class AuthService {
   }
 
   async sendRegisterOtp(email: string, full_name: string) {
+    // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
+    // mail (email giả dạng IDN, xem common/email.ts).
+    email = emailChuanHoaHoacLoi(email);
     const existing = await this.userRepository.findOne({ where: { email } });
     if (existing) throw new BadRequestException('Email đã được đăng ký');
 
@@ -162,6 +169,9 @@ export class AuthService {
   }
 
   async verifyRegisterOtp(email: string, otp: string, password: string) {
+    // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
+    // mail (email giả dạng IDN, xem common/email.ts).
+    email = emailChuanHoaHoacLoi(email);
     const data = await this.cacheManager.get<{
       otp: string;
       full_name: string;
@@ -201,6 +211,9 @@ export class AuthService {
   // ===================== FORGOT PASSWORD =====================
 
   async sendForgotPasswordOtp(email: string) {
+    // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
+    // mail (email giả dạng IDN, xem common/email.ts).
+    email = emailChuanHoaHoacLoi(email);
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user)
       throw new NotFoundException('Không tìm thấy tài khoản với email này');
@@ -230,6 +243,9 @@ export class AuthService {
   }
 
   async resetPassword(email: string, otp: string, newPassword: string) {
+    // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
+    // mail (email giả dạng IDN, xem common/email.ts).
+    email = emailChuanHoaHoacLoi(email);
     const savedOtp = await this.cacheManager.get<string>(`forgot_otp_${email}`);
     if (!savedOtp)
       throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');

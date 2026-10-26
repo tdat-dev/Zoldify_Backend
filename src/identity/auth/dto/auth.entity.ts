@@ -1,21 +1,16 @@
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { EmailChuanHoa } from '@common/email';
 
 // 1. Luồng Quên mật khẩu - Bước 1: Gửi OTP
 export class SendOtpDto {
-  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @EmailChuanHoa()
   @IsNotEmpty({ message: 'Email không được để trống' })
   email: string;
 }
 
 // 1. Luồng Quên mật khẩu - Bước 2: Xác thực & Đặt lại mật khẩu
 export class ResetPasswordDto {
-  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @EmailChuanHoa()
   @IsNotEmpty({ message: 'Email không được để trống' })
   email: string;
 
@@ -30,7 +25,7 @@ export class ResetPasswordDto {
 
 // Luồng Đăng ký - Bước 1: Gửi OTP
 export class SendRegisterOtpDto {
-  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @EmailChuanHoa()
   @IsNotEmpty({ message: 'Email không được để trống' })
   email: string;
 
@@ -41,7 +36,7 @@ export class SendRegisterOtpDto {
 
 // Luồng Đăng ký - Bước 2: Xác thực OTP + tạo tài khoản
 export class VerifyRegisterOtpDto {
-  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @EmailChuanHoa()
   @IsNotEmpty({ message: 'Email không được để trống' })
   email: string;
 
