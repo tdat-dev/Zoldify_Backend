@@ -219,10 +219,15 @@ export class AuthService {
       throw new NotFoundException('Không tìm thấy tài khoản với email này');
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    await this.cacheManager.set(`forgot_otp_${email}`, otp, 300000);
+    // Khoá theo ID TÀI KHOẢN, gửi tới EMAIL TRONG DB, không dùng chuỗi gõ vào.
+    // findOne trên collation bỏ dấu, bỏ hoa thường có thể trả về tài khoản mà
+    // email KHÁC chuỗi người gọi gõ (victim@gmaïl.com khớp victim@gmail.com).
+    // OTP chứng minh sở hữu hộp thư của TÀI KHOẢN, nên chỉ được tới địa chỉ
+    // đó; gửi theo chuỗi gõ vào là gửi mã đặt lại cho hộp thư của kẻ khác.
+    await this.cacheManager.set(`forgot_otp_${user.id}`, otp, 300000);
 
     await this.send(
-      email,
+      user.email,
       'Zoldify - Mã OTP khôi phục mật khẩu',
       `
           <div style="font-family: sans-serif; padding: 20px; max-width: 500px;">
@@ -246,14 +251,18 @@ export class AuthService {
     // Chuẩn hoá và từ chối email ngoài ASCII TRƯỚC mọi lần tra DB hay gửi
     // mail (email giả dạng IDN, xem common/email.ts).
     email = emailChuanHoaHoacLoi(email);
-    const savedOtp = await this.cacheManager.get<string>(`forgot_otp_${email}`);
-    if (!savedOtp)
+    // Tìm tài khoản TRƯỚC rồi mới tìm OTP theo id của nó: cùng một tài khoản
+    // dù gõ email kiểu nào cũng chỉ có một OTP (xem sendForgotPasswordOtp).
+    // Không có tài khoản thì trả đúng câu "OTP hết hạn" như khi sai OTP, để
+    // route này không thành công cụ dò email nào đã đăng ký.
+    const user = await this.userRepository.findOne({ where: { email } });
+    const savedOtp = user
+      ? await this.cacheManager.get<string>(`forgot_otp_${user.id}`)
+      : undefined;
+    if (!user || !savedOtp)
       throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');
     if (savedOtp !== otp)
       throw new BadRequestException('Mã OTP không chính xác');
-
-    const user = await this.userRepository.findOne({ where: { email } });
-    if (!user) throw new NotFoundException('Không tìm thấy tài khoản');
 
     const hashedPassword = this.usersService.hashPassword(newPassword);
     // email_verified = true: gõ đúng OTP gửi về hộp thư là đã chứng minh sở
@@ -264,7 +273,7 @@ export class AuthService {
       password: hashedPassword,
       email_verified: true,
     });
-    await this.cacheManager.del(`forgot_otp_${email}`);
+    await this.cacheManager.del(`forgot_otp_${user.id}`);
 
     // Thu hồi MỌI phiên đã phát trước lúc đặt lại mật khẩu: tăng
     // token_version để JwtStrategy từ chối access token cũ, và xoá
