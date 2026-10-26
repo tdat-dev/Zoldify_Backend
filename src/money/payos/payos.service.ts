@@ -15,6 +15,7 @@ import {
 } from '@money/ledger/ledger.types';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { PayOS } from '@payos/node';
+import type { PaymentLink, WebhookData } from '@payos/node';
 import { Payment } from '@money/payments/entities/payment.entity';
 import { Order } from '@ordering/orders/entities/order.entity';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
@@ -357,7 +358,7 @@ export class PayosService {
     }
 
     // Gọi PayOS API để lấy status thật
-    let link;
+    let link: PaymentLink;
     try {
       link = await this.payos.paymentRequests.get(
         Number(payment.payos_order_code),
@@ -369,6 +370,29 @@ export class PayosService {
       throw new BadRequestException(
         'Không kiểm tra được trạng thái từ PayOS: ' + e.message,
       );
+    }
+
+    // Cùng luật với webhook: PayOS báo số khác số payment cần thì KHÔNG ghi
+    // sổ. Thiếu chặn này thì webhook lệch tiền bị từ chối xong, người mua bấm
+    // "kiểm tra lại" là đơn vẫn thành đã trả đủ (đo bằng
+    // `webhook-so-tien-va-ma-la.spec.ts`).
+    const soTienPayos = Number(link.amountPaid ?? link.amount);
+    if (
+      link.status === 'PAID' &&
+      payment.status !== PaymentStatus.SUCCESS &&
+      !this.soTienKhop(payment, soTienPayos)
+    ) {
+      const lech = await this.dataSource.transaction((em) =>
+        this.danhDauLechTien(em, payment, soTienPayos, 'refresh'),
+      );
+      if (lech) await this.baoLechTien(lech);
+      return {
+        orderId: order.id,
+        is_paid: order.is_paid,
+        payos_status: link.status,
+        payment_status: PaymentStatus.FAILED,
+        amount: link.amount,
+      };
     }
 
     // PayOS báo đã trả tiền mà database chưa biết → ghi nhận.
@@ -499,7 +523,7 @@ export class PayosService {
       );
       return { success: false, message: 'Invalid signature' };
     }
-    let webhookData;
+    let webhookData: WebhookData;
     try {
       webhookData = await this.payos.webhooks.verify(rawBody);
     } catch (err: any) {
@@ -538,7 +562,6 @@ export class PayosService {
       if (payment && daKhoa) payment.status = daKhoa.status;
 
       if (!payment) {
-        this.logger.warn(`Không tìm thấy payment cho orderCode=${orderCode}`);
         return {
           processed: false as const,
           reason: 'Payment not found' as const,
@@ -567,6 +590,30 @@ export class PayosService {
         return { processed: false as const, reason: 'Already paid' as const };
       }
 
+      // SỐ TIỀN PHẢI KHỚP TỚI TỪNG ĐỒNG.
+      //
+      // Chữ ký chỉ chứng minh webhook là của PayOS, không chứng minh người mua
+      // chuyển đủ. `applyPaidPayment` ghi sổ theo `payment.amount` chứ không
+      // theo số PayOS báo, nên trước 26/10 chuyển thiếu 100.000 (sửa số tiền
+      // trên app ngân hàng khi quét QR tĩnh, hoặc link bị tạo lại với số khác)
+      // thì đơn vẫn thành "đã trả đủ" và ký quỹ giữ hộ một khoản không có thật.
+      // Lệch thì không ghi gì vào sổ: đánh dấu payment chờ đối soát, log error,
+      // báo admin. Trả 2xx: PayOS gửi lại cũng chỉ lệch y như vậy.
+      const soTienPayos = Number(webhookData.amount);
+      if (!this.soTienKhop(payment, soTienPayos)) {
+        const lech = await this.danhDauLechTien(
+          em,
+          payment,
+          soTienPayos,
+          'webhook',
+        );
+        return {
+          processed: false as const,
+          reason: 'Amount mismatch' as const,
+          lech,
+        };
+      }
+
       return this.applyPaidPayment(em, payment, {
         // Khoá tất định, dựng từ dữ liệu của PayOS chứ không random. Cùng một
         // lần trả tiền thì mọi lần gửi lại đều sinh ra đúng khoá này.
@@ -577,6 +624,16 @@ export class PayosService {
     });
 
     if (!outcome.processed) {
+      if (outcome.reason === 'Amount mismatch' && outcome.lech) {
+        await this.baoLechTien(outcome.lech);
+      }
+      if (outcome.reason === 'Payment not found') {
+        if (isSuccess) {
+          await this.baoMaLa(orderCode, paymentLinkId, webhookData);
+        } else {
+          this.logger.warn(`Không tìm thấy payment cho orderCode=${orderCode}`);
+        }
+      }
       return { success: true, processed: false, reason: outcome.reason };
     }
 
@@ -780,6 +837,141 @@ export class PayosService {
       type: payment.type,
       amount: Number(payment.amount),
     };
+  }
+
+  /** Số PayOS báo có khớp số payment cần thu không, so theo đồng (làm tròn). */
+  private soTienKhop(payment: Payment, soTienPayos: number): boolean {
+    return (
+      Number.isFinite(soTienPayos) &&
+      Math.round(soTienPayos) === Math.round(Number(payment.amount))
+    );
+  }
+
+  /**
+   * Đánh dấu payment CHỜ ĐỐI SOÁT TAY, trong transaction của người gọi.
+   *
+   * Không thêm trạng thái mới (đổi enum là thêm migration): dùng `failed` cho
+   * "chưa được ghi nhận là đã trả" và cột `note` có sẵn với tiền tố
+   * `[CAN_DOI_SOAT]` để admin lọc ra được. `failed` chứ không để `pending`:
+   * `pending` là thứ `voidOpenLinkForOrder` sẽ đi huỷ link rồi ghi đè, còn ở
+   * đây tiền đã về một phần và cần người xem. Gửi lại webhook lệch vẫn đi qua
+   * phép so số tiền trước `applyPaidPayment`, nên `failed` không mở đường
+   * ghi sổ nào.
+   */
+  private async danhDauLechTien(
+    em: EntityManager,
+    payment: Payment,
+    soTienPayos: number,
+    nguon: 'webhook' | 'refresh',
+  ): Promise<{
+    paymentId: number;
+    orderId?: number;
+    canThu: number;
+    payosBao: number;
+    orderCode: string;
+    nguon: string;
+  }> {
+    const canThu = Number(payment.amount);
+    const ghiChu =
+      `[CAN_DOI_SOAT] ${new Date().toISOString()} ${nguon}: PayOS báo ` +
+      `${soTienPayos}, payment cần ${canThu} (orderCode=${payment.payos_order_code}). ` +
+      'Chưa ghi sổ, cần đối soát tay với sao kê.';
+    await em.update(
+      Payment,
+      { id: payment.id },
+      {
+        status: PaymentStatus.FAILED,
+        note: payment.note ? `${payment.note}\n${ghiChu}` : ghiChu,
+      },
+    );
+    return {
+      paymentId: payment.id,
+      orderId: payment.order?.id,
+      canThu,
+      payosBao: soTienPayos,
+      orderCode: payment.payos_order_code,
+      nguon,
+    };
+  }
+
+  /** Sau commit: log error và báo admin về một payment lệch tiền. */
+  private async baoLechTien(l: {
+    paymentId: number;
+    orderId?: number;
+    canThu: number;
+    payosBao: number;
+    orderCode: string;
+    nguon: string;
+  }): Promise<void> {
+    this.logger.error(
+      `PayOS báo ${l.payosBao} nhưng payment #${l.paymentId} (orderCode=` +
+        `${l.orderCode}, đơn #${l.orderId ?? '-'}) cần ${l.canThu}. KHÔNG ghi ` +
+        `sổ; payment đánh dấu [CAN_DOI_SOAT] (nguồn: ${l.nguon}).`,
+    );
+    await this.baoAdmin(
+      'PayOS: số tiền lệch, cần đối soát',
+      `Payment #${l.paymentId} (orderCode ${l.orderCode}) cần ${l.canThu}đ ` +
+        `nhưng PayOS báo ${l.payosBao}đ. Chưa ghi sổ.`,
+      { paymentId: l.paymentId, orderId: l.orderId, orderCode: l.orderCode },
+    );
+  }
+
+  /**
+   * Webhook THÀNH CÔNG, chữ ký đúng, mà không có payment nào mang orderCode
+   * đó: tiền thật đã vào tài khoản PayOS mà hệ thống không biết của ai.
+   *
+   * VÌ SAO VẪN TRẢ 2xx thay vì lỗi để PayOS gửi lại. Gửi lại không làm dòng
+   * payment hiện ra: dòng được lưu TRƯỚC khi link tới tay người mua
+   * (`createOrderPaymentLink` lưu rồi mới trả checkoutUrl), nên mã lạ hôm nay
+   * vẫn lạ ở lần gửi thứ mười. Và bước "xác nhận webhook URL" của PayOS gửi
+   * một webhook thử đã ký với orderCode 123: trả lỗi cho mã lạ là không đăng
+   * ký nổi webhook. Thay vào đó: log error và GHI LẠI cho admin (thông báo
+   * hệ thống lưu trong bảng notifications), không im lặng như bản cũ.
+   */
+  private async baoMaLa(
+    orderCode: string,
+    paymentLinkId: string,
+    webhookData: { amount?: unknown; reference?: unknown },
+  ): Promise<void> {
+    this.logger.error(
+      `Webhook PayOS THÀNH CÔNG cho orderCode=${orderCode} ` +
+        `(paymentLinkId=${paymentLinkId}, amount=${String(webhookData.amount)}, ` +
+        `reference=${String(webhookData.reference)}) nhưng không có payment ` +
+        'nào khớp. Tiền đã vào tài khoản PayOS, cần đối soát tay.',
+    );
+    await this.baoAdmin(
+      'PayOS: tiền về cho mã không có trong hệ thống',
+      `orderCode ${orderCode}, ${String(webhookData.amount)}đ, mã giao dịch ` +
+        `${String(webhookData.reference)}. Không có payment nào khớp.`,
+      { orderCode, paymentLinkId, amount: webhookData.amount },
+    );
+  }
+
+  /** Thông báo hệ thống cho mọi admin. Hỏng thì chỉ log, không ném. */
+  private async baoAdmin(
+    title: string,
+    content: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const admins = await this.userRepository.find({
+        where: { role: UserRole.ADMIN },
+        select: { id: true },
+      });
+      for (const a of admins) {
+        await this.notificationsService.create({
+          user_id: a.id,
+          type: NotificationType.SYSTEM,
+          title,
+          content,
+          data,
+        });
+      }
+    } catch (e) {
+      this.logger.error(
+        `Không báo được admin về "${title}": ${(e as Error).message}`,
+      );
+    }
   }
 
   /** Chạy sau commit. Hỏng thì chỉ mất thông báo, tiền đã vào sổ rồi. */
