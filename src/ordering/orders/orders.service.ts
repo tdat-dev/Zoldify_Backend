@@ -1100,14 +1100,35 @@ export class OrdersService {
     // món theo chiều ngược lại là đủ cho deadlock 1213 (review 5).
     for (const item of theoIdSanPham(order.items)) {
       if (item.product) {
-        await em.increment(
-          Product,
-          { id: item.product.id },
-          'stock',
-          item.quantity,
-        );
+        await this.traKhoVaTruDaBan(em, item.product.id, item.quantity);
       }
     }
+  }
+
+  /**
+   * Trả hàng về kho VÀ trừ `sold_count`, trong CÙNG một câu UPDATE.
+   *
+   * Đặt hàng cộng `sold_count` chung câu với trừ kho (TC-P1-10a), nhưng tới
+   * 26/10 huỷ và hoàn tiền chỉ `increment('stock')`: món bị huỷ hàng loạt vẫn
+   * đứng đầu "bán chạy" mãi mãi. Đo bằng `cache-va-dem-sau-dat-huy.spec.ts`.
+   *
+   * `GREATEST(..., 0)`: dữ liệu cũ có đơn đặt từ trước khi `sold_count` được
+   * cộng, huỷ chúng bây giờ mà trừ thẳng thì ra số âm.
+   */
+  private async traKhoVaTruDaBan(
+    em: EntityManager,
+    productId: number,
+    soLuong: number,
+  ): Promise<void> {
+    await em
+      .createQueryBuilder()
+      .update(Product)
+      .set({
+        stock: () => 'stock + :soLuong',
+        sold_count: () => 'GREATEST(sold_count - :soLuong, 0)',
+      })
+      .where('id = :id', { id: productId, soLuong })
+      .execute();
   }
 
   /**
@@ -2107,12 +2128,7 @@ export class OrdersService {
           continue;
         }
 
-        await em.increment(
-          Product,
-          { id: item.product.id },
-          'stock',
-          item.quantity,
-        );
+        await this.traKhoVaTruDaBan(em, item.product.id, item.quantity);
         // Nhớ lại để phát SAU khi transaction commit — xem dưới.
         daHoan.push(item.product.id);
       }
