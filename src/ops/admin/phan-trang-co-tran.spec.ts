@@ -74,6 +74,8 @@ function dangKy() {
     {} as never,
     r.repo as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   truongHop.push({
     ten: 'AdminService.getUsers',

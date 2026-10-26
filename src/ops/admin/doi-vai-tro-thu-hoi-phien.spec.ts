@@ -28,6 +28,8 @@ function dung(user: DongUser) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   return { svc, daLuu };
 }

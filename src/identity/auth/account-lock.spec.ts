@@ -81,16 +81,28 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
 
   it('khoá tài khoản thì tăng token_version để thu hồi phiên đang có', async () => {
     const user: FakeUser = { ...activeUser };
+    // Từ rà soát 26/10 (mục 7) khoá đi bằng `update` chỉ hai cột (không
+    // `save` cả entity đọc từ trước), rồi ẩn hàng và huỷ đơn chờ của người
+    // đó: bản giả ghi đè đúng hai cột lên user và trả số 0 cho phần dọn dẹp.
     const service = new AdminService(
       {
         findOne: () => Promise.resolve(user),
         save: (u: FakeUser) => Promise.resolve(u),
+        update: (_: unknown, patch: Partial<FakeUser>) => {
+          Object.assign(user, patch);
+          return Promise.resolve({ affected: 1 });
+        },
       } as never,
       {} as never,
       {} as never,
       {} as never,
       {} as never,
       {} as never,
+      { huyDonChoCuaNguoiBan: () => Promise.resolve([]) } as never,
+      {
+        anHangCuaNguoiBan: () => Promise.resolve(0),
+        moLaiHangCuaNguoiBan: () => Promise.resolve(0),
+      } as never,
     );
     await service.toggleUserLock(5);
     expect(user.is_locked).toBe(true);

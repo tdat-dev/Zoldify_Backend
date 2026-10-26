@@ -87,6 +87,8 @@ describe('AdminService.updateUser — chặn ghi cột nhạy cảm (M-01)', () 
       reject: jest.fn(),
     } as unknown as WithdrawalsService;
 
+    // Hai tham số cuối (rà soát 26/10 mục 7) chỉ dùng khi khoá/xoá người
+    // dùng; file này không đo đường đó.
     service = new AdminService(
       userRepo,
       mockOrderRepo,
@@ -94,6 +96,8 @@ describe('AdminService.updateUser — chặn ghi cột nhạy cảm (M-01)', () 
       mockSettingRepo,
       mockWithdrawalRepo,
       mockWithdrawalsService,
+      {} as never,
+      {} as never,
     );
 
     // Tạo admin và user mục tiêu
