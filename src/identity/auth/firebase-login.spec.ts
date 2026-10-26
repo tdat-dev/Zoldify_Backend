@@ -88,7 +88,7 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
     verifyIdToken.mockResolvedValue(googleToken());
     const { controller, userRepository, authService } = dung();
 
-    await controller.firebaseLogin({ idToken: 'tok' } as never);
+    await controller.firebaseLogin({ idToken: 'tok' });
 
     expect(userRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -105,9 +105,9 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
       coSan: { id: 7, email: 'nan-nhan@gmail.com', email_verified: true },
     });
 
-    await expect(
-      controller.firebaseLogin({ idToken: 'tok' } as never),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(controller.firebaseLogin({ idToken: 'tok' })).rejects.toThrow(
+      UnauthorizedException,
+    );
     expect(authService.login).not.toHaveBeenCalled();
   });
 
@@ -119,9 +119,9 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
       coSan: { id: 7, email: 'nan-nhan@gmail.com', email_verified: true },
     });
 
-    await expect(
-      controller.firebaseLogin({ idToken: 'tok' } as never),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(controller.firebaseLogin({ idToken: 'tok' })).rejects.toThrow(
+      UnauthorizedException,
+    );
     expect(authService.login).not.toHaveBeenCalled();
   });
 
@@ -133,9 +133,9 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
       coSan: { id: 7, email: 'ai-do@gmail.com', email_verified: true },
     });
 
-    await expect(
-      controller.firebaseLogin({ idToken: 'tok' } as never),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(controller.firebaseLogin({ idToken: 'tok' })).rejects.toThrow(
+      UnauthorizedException,
+    );
     expect(userRepository.findOne).not.toHaveBeenCalled();
     expect(authService.login).not.toHaveBeenCalled();
   });
@@ -146,10 +146,36 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
       coSan: { id: 7, email: 'nan-nhan@gmail.com', email_verified: false },
     });
 
-    await expect(
-      controller.firebaseLogin({ idToken: 'tok' } as never),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(controller.firebaseLogin({ idToken: 'tok' })).rejects.toThrow(
+      UnauthorizedException,
+    );
     expect(authService.login).not.toHaveBeenCalled();
+  });
+
+  // Tra theo email chạy trên collation bỏ dấu, bỏ hoa thường: dòng tìm được
+  // có thể mang một email KHÁC email Google đã chứng minh (lỗ email giả dạng).
+  // Chỉ nối khi hai email bằng nhau sau khi chuẩn hoá chữ thường.
+  it('dòng tìm được mang email khác email Google (khác dấu) thì bị từ chối', async () => {
+    verifyIdToken.mockResolvedValue(googleToken());
+    const { controller, authService } = dung({
+      coSan: { id: 7, email: 'nan-nhan@gmaïl.com', email_verified: true },
+    });
+
+    await expect(controller.firebaseLogin({ idToken: 'tok' })).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(authService.login).not.toHaveBeenCalled();
+  });
+
+  it('khác hoa thường thì vẫn là cùng một email', async () => {
+    verifyIdToken.mockResolvedValue(googleToken());
+    const { controller, authService } = dung({
+      coSan: { id: 7, email: 'Nan-Nhan@Gmail.com', email_verified: true },
+    });
+
+    await controller.firebaseLogin({ idToken: 'tok' });
+
+    expect(authService.login).toHaveBeenCalled();
   });
 
   it('tài khoản có sẵn đã xác minh email thì đăng nhập bình thường', async () => {
@@ -158,7 +184,7 @@ describe('POST /auth/firebase không cho chiếm tài khoản', () => {
       coSan: { id: 7, email: 'nan-nhan@gmail.com', email_verified: true },
     });
 
-    await controller.firebaseLogin({ idToken: 'tok' } as never);
+    await controller.firebaseLogin({ idToken: 'tok' });
 
     expect(authService.login).toHaveBeenCalledWith(
       expect.objectContaining({ id: 7 }),
