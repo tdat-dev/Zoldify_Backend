@@ -11,6 +11,8 @@ import { LedgerAccount } from '@money/ledger/entities/ledger-account.entity';
 import { LedgerEntry } from '@money/ledger/entities/ledger-entry.entity';
 import { LedgerTransaction } from '@money/ledger/entities/ledger-transaction.entity';
 import { WithdrawalsModule } from '@money/withdrawals/withdrawals.module';
+import { OrdersModule } from '@ordering/orders/orders.module';
+import { ProductsModule } from '@catalog/products/products.module';
 import { AdminActionLog } from './entities/admin-action-log.entity';
 import { AdminAuditService } from './admin-audit.service';
 import { LedgerDoiSoatService } from './ledger-doi-soat.service';
@@ -29,6 +31,9 @@ import { LedgerDoiSoatService } from './ledger-doi-soat.service';
       LedgerTransaction,
     ]),
     WithdrawalsModule,
+    // Khoá/xoá người bán thì ẩn hàng và huỷ đơn chờ của họ (rà soát 26/10).
+    OrdersModule,
+    ProductsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, AdminAuditService, LedgerDoiSoatService],

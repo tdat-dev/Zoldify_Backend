@@ -14,6 +14,8 @@ import {
   WithdrawalStatus,
 } from '@money/withdrawals/entities/withdrawal.entity';
 import { WithdrawalsService } from '@money/withdrawals/withdrawals.service';
+import { OrdersService } from '@ordering/orders/orders.service';
+import { ProductsService } from '@catalog/products/products.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 import { normalizePagination } from '@common/dto/pagination.dto';
 
@@ -31,6 +33,8 @@ export class AdminService {
     @InjectRepository(Withdrawal)
     private readonly withdrawalRepository: Repository<Withdrawal>,
     private readonly withdrawalsService: WithdrawalsService,
+    private readonly ordersService: OrdersService,
+    private readonly productsService: ProductsService,
   ) {}
   async getUsers(
     page: number,
@@ -82,22 +86,69 @@ export class AdminService {
     };
   }
 
-  async toggleUserLock(id: number) {
+  /**
+   * Khoá / mở khoá tài khoản.
+   *
+   * `khoa` là TRẠNG THÁI ĐÍCH. Bản cũ chỉ biết đọc rồi lật: admin bấm hai lần,
+   * hay trình duyệt gửi lại request, là khoá rồi mở luôn, và không có cách
+   * nào nói "tôi muốn KHOÁ". Có trạng thái đích thì gọi lại bao nhiêu lần cũng
+   * cùng kết quả. Bỏ trống `khoa` thì vẫn lật như cũ: web admin hiện gọi
+   * PATCH /admin/users/:id/toggle-lock không có body.
+   *
+   * Chỉ khi trạng thái THẬT SỰ đổi mới thu hồi phiên và dọn dẹp:
+   *  · khoá: ẩn hàng đang bán (người bán bị khoá không xác nhận hay giao được
+   *    nữa) và huỷ đơn pending chưa trả tiền của họ, để kho không bị giữ tới
+   *    khi cron 48 giờ dọn;
+   *  · mở khoá: bày lại những tin đã bị ẩn lúc khoá.
+   * Hai việc đó chạy SAU khi đã ghi khoá: dọn hỏng giữa chừng thì tài khoản
+   * vẫn đã khoá, gọi lại `lock` là dọn tiếp (cả hai việc đều làm lại được).
+   */
+  async toggleUserLock(id: number, khoa?: boolean) {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
     if (user.role === 'admin')
       throw new BadRequestException('Không thể khóa tài khoản admin');
 
-    user.is_locked = !user.is_locked;
-    // Khoá thì thu hồi luôn mọi phiên đang có: JwtStrategy và socket chat so
-    // token_version với DB ở mỗi lần xác thực (audit B-04).
-    if (user.is_locked) user.token_version = (user.token_version || 0) + 1;
-    await this.userRepository.save(user);
+    const dich = khoa ?? !user.is_locked;
+    const doi = Boolean(user.is_locked) !== dich;
+    let anSanPham = 0;
+    let huyDon: number[] = [];
+    if (doi) {
+      // `update` đúng hai cột, không `save` cả entity đã đọc: `save` ghi đè
+      // mọi cột bằng bản đọc từ trước, kể cả `role` vừa bị admin khác đổi.
+      // Khoá thì thu hồi luôn mọi phiên đang có: JwtStrategy và socket chat so
+      // token_version với DB ở mỗi lần xác thực (audit B-04).
+      const tokenVersion = dich
+        ? (user.token_version || 0) + 1
+        : user.token_version;
+      await this.userRepository.update(
+        { id: user.id },
+        { is_locked: dich, token_version: tokenVersion },
+      );
+      if (dich) {
+        ({ anSanPham, huyDon } = await this.donHangVaDonCua(user.id));
+      } else {
+        anSanPham = -(await this.productsService.moLaiHangCuaNguoiBan(user.id));
+      }
+    }
     return {
       id: user.id,
-      is_locked: user.is_locked,
-      message: user.is_locked ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản',
+      is_locked: dich,
+      message: dich ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản',
+      // Dương: số tin vừa bị ẩn; âm: số tin vừa được bày lại.
+      san_pham_doi: anSanPham,
+      don_da_huy: huyDon,
     };
+  }
+
+  /** Ẩn hàng rồi huỷ đơn chờ chưa trả của một người bán bị khoá/xoá. */
+  private async donHangVaDonCua(
+    userId: number,
+  ): Promise<{ anSanPham: number; huyDon: number[] }> {
+    // Ẩn hàng TRƯỚC: chặn đơn mới, rồi mới dọn đơn cũ.
+    const anSanPham = await this.productsService.anHangCuaNguoiBan(userId);
+    const huyDon = await this.ordersService.huyDonChoCuaNguoiBan(userId);
+    return { anSanPham, huyDon };
   }
 
   async changeUserRole(id: number, role: string) {
@@ -148,8 +199,16 @@ export class AdminService {
     if (user.role === 'admin')
       throw new BadRequestException('Không thể xóa tài khoản admin');
 
+    // Dọn TRƯỚC khi xoá mềm: tài khoản đã xoá thì không ai còn đường vào trang
+    // admin của nó để dọn lại. Hàng của người bị xoá tới 26/10 vẫn `active`
+    // trên trang chủ, đặt được, mà không còn ai để giao.
+    const { anSanPham, huyDon } = await this.donHangVaDonCua(user.id);
     await this.userRepository.softDelete(id);
-    return { message: 'Xóa người dùng thành công' };
+    return {
+      message: 'Xóa người dùng thành công',
+      san_pham_da_an: anSanPham,
+      don_da_huy: huyDon,
+    };
   }
 
   async getDashboardStats() {

@@ -22,6 +22,7 @@ import { AdminAuditService } from './admin-audit.service';
 import { LedgerDoiSoatService } from './ledger-doi-soat.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 import { ChangeRoleDto } from './dto/change-role.dto';
+import { KhoaNguoiDungDto } from './dto/khoa-nguoi-dung.dto';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -59,8 +60,22 @@ export class AdminController {
 
   @Patch('users/:id/toggle-lock')
   @ResponseMessage('Khóa/mở tài khoản thành công')
-  toggleUserLock(@Param('id') id: string) {
-    return this.adminService.toggleUserLock(+id);
+  toggleUserLock(@Param('id') id: string, @Body() dto: KhoaNguoiDungDto) {
+    return this.adminService.toggleUserLock(+id, dto?.is_locked);
+  }
+
+  /** Khoá TƯỜNG MINH: gọi lại bao nhiêu lần cũng vẫn là khoá. */
+  @Patch('users/:id/lock')
+  @ResponseMessage('Khóa tài khoản thành công')
+  lockUser(@Param('id') id: string) {
+    return this.adminService.toggleUserLock(+id, true);
+  }
+
+  /** Mở khoá TƯỜNG MINH. */
+  @Patch('users/:id/unlock')
+  @ResponseMessage('Mở khóa tài khoản thành công')
+  unlockUser(@Param('id') id: string) {
+    return this.adminService.toggleUserLock(+id, false);
   }
 
   @Patch('users/:id/role')

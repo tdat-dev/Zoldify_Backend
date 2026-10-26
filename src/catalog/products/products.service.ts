@@ -260,6 +260,63 @@ export class ProductsService {
     await this.moiDanhSach();
   }
 
+  /**
+   * ẨN mọi hàng đang bán của một người bán, khi tài khoản bị khoá hoặc xoá.
+   *
+   * Dùng `draft` vì enum `products.status` không có trạng thái "bị ẩn" riêng
+   * (thêm là thêm migration), và `draft` là trạng thái KHÔNG đường API nào
+   * đặt ra được: DTO sản phẩm không có `status`, mọi tin đăng ra đời `active`.
+   * Nhờ vậy `moLaiHangCuaNguoiBan` biết chắc mọi tin `draft` của người đó là
+   * tin bị ẩn ở đây. Nợ kỹ thuật, nói thẳng: ngày nào có luồng soạn nháp
+   * thật thì phải thêm trạng thái riêng (vd `hidden`) bằng migration, nếu
+   * không mở khoá sẽ đăng luôn cả bản nháp người bán chưa muốn đăng.
+   *
+   * Trả về số tin đã ẩn. Xoá cache chi tiết từng tin và đổi đời danh sách:
+   * tin bị ẩn phải biến khỏi trang chủ ngay, không đợi TTL.
+   */
+  async anHangCuaNguoiBan(sellerId: number): Promise<number> {
+    return this.doiTrangThaiHangCuaNguoiBan(
+      sellerId,
+      ProductStatus.ACTIVE,
+      ProductStatus.DRAFT,
+    );
+  }
+
+  /** Ngược lại của `anHangCuaNguoiBan`, khi admin mở khoá tài khoản. */
+  async moLaiHangCuaNguoiBan(sellerId: number): Promise<number> {
+    return this.doiTrangThaiHangCuaNguoiBan(
+      sellerId,
+      ProductStatus.DRAFT,
+      ProductStatus.ACTIVE,
+    );
+  }
+
+  private async doiTrangThaiHangCuaNguoiBan(
+    sellerId: number,
+    tu: ProductStatus,
+    sang: ProductStatus,
+  ): Promise<number> {
+    const ids = (
+      await this.productRepository.find({
+        where: { seller: { id: sellerId }, status: tu },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+    if (ids.length === 0) return 0;
+
+    // Điều kiện `status = tu` nằm lại trong WHERE: tin nào vừa đổi trạng thái
+    // giữa lúc đọc và lúc ghi thì không bị kéo theo.
+    const kq = await this.productRepository
+      .createQueryBuilder()
+      .update(Product)
+      .set({ status: sang })
+      .where('id IN (:...ids) AND status = :tu', { ids, tu })
+      .execute();
+    for (const id of ids) await this.cacheDel(this.detailKey(id));
+    await this.moiDanhSach();
+    return kq.affected ?? 0;
+  }
+
   async create(createProductDto: CreateProductDto, user: IUser) {
     await this.assertSellerHasPickup(user.id);
 

@@ -2290,6 +2290,71 @@ export class OrdersService {
   }
 
   /**
+   * Huỷ mọi đơn `pending` CHƯA TRẢ TIỀN có hàng của một người bán, khi tài
+   * khoản người đó bị khoá hoặc xoá (rà soát 26/10 mục 7).
+   *
+   * Người bán bị khoá không đăng nhập được để xác nhận hay giao, nên đơn chờ
+   * của họ chỉ nằm đó giữ kho tới khi cron 48 giờ dọn. Đi CHUNG đường với
+   * cron (`cancelExpired`: khoá dòng đơn, hoàn kho, đóng link thanh toán còn
+   * treo), không chép lại luồng huỷ lần thứ tư.
+   *
+   * Chỉ đơn chưa trả tiền: đơn đã trả có ký quỹ, huỷ nó là hoàn tiền, việc đó
+   * để admin quyết từng đơn. Đơn nhiều người bán cũng bị huỷ cả đơn: chưa trả
+   * đồng nào nên người mua chỉ cần đặt lại phần của người bán khác.
+   *
+   * Một đơn huỷ hỏng (vừa đổi trạng thái chẳng hạn) không chặn đơn khác: ghi
+   * log rồi đi tiếp. Trả về id các đơn đã huỷ.
+   */
+  async huyDonChoCuaNguoiBan(sellerId: number): Promise<number[]> {
+    const don = await this.dataSource.query<
+      Array<{ id: number; user_id: number; order_code: string }>
+    >(
+      `SELECT DISTINCT o.id, o.user_id, o.order_code
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.id
+         JOIN products p ON p.id = oi.product_id
+        WHERE p.seller_id = ?
+          AND o.status = 'pending'
+          AND o.is_paid = 0
+          AND o.deleted_at IS NULL
+        ORDER BY o.id`,
+      [sellerId],
+    );
+
+    const daHuy: number[] = [];
+    for (const d of don) {
+      try {
+        await this.cancelExpired(Number(d.id));
+        daHuy.push(Number(d.id));
+      } catch (err) {
+        this.logger.warn(
+          `Không huỷ được đơn #${d.id} của người bán bị khoá ${sellerId}: ` +
+            `${(err as Error).message}`,
+        );
+        continue;
+      }
+      try {
+        await this.notificationsService.create({
+          user_id: Number(d.user_id),
+          // Chuỗi thô ép `never` chứ không import enum NotificationType: thêm
+          // một import ordering -> messaging là thêm một vi phạm ranh giới
+          // (bánh cóc 28 trong check-boundaries.mjs). Cùng giá trị với các
+          // chỗ khác trong file đang ghi 'order_status'.
+          type: 'order_status' as never,
+          title: 'Đơn hàng đã bị huỷ',
+          content:
+            `Đơn ${d.order_code} đã bị huỷ vì người bán ngừng hoạt động trên ` +
+            'Zoldify. Bạn chưa bị trừ tiền.',
+          data: { order_id: Number(d.id), order_code: d.order_code },
+        });
+      } catch {
+        // Thông báo hỏng thì chỉ mất thông báo; đơn đã huỷ xong.
+      }
+    }
+    return daHuy;
+  }
+
+  /**
    * Xoá mềm một đơn. **Chỉ đơn đã kết thúc, và tiền phải đã yên chỗ.**
    *
    * Tới 24/09 hàm này chỉ gọi `findOne(id, user)` — mà người mua là chủ đơn nên
