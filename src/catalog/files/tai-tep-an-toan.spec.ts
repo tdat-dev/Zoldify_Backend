@@ -44,9 +44,8 @@ const tep = (
 function locDuoi(originalname: string): Promise<boolean> {
   const opts = new MulterConfigService().createMulterOptions();
   return new Promise((resolve) => {
-    opts.fileFilter({} as never, { originalname } as never, (err, ok) =>
-      resolve(!err && ok === true),
-    );
+    const tepGia = { originalname } as Express.Multer.File;
+    opts.fileFilter({}, tepGia, (err, ok) => resolve(!err && ok === true));
   });
 }
 
