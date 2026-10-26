@@ -331,19 +331,16 @@ export class ChatService {
       relations: ['buyer', 'seller'],
     });
 
-    if (!conversation) {
-      throw new NotFoundException('Không tìm thấy cuộc trò chuyện');
-    }
-
     // Cùng điều kiện thành viên với getMessages/sendMessage. Bản trước không
     // kiểm, nên ai đăng nhập cũng xoá được chấm đỏ của hội thoại người khác.
+    // Người ngoài nhận CÙNG 404 như id không tồn tại: hai câu khác nhau là
+    // cho người ngoài dò được id hội thoại nào có thật.
     if (
-      conversation.buyer?.id !== user.id &&
-      conversation.seller?.id !== user.id
+      !conversation ||
+      (conversation.buyer?.id !== user.id &&
+        conversation.seller?.id !== user.id)
     ) {
-      throw new BadRequestException(
-        'Bạn không phải là thành viên của cuộc trò chuyện này',
-      );
+      throw new NotFoundException('Không tìm thấy cuộc trò chuyện');
     }
 
     // Chỉ đánh dấu tin của NGƯỜI KIA. Bản trước đánh dấu mọi tin chưa đọc, kể
