@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { ExecutionContext, ServiceUnavailableException } from '@nestjs/common';
-import { THROTTLER_SKIP } from '@nestjs/throttler/dist/throttler.constants';
+import {
+  THROTTLER_LIMIT,
+  THROTTLER_SKIP,
+} from '@nestjs/throttler/dist/throttler.constants';
 import { PayosService } from './payos.service';
 import { PayosController } from './payos.controller';
 import { MaintenanceGuard } from '@common/guards/maintenance.guard';
@@ -52,18 +55,25 @@ jest.setTimeout(60_000);
 type Dong = { id: number; status: string; is_paid: number; note?: string };
 
 describe('(a) webhook và nút kiểm tra lại không bị throttle hay bảo trì chặn', () => {
-  const boQuaThrottle = (ten: 'webhook' | 'refresh') =>
-    Reflect.getMetadata(
-      THROTTLER_SKIP + 'default',
-      PayosController.prototype[ten],
-    ) as boolean | undefined;
+  // Tên ba bộ đếm khai ở ThrottlerModule.forRootAsync trong app.module.ts.
+  // Review 26/10: bản đầu đo khoá `default`, mà `@SkipThrottle()` không tham
+  // số cũng chỉ đặt `default`; app KHÔNG có bộ đếm nào tên `default`, nên
+  // webhook vẫn bị đếm ở cả ba bộ dù bài kiểm báo xanh.
+  const BO_DEM = ['short', 'medium', 'long'] as const;
+  const meta = (khoa: string, ten: 'webhook' | 'refresh') =>
+    Reflect.getMetadata(khoa, PayosController.prototype[ten]) as unknown;
 
-  it('POST /payos/webhook có @SkipThrottle', () => {
-    expect(boQuaThrottle('webhook')).toBe(true);
+  it('POST /payos/webhook bỏ qua CẢ BA bộ đếm throttle', () => {
+    for (const bo of BO_DEM) {
+      expect(meta(THROTTLER_SKIP + bo, 'webhook')).toBe(true);
+    }
   });
 
-  it('GET /payos/refresh/:orderId có @SkipThrottle', () => {
-    expect(boQuaThrottle('refresh')).toBe(true);
+  it('GET /payos/refresh/:orderId CÓ trần riêng (mỗi lần gọi là một lần hỏi PayOS), không bỏ qua', () => {
+    for (const bo of BO_DEM) {
+      expect(meta(THROTTLER_SKIP + bo, 'refresh')).not.toBe(true);
+    }
+    expect(typeof meta(THROTTLER_LIMIT + 'long', 'refresh')).toBe('number');
   });
 
   const guardDangBaoTri = () =>
@@ -319,6 +329,26 @@ describe('(b)(c) webhook lệch số tiền / mã lạ', () => {
     const { orderCode } = await taoDonChoTra(300_000);
     await webhook(orderCode, 200_000);
     await webhook(orderCode, 200_000);
+    expect(await soButToan()).toBe(0);
+  });
+
+  /**
+   * Review 26/10 mục 5. Đánh dấu lệch tiền không có điều kiện: mỗi lần PayOS
+   * gửi lại, và MỖI lần người mua bấm "kiểm tra lại", lại nối thêm một dòng
+   * ghi chú và báo TẤT CẢ admin thêm một lần nữa.
+   */
+  it('(b) lệch tiền chỉ ghi chú và báo admin MỘT lần, dù webhook gửi lại và người mua bấm kiểm tra lại', async () => {
+    const { orderId, paymentId, orderCode } = await taoDonChoTra(300_000);
+    linkPayos = { status: 'PAID', amount: 200_000, amountPaid: 200_000 };
+
+    await webhook(orderCode, 200_000);
+    await webhook(orderCode, 200_000);
+    await payos.refreshOrderStatus(orderId, buyerId);
+    await payos.refreshOrderStatus(orderId, buyerId);
+
+    const ghiChu = (await paymentLuc(paymentId)).note ?? '';
+    expect(ghiChu.match(/CAN_DOI_SOAT/g)).toHaveLength(1);
+    expect(thongBao.filter((t) => t.user_id === adminId)).toHaveLength(1);
     expect(await soButToan()).toBe(0);
   });
 
