@@ -291,11 +291,15 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     avatar: '',
   });
 
+  // Có địa chỉ GHN: từ rà soát 26/10 (mục 2) đơn thiếu `ghn_district_id` /
+  // `ghn_ward_code` bị từ chối, vì thiếu chúng thì phí ship lặng lẽ bằng 0.
   const donMacDinh = (): CreateOrderDto => ({
     shipping_address: 'so 1 duong A',
     receiver_name: 'Nguoi nhan',
     receiver_phone: '0900000000',
     payment_method: PaymentMethod.COD,
+    ghn_district_id: 1442,
+    ghn_ward_code: '20101',
   });
 
   const khoCua = async (pid: number): Promise<number> => {

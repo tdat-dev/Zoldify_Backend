@@ -76,6 +76,13 @@ async function layDichVuDon(): Promise<{
     logger: false,
     abortOnError: false,
   });
+  // Từ rà soát 26/10 (mục 2) `orders.create` TỪ CHỐI đơn thiếu địa chỉ GHN,
+  // nên R1/R5 không còn né được bước hỏi phí ship bằng cách bỏ trống nó. Thay
+  // lời gọi mạng ra GHN bằng một con số cố định, trên CHÍNH singleton mà
+  // `OrdersService` đang giữ: bài này đo khoá trong database, không đo đường
+  // truyền, và 20 lượt gọi GHN thật cùng lúc thì vừa chậm vừa đỏ vì mạng.
+  const { GhnService } = require('../src/ordering/ghn/ghn.service');
+  app.get(GhnService).calculateFee = () => Promise.resolve({ total: 30000 });
   return {
     svc: app.get(OrdersService) as DichVuDon,
     // R6..R9 cần thêm các service tiền. Lấy từ CÙNG bộ tiêm phụ thuộc, cùng
@@ -313,9 +320,8 @@ async function main() {
   // ── R1: gọi THẲNG orders.create ───────────────────────────────────────────
   //
   // 20 người mua khác nhau, mỗi người một dòng giỏ, cùng trỏ vào món hàng cuối
-  // cùng. Không truyền `ghn_district_id`/`ghn_ward_code` để `create` bỏ qua
-  // bước hỏi phí ship — đây là lời gọi mạng ra GHN, và bài kiểm này đo khoá
-  // trong database chứ không đo đường truyền.
+  // cùng. Bước hỏi phí ship GHN đã được thay bằng số cố định ở `layDichVuDon`:
+  // bài kiểm này đo khoá trong database chứ không đo đường truyền.
   console.log('\x1b[1mR1 · Hai mươi người mua món hàng cuối cùng\x1b[0m');
   await dungSanPham(ds, 1);
   const nguoiMua = await dungNguoiMua(ds);
@@ -326,6 +332,8 @@ async function main() {
         receiver_phone: '0900000000',
         shipping_address: 'So 1 duong Dua',
         payment_method: 'cod',
+        ghn_district_id: 1442,
+        ghn_ward_code: '20101',
       },
       { id: nguoiMua[i], role: 'buyer' },
     );
@@ -477,6 +485,8 @@ async function main() {
         receiver_phone: '0900000000',
         shipping_address: 'So 1 duong Dua',
         payment_method: 'cod',
+        ghn_district_id: 1442,
+        ghn_ward_code: '20101',
       },
       { id: 200, role: 'buyer' },
     );

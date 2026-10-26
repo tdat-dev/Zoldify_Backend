@@ -159,7 +159,8 @@ function makeService() {
     repo() as never,
     repo() as never,
     notifications as never,
-    {} as never,
+    // Đơn có địa chỉ GHN thì `create` hỏi phí ship; trả 0 cho gọn.
+    { calculateFee: () => Promise.resolve({ total: 0 }) } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -178,6 +179,8 @@ describe('H-02: người bán được báo khi có đơn mới', () => {
         receiver_name: 'Người mua',
         receiver_phone: '0901234567',
         shipping_address: '12 Đường Test',
+        ghn_district_id: 1442,
+        ghn_ward_code: '20101',
       },
       BUYER as never,
     );
