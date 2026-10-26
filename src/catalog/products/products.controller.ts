@@ -123,6 +123,7 @@ export class ProductsController {
       dto.stock,
       user.id,
       user.role === 'admin',
+      dto.expected_stock,
     );
   }
 }

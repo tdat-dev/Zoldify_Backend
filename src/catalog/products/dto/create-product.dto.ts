@@ -1,9 +1,11 @@
 import {
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Min,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -11,8 +13,16 @@ export class CreateProductDto {
   @IsString({ message: 'Tên sản phẩm phải là chuỗi' })
   name: string;
 
+  /**
+   * Giá tối thiểu 1. Trước 26/10 chỉ có `@IsNumber`: đăng được món -1000đ hay
+   * 0đ, và món 0đ cộng phí ship 0 thì ra đơn tổng 0đ mà PayOS từ chối tạo link
+   * (amount phải > 0), đơn kẹt ở pending tới khi cron huỷ. Web và mobile đều
+   * đã chặn `price > 0` ở form (edit/page.tsx, sell-screen.tsx), nên chặn ở
+   * đây không làm hỏng client nào, chỉ đóng đường gọi thẳng API.
+   */
   @IsNotEmpty({ message: 'Giá sản phẩm không được để trống' })
   @IsNumber({}, { message: 'Giá sản phẩm phải là số' })
+  @Min(1, { message: 'Giá sản phẩm phải lớn hơn 0' })
   price: number;
 
   /**
@@ -54,8 +64,14 @@ export class CreateProductDto {
   @IsString({ message: 'Thông số kỹ thuật sản phẩm phải là chuỗi' })
   spec?: string;
 
+  /**
+   * Số nguyên không âm, cùng luật với `UpdateStockDto`. `@IsNumber` cũ nhận
+   * 1.5: cột `stock` là int nên MySQL lặng lẽ làm tròn thành 2, người bán
+   * thấy kho khác với số mình gõ mà không có lỗi nào báo.
+   */
   @IsOptional({ message: 'Số lượng (stock) không được để trống' })
-  @IsNumber({}, { message: 'Số lượng (stock) phải là số' })
+  @IsInt({ message: 'Số lượng (stock) phải là số nguyên' })
+  @Min(0, { message: 'Số lượng (stock) không được âm' })
   stock?: number;
 
   @IsOptional()

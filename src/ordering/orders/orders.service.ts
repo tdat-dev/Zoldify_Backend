@@ -320,6 +320,21 @@ export class OrdersService {
     const discountAmount = 0;
     const finalAmount = totalAmount + shippingFee - discountAmount;
 
+    // ĐƠN 0Đ KHÔNG PHẢI ĐƠN.
+    //
+    // DTO sản phẩm nay chặn giá < 1, nhưng database còn những món giá 0 từ
+    // trước 26/10, và phí ship có thể ra 0 (GHN báo 0 cho tuyến nội quận ở môi
+    // trường thử). Đơn tổng 0đ trả bằng PayOS thì không tạo được link (amount
+    // phải > 0) nên kẹt pending tới khi cron huỷ; trả COD thì người bán giao
+    // hàng mà không thu được gì. Chặn ở đây, TRƯỚC transaction, nên không trừ
+    // kho, không để lại đơn dở.
+    if (!(finalAmount > 0)) {
+      throw new BadRequestException(
+        'Tổng tiền đơn hàng phải lớn hơn 0. Một sản phẩm trong giỏ đang có ' +
+          'giá 0đ, mời bạn bỏ nó ra hoặc báo người bán sửa giá.',
+      );
+    }
+
     // MÃ ĐƠN PHẢI ĐỦ CHỖ CHO SỐ ĐƠN MỘT NGÀY.
     //
     // Bản cũ: `ORD-<ngày>-<random 0..999>` trên một cột UNIQUE. Chỉ có 1000 giá

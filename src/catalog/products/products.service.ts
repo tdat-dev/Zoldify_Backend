@@ -15,6 +15,7 @@ import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
 import { Repository, Between } from 'typeorm';
+import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
@@ -589,18 +590,78 @@ export class ProductsService {
     }
 
     // Nếu trong dữ liệu update có category_id, map nó sang quan hệ Object
-    const { category_id, ...restDto } = updateProductDto as any;
-    const updateData: any = { ...restDto };
+    const { category_id, stock, expected_stock, ...restDto } = updateProductDto;
+    const updateData: QueryDeepPartialEntity<Product> = { ...restDto };
     if (category_id) {
       updateData.category = { id: category_id };
     }
 
-    await this.productRepository.update(id, updateData);
+    // KHO KHÔNG ĐƯỢC GHI TUYỆT ĐỐI Ở ĐÂY.
+    //
+    // Trước 26/10 `stock` đi chung `productRepository.update` với mọi cột khác,
+    // tức `UPDATE products SET stock = 50` vô điều kiện. Đó đúng là cái bẫy
+    // TC-P1-06 đã đóng ở `updateStock`, chỉ khác cửa vào: trang sửa sản phẩm
+    // của web (`product/[id]/edit`) LUÔN gửi kèm `stock` nó đọc lúc mở form,
+    // nên người bán chỉ sửa tên mà trong lúc đó có 3 món được bán thì 3 món
+    // ấy quay lại kho. Đo bằng `gia-va-kho-hop-le.spec.ts`.
+    //
+    // Không gỡ hẳn `stock` khỏi PATCH này vì chính trang đó cần nó; cho đi
+    // qua cùng một câu UPDATE có điều kiện với `updateStock`. Ghi kho TRƯỚC
+    // các cột khác: kho bị từ chối (409) thì không cột nào đã đổi.
+    //
+    // Gửi lại đúng số đang có mà không kèm `expected_stock` là trường hợp
+    // thường gặp nhất (form gửi nguyên mọi ô): bỏ qua, không ghi gì cả. Nếu
+    // ghi thì chính lúc kho vừa giảm, số cũ trên form sẽ cộng ngược món đã bán.
+    let khoMoi: number | undefined;
+    if (stock !== undefined) {
+      const dangCo = Number(product.stock);
+      if (expected_stock !== undefined || Number(stock) !== dangCo) {
+        await this.ghiKhoCoDieuKien(
+          id,
+          Number(stock),
+          expected_stock ?? dangCo,
+        );
+        khoMoi = Number(stock);
+      }
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.productRepository.update(id, updateData);
+    }
     // Invalidate detail TRƯỚC khi đọc lại: xoá bản cũ để findOne nạp lại bản mới,
     // không để user thấy dữ liệu lỗi thời (pre-mortem C1/C4).
     await this.cacheDel(this.detailKey(id));
     await this.moiDanhSach();
+    if (khoMoi !== undefined) {
+      // Cùng chỗ phát với `updateStock`: người đang xem trang phải thấy kho
+      // mới, dù người bán đổi nó từ trang sửa chứ không từ ô kho nhanh.
+      await this.stockEvents.phat(id, khoMoi);
+    }
     return await this.findOne(id);
+  }
+
+  /**
+   * Một câu UPDATE chỉ chạm cột `stock`, kèm khoá lạc quan `stock = kyVong`.
+   * Dùng chung cho `updateStock` và `update`: hai cửa vào phải chung một luật,
+   * nếu không thì cửa nào dễ hơn sẽ thành đường vòng (đúng chuyện đã xảy ra).
+   */
+  private async ghiKhoCoDieuKien(
+    productId: number,
+    stock: number,
+    kyVong: number,
+  ): Promise<void> {
+    const kq = await this.productRepository
+      .createQueryBuilder()
+      .update(Product)
+      .set({ stock })
+      .where('id = :id AND stock = :kyVong', { id: productId, kyVong })
+      .execute();
+    if (kq.affected !== 1) {
+      throw new ConflictException(
+        'Tồn kho vừa thay đổi (có đơn hàng mới hoặc người khác vừa sửa). ' +
+          'Mời bạn tải lại trang rồi nhập số mới.',
+      );
+    }
   }
 
   async remove(id: number, user: IUser) {
@@ -677,19 +738,7 @@ export class ProductsService {
     }
 
     const kyVong = expectedStock ?? Number(product.stock);
-
-    const kq = await this.productRepository
-      .createQueryBuilder()
-      .update(Product)
-      .set({ stock })
-      .where('id = :id AND stock = :kyVong', { id: productId, kyVong })
-      .execute();
-    if (kq.affected !== 1) {
-      throw new ConflictException(
-        'Tồn kho vừa thay đổi (có đơn hàng mới hoặc người khác vừa sửa). ' +
-          'Mời bạn tải lại trang rồi nhập số mới.',
-      );
-    }
+    await this.ghiKhoCoDieuKien(productId, stock, kyVong);
 
     await this.cacheDel(this.detailKey(productId));
     await this.moiDanhSach();
