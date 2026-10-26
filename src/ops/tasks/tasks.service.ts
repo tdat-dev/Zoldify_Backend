@@ -49,6 +49,15 @@ export class TasksService {
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
     });
+    // Kết nối đếm view_count không phải lý do để tiến trình còn sống: unref
+    // socket sau mỗi lần nối (cả lần nối lại). Đo 26/10: có REDIS_URL thì mọi
+    // spec dựng service này giữ jest tới hết hạn 10 phút của nghiem-thu dù đã
+    // xanh hết; api và worker vẫn sống nhờ HTTP server và kết nối BullMQ.
+    this.redis.on('connect', () => {
+      (
+        this.redis as unknown as { stream?: { unref?: () => void } }
+      ).stream?.unref?.();
+    });
     this.redis.on('error', (err) => {
       // on('error') chỉ bắt SỰ KIỆN KẾT NỐI, không bắt lệnh bị từ chối.
       // Lệnh incr/get/set bị reject là promise rejection riêng, phải try/catch ở chỗ gọi.
