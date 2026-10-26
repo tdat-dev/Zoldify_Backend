@@ -75,9 +75,28 @@ describe('Upload chỉ nhận ảnh thật, nhỏ', () => {
     expect(await locDuoi('a.webp')).toBe(true);
   });
 
-  it('trần mỗi file không quá 10 MB', () => {
+  // 20 MB, không phải 10: web và admin gửi ảnh gốc từ điện thoại, không nén
+  // (chỉ app nén về JPEG 1600px), và ảnh gốc của máy đời mới vượt 10 MB.
+  it('trần mỗi file đúng 20 MB, một file mỗi request', () => {
     const opts = new MulterConfigService().createMulterOptions();
-    expect(opts.limits?.fileSize).toBeLessThanOrEqual(10 * 1024 * 1024);
+    expect(opts.limits?.fileSize).toBe(20 * 1024 * 1024);
+    expect(opts.limits?.files).toBe(1);
+  });
+
+  // Lỗi thường (new Error) trong fileFilter thành 500 Internal Server Error:
+  // người dùng chọn nhầm file PDF nhận "lỗi máy chủ" thay vì "định dạng không
+  // hợp lệ". Phải là lỗi HTTP 400.
+  it('bộ lọc đuôi từ chối bằng 400, không phải lỗi thường (500)', async () => {
+    const opts = new MulterConfigService().createMulterOptions();
+    const loi = await new Promise<unknown>((resolve) => {
+      if (!opts.fileFilter) return resolve(null);
+      opts.fileFilter(
+        {},
+        { originalname: 'a.pdf' } as Express.Multer.File,
+        (err) => resolve(err),
+      );
+    });
+    expect(loi).toBeInstanceOf(BadRequestException);
   });
 
   it('HTML đội tên .jpg và khai image/jpeg bị từ chối', async () => {
