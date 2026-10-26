@@ -61,6 +61,7 @@ jest.setTimeout(60_000);
 describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => {
   let ds: DataSource;
   let cart: CartService;
+  let products: ProductsService;
 
   let buyerId: number;
   let sellerId: number;
@@ -127,7 +128,9 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
       create: () => Promise.resolve(undefined),
     } as unknown as NotificationsService;
 
-    const products = new ProductsService(
+    // ProductsService vẫn dựng (cache trong bộ nhớ) để bài kiểm cache còn ý
+    // nghĩa: nó làm ấm cache, rồi CartService phải KHÔNG đọc từ đó.
+    products = new ProductsService(
       ds.getRepository(Product),
       ds.getRepository(Follow),
       ds.getRepository(Shop),
@@ -135,7 +138,7 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
       createCache({ ttl: 30_000 }),
       khoPhat,
     );
-    cart = new CartService(ds.getRepository(Cart), products);
+    cart = new CartService(ds.getRepository(Cart));
   });
 
   async function taoUser(email: string, role: UserRole): Promise<number> {
@@ -261,6 +264,7 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
   it('kho vừa giảm thì "Thêm vào giỏ" phải thấy số mới, không đọc bản cache', async () => {
     const pid = await taoSanPham(ProductStatus.ACTIVE, 5);
     // Lần đầu: ProductsService.findOne đưa sản phẩm (kho 5) vào cache.
+    await products.findOne(pid);
     await cart.create({ product_id: pid, quantity: 1 }, nguoiMua());
 
     // Người khác mua hết, kho trong database còn 1. Cache vẫn ghi 5.
