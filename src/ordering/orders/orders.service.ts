@@ -165,32 +165,52 @@ export class OrdersService {
    * Đơn đã tạo cho cùng một lần đặt hàng: theo khoá của client (Idempotency-Key,
    * thuộc về từng người dùng) rồi theo khoá giỏ hàng.
    */
+  //
+  // `withDeleted: true` (review 26/10): đơn đã xoá mềm VẪN giữ chỗ trong hai
+  // khoá UNIQUE. Tra mà lọc `deleted_at` thì hụt, câu INSERT đụng UNIQUE, lượt
+  // tra lại cũng hụt, và QueryFailedError lọt ra thành 500.
   private async timDonDaTao(
     userId: number,
     khoaKhach: string | null,
     khoaGio?: string,
   ): Promise<Order | null> {
+    const chiCan = { id: true, deleted_at: true } as const;
     if (khoaKhach) {
       const theoKhach = await this.orderRepository.findOne({
         where: { user: { id: userId }, client_idempotency_key: khoaKhach },
+        withDeleted: true,
+        select: chiCan,
       });
       if (theoKhach) return theoKhach;
     }
     if (khoaGio) {
       return this.orderRepository.findOne({
         where: { idempotency_key: khoaGio },
+        withDeleted: true,
+        select: chiCan,
       });
     }
     return null;
   }
 
-  /** Trả lại một đơn đã tạo, cùng hình dạng với phản hồi đặt hàng mới. */
+  /**
+   * Trả lại một đơn đã tạo, cùng hình dạng với phản hồi đặt hàng mới.
+   *
+   * Đơn đó đã bị xoá mềm thì không có gì để trả (findOne không thấy nó), mà
+   * khoá vẫn bị giữ: 409 nói rõ phải dùng khoá mới, thay vì 500.
+   */
   private async traLaiDonDaTao(
-    id: number,
+    da: Order,
     user: IUser,
     paymentMethod?: PaymentMethod,
   ) {
-    const cu = (await this.findOne(id, user)) as Order & {
+    if (da.deleted_at) {
+      throw new ConflictException(
+        `Idempotency-Key (hoặc giỏ hàng) này đã dùng cho đơn #${da.id}, và đơn ` +
+          'đó đã bị xoá. Lần đặt hàng mới cần một Idempotency-Key mới.',
+      );
+    }
+    const cu = (await this.findOne(da.id, user)) as Order & {
       needs_payOS?: boolean;
     };
     cu.needs_payOS =
@@ -218,11 +238,7 @@ export class OrdersService {
           `Gửi lại POST /orders cùng Idempotency-Key của user ${user.id}: ` +
             `trả lại đơn #${daCo.id}.`,
         );
-        return this.traLaiDonDaTao(
-          daCo.id,
-          user,
-          createOrderDto.payment_method,
-        );
+        return this.traLaiDonDaTao(daCo, user, createOrderDto.payment_method);
       }
     }
 
@@ -243,11 +259,7 @@ export class OrdersService {
             `Lượt cùng Idempotency-Key của user ${user.id} hỏng vì lượt song ` +
               `song (${(err as Error).message}): trả lại đơn #${daCo.id}.`,
           );
-          return this.traLaiDonDaTao(
-            daCo.id,
-            user,
-            createOrderDto.payment_method,
-          );
+          return this.traLaiDonDaTao(daCo, user, createOrderDto.payment_method);
         }
       }
       throw err;
@@ -722,7 +734,7 @@ export class OrdersService {
           'thay vì tạo đơn mới.',
       );
       return this.traLaiDonDaTao(
-        daTao.id,
+        daTao,
         user,
         payment_method ?? order.payment_method,
       );
