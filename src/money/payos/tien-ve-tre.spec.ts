@@ -9,7 +9,11 @@ import { Wallet } from '@money/wallets/entities/wallet.entity';
 import { LedgerAccount } from '@money/ledger/entities/ledger-account.entity';
 import { LedgerEntry } from '@money/ledger/entities/ledger-entry.entity';
 import { LedgerTransaction } from '@money/ledger/entities/ledger-transaction.entity';
-import { LedgerOwnerType, LedgerPurpose } from '@money/ledger/ledger.types';
+import {
+  LedgerOwnerType,
+  LedgerPurpose,
+  LedgerTxType,
+} from '@money/ledger/ledger.types';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -375,5 +379,43 @@ describe('PayosService: tiền về trễ', () => {
       [paymentId],
     );
     expect(p.status).toBe(PaymentStatus.SUCCESS);
+  });
+
+  /**
+   * Đếm số khoản ký quỹ của đơn ĐÚNG LÚC bút toán ORDER_HOLD đầu tiên được
+   * ghi, đọc qua chính transaction đang ghi (thấy cả dòng chưa commit).
+   *
+   * Review 3: huỷ/giải ngân khoá ký quỹ RỒI mới ghi sổ, còn các đường trả
+   * tiền ghi sổ (khoá két giữ hộ) RỒI mới chèn ký quỹ. Hai thứ tự ngược nhau
+   * trên cùng hai tài nguyên là công thức của deadlock 1213. Thứ tự chung
+   * phải là đơn, rồi ký quỹ, rồi sổ cái; nên lúc ghi sổ, ký quỹ phải có rồi.
+   */
+  function demKyQuyLucGhiSo(orderId: number): () => number | undefined {
+    let dem: number | undefined;
+    const goc = ledger.post.bind(ledger) as LedgerService['post'];
+    jest.spyOn(ledger, 'post').mockImplementation(async (input, em) => {
+      if (dem === undefined && input.type === LedgerTxType.ORDER_HOLD && em) {
+        const r = (await em.query(
+          'SELECT COUNT(*) AS n FROM escrows WHERE order_id = ?',
+          [orderId],
+        )) as Array<{ n: number | string }>;
+        dem = Number(r[0].n);
+      }
+      return goc(input, em);
+    });
+    return () => dem;
+  }
+
+  it('review 3: tiền PayOS về thì chèn ký quỹ trước khi ghi sổ', async () => {
+    const { orderId, paymentId } = await makeUnpaidOrder(
+      OrderStatus.PENDING,
+      100_000,
+    );
+    const dem = demKyQuyLucGhiSo(orderId);
+
+    await applyPaid(paymentId);
+    jest.restoreAllMocks();
+
+    expect(dem()).toBe(1);
   });
 });
