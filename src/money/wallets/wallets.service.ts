@@ -168,6 +168,12 @@ export class WalletsService {
       manager,
     );
 
+    // Đang chạy trong transaction của người gọi thì KHÔNG đọc số dư ở đây.
+    // `getBalance` đọc bằng `dataSource.manager`, hai câu song song: giữ một
+    // kết nối cho transaction mà mượn thêm hai kết nối nữa từ pool (giới hạn
+    // 15) là cách pool tự cạn khi nhiều người trả bằng ví cùng lúc (review 4).
+    // Người gọi có transaction (trả đơn bằng ví) cũng không dùng kết quả này.
+    if (manager) return null;
     return this.getBalance(userId);
   }
 

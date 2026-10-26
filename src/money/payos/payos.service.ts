@@ -29,6 +29,19 @@ import { NotificationsService } from '@messaging/notifications/notifications.ser
 import { NotificationType } from '@messaging/notifications/entities/notification.entity';
 import { siteUrlChinh } from '@common/site-url';
 
+/**
+ * Đơn ở các trạng thái này không nhận tiền vào ký quỹ nữa: tiền PayOS về trễ
+ * thì vào ví người mua. Cùng danh sách mà `createOrderPaymentLink` dùng để
+ * không phát link mới, và trả bằng ví cũng dùng đúng danh sách này
+ * (`PaymentsService`): hai cổng tiền khác luật thì người mua bị một cổng từ
+ * chối, cổng kia nhận, cho cùng một đơn (review 7).
+ */
+export const KHONG_NHAN_TIEN_DON: OrderStatus[] = [
+  OrderStatus.CANCELLED,
+  OrderStatus.REFUNDED,
+  OrderStatus.DELIVERED,
+];
+
 @Injectable()
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
@@ -463,10 +476,30 @@ export class PayosService {
     const isSuccess = webhookData.code === '00' && rawBody.success === true;
 
     const outcome = await this.dataSource.transaction(async (em) => {
-      const payment = await em.findOne(Payment, {
-        where: { payos_order_code: orderCode },
-        relations: ['order', 'user'],
-      });
+      // KHOÁ DÒNG PAYMENT TRƯỚC KHI ĐỌC NÓ.
+      //
+      // PayOS gửi trùng cùng một webhook, cùng lúc: bản cũ đọc payment không
+      // khoá, nên lượt sau thấy `pending`, chờ khoá dòng đơn trong
+      // `applyPaidPayment`, rồi ghi bút toán với đúng khoá chống trùng của lượt
+      // trước và nổ 1062 thay vì trả "Already paid" (bài kiểm "review 8": 4/5
+      // lượt lỗi). Có khoá thì lượt sau đứng chờ ở đây, và lần đọc có khoá trả
+      // bản mới nhất: `success`.
+      //
+      // Khoá riêng bảng payments, không JOIN (cùng bẫy với
+      // `EscrowsService.napVaKhoa`: FOR UPDATE khoá lây mọi dòng bị JOIN).
+      // Thứ tự khoá vẫn hợp lệ: payment, rồi đơn, rồi ký quỹ, rồi sổ cái.
+      const daKhoa = await em
+        .createQueryBuilder(Payment, 'p')
+        .setLock('pessimistic_write')
+        .where('p.payos_order_code = :orderCode', { orderCode })
+        .getOne();
+      const payment = daKhoa
+        ? await em.findOne(Payment, {
+            where: { id: daKhoa.id },
+            relations: ['order', 'user'],
+          })
+        : null;
+      if (payment && daKhoa) payment.status = daKhoa.status;
 
       if (!payment) {
         this.logger.warn(`Không tìm thấy payment cho orderCode=${orderCode}`);
@@ -477,8 +510,17 @@ export class PayosService {
       }
 
       if (!isSuccess) {
-        payment.status = PaymentStatus.FAILED;
-        await em.save(Payment, payment);
+        // CHỈ HẠ PAYMENT CÒN PENDING. Webhook "không thành công" có thể tới SAU
+        // webhook thành công (PayOS gửi lại, tới sai thứ tự). Bản cũ ghi đè
+        // thẳng FAILED lên payment SUCCESS: tiền vẫn nằm trong sổ, còn chứng từ
+        // nói là chưa trả (bài kiểm C cuối trong `tien-ve-tre.spec.ts`).
+        // Điều kiện nằm trong WHERE nên một lần thành công commit chen giữa
+        // cũng không bị hạ.
+        await em.update(
+          Payment,
+          { id: payment.id, status: PaymentStatus.PENDING },
+          { status: PaymentStatus.FAILED },
+        );
         return {
           processed: false as const,
           reason: 'Payment not successful' as const,
@@ -562,84 +604,127 @@ export class PayosService {
         },
         em,
       );
-    } else if (
-      payment.type === PaymentType.ORDER_PAYMENT &&
-      payment.order &&
-      payment.order.status === OrderStatus.CANCELLED
-    ) {
-      // ĐƠN ĐÃ HUỶ MÀ TIỀN VẪN VỀ.
-      //
-      // Xảy ra được vì huỷ đơn không huỷ link thanh toán: người mua huỷ đơn
-      // chưa trả tiền, rồi mở lại link cũ và trả. Trước đây nhánh dưới đặt
-      // thẳng `status = CONFIRMED` mà không nhìn trạng thái hiện tại, nên đơn
-      // đã huỷ SỐNG LẠI thành đã xác nhận — trong khi hàng đã trả về kho, tức
-      // là bán một món không còn giữ chỗ.
-      //
-      // Nhưng cũng không được lờ số tiền đi: nó đã nằm trong tài khoản ngân
-      // hàng thật rồi. Không ghi sổ thì `gateway_clearing` lệch với ngân hàng,
-      // đúng thứ mà cả kiến trúc sổ cái sinh ra để không bao giờ xảy ra.
-      //
-      // Nên: ghi tiền vào ví người mua, và để đơn nguyên trạng thái huỷ.
-      // Người mua có tiền để tiêu tiếp hoặc rút; sổ sách khớp ngân hàng.
-      const wallet = await this.ledgerService.getOrCreateAccount(
-        LedgerOwnerType.USER,
-        payment.user.id,
-        LedgerPurpose.AVAILABLE,
-        em,
-      );
-      await this.ledgerService.post(
-        {
-          idempotencyKey: opts.idempotencyKey,
-          type: LedgerTxType.TOPUP,
-          reference: { type: 'order', id: payment.order.id },
-          metadata: {
-            ...opts.metadata,
-            paidAfterCancel: true,
-            paymentId: payment.id,
-          },
-          entries: [
-            { accountId: Number(gateway.id), amount: -amount },
-            { accountId: Number(wallet.id), amount },
-          ],
-        },
-        em,
-      );
-      this.logger.warn(
-        `Đơn #${payment.order.id} đã huỷ nhưng tiền vẫn về. Ghi ${amount} vào ví ` +
-          `người mua #${payment.user.id} thay vì ký quỹ; đơn giữ nguyên trạng thái huỷ.`,
-      );
     } else if (payment.type === PaymentType.ORDER_PAYMENT && payment.order) {
-      // Tiền từ cổng thanh toán vào thẳng ô giữ hộ, KHÔNG đi qua ví người
-      // mua — người mua chưa bao giờ cầm số tiền này.
-      const hold = await this.ledgerService.getOrCreateAccount(
-        LedgerOwnerType.PLATFORM,
-        null,
-        LedgerPurpose.ESCROW_HOLD,
-        em,
-      );
-      await this.ledgerService.post(
-        {
-          idempotencyKey: opts.idempotencyKey,
-          type: LedgerTxType.ORDER_HOLD,
-          reference: { type: 'order', id: payment.order.id },
-          metadata: { ...opts.metadata, paymentId: payment.id },
-          entries: [
-            { accountId: Number(gateway.id), amount: -amount },
-            { accountId: Number(hold.id), amount },
-          ],
-        },
-        em,
-      );
+      // KHOÁ DÒNG ĐƠN, ĐỌC LẠI, RỒI MỚI QUYẾT TIỀN ĐI ĐÂU.
+      //
+      // `payment.order` là bản đọc KHÔNG khoá từ đầu webhook. Từ lúc phát link
+      // tới lúc tiền về có thể là mười lăm phút, và đơn đã khác đi: đã trả bằng
+      // ví (két nhận thêm một ORDER_HOLD không khoản ký quỹ nào trỏ tới, kẹt
+      // mãi), đã đi giao (bị kéo ngược về `confirmed`), hoặc vừa bị huỷ đúng
+      // lúc webhook chạy (lưới `paidAfterCancel` nhìn bản cũ vẫn thấy
+      // `pending`). Đo bằng `tien-ve-tre.spec.ts`.
+      //
+      // Phải là lần đọc CÓ khoá: trong REPEATABLE READ một lần đọc thường ở
+      // đây trả lại đúng ảnh chụp cũ mà webhook đã đọc. Khoá đơn trước mọi bút
+      // toán, cùng thứ tự với `applyCancellation` (đơn rồi mới tới sổ cái).
+      const don = await em.findOne(Order, {
+        where: { id: payment.order.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!don) throw new NotFoundException('Không tìm thấy đơn hàng');
 
-      payment.order.is_paid = true;
-      payment.order.paid_at = new Date();
-      payment.order.status = OrderStatus.CONFIRMED;
-      await em.save(Order, payment.order);
+      const conNhanTien =
+        !don.is_paid && !KHONG_NHAN_TIEN_DON.includes(don.status);
 
-      // Tách thành từng khoản theo người bán, trong CÙNG transaction.
-      // Bản cũ không hề gọi bước này, nên đơn trả qua PayOS chưa bao giờ
-      // sinh ra bản ghi ký quỹ nào.
-      await this.escrowsService.createOrderEscrows(payment.order.id, em);
+      if (!conNhanTien) {
+        // ĐƠN ĐÃ HUỶ MÀ TIỀN VẪN VỀ.
+        //
+        // Xảy ra được vì huỷ đơn không huỷ link thanh toán: người mua huỷ đơn
+        // chưa trả tiền, rồi mở lại link cũ và trả. Trước đây nhánh dưới đặt
+        // thẳng `status = CONFIRMED` mà không nhìn trạng thái hiện tại, nên đơn
+        // đã huỷ SỐNG LẠI thành đã xác nhận, trong khi hàng đã trả về kho, tức
+        // là bán một món không còn giữ chỗ.
+        //
+        // Nhưng cũng không được lờ số tiền đi: nó đã nằm trong tài khoản ngân
+        // hàng thật rồi. Không ghi sổ thì `gateway_clearing` lệch với ngân hàng,
+        // đúng thứ mà cả kiến trúc sổ cái sinh ra để không bao giờ xảy ra.
+        //
+        // Nên: ghi tiền vào ví người mua, và để đơn nguyên trạng thái huỷ.
+        // Người mua có tiền để tiêu tiếp hoặc rút; sổ sách khớp ngân hàng.
+        //
+        // Cùng một lối ra cho mọi trường hợp đơn không còn nhận tiền được nữa:
+        // đã huỷ, đã hoàn tiền, đã giao xong, hoặc đã được trả bằng đường khác.
+        const wallet = await this.ledgerService.getOrCreateAccount(
+          LedgerOwnerType.USER,
+          payment.user.id,
+          LedgerPurpose.AVAILABLE,
+          em,
+        );
+        await this.ledgerService.post(
+          {
+            idempotencyKey: opts.idempotencyKey,
+            type: LedgerTxType.TOPUP,
+            reference: { type: 'order', id: don.id },
+            metadata: {
+              ...opts.metadata,
+              paidAfterCancel: don.status === OrderStatus.CANCELLED,
+              orderStatus: don.status,
+              daTraTruoc: don.is_paid,
+              paymentId: payment.id,
+            },
+            entries: [
+              { accountId: Number(gateway.id), amount: -amount },
+              { accountId: Number(wallet.id), amount },
+            ],
+          },
+          em,
+        );
+        this.logger.warn(
+          `Đơn #${don.id} (${don.status}, is_paid=${don.is_paid}) không còn ` +
+            `nhận tiền được nhưng tiền vẫn về. Ghi ${amount} vào ví người mua ` +
+            `#${payment.user.id} thay vì ký quỹ; đơn giữ nguyên.`,
+        );
+      } else {
+        // Chỉ đúng hai cột tiền, và chỉ đi `pending -> confirmed`. Đơn COD
+        // đang giao mà người mua chuyển khoản thì vẫn là đang giao.
+        await em.update(
+          Order,
+          { id: don.id },
+          {
+            is_paid: true,
+            paid_at: new Date(),
+            ...(don.status === OrderStatus.PENDING
+              ? { status: OrderStatus.CONFIRMED }
+              : {}),
+          },
+        );
+
+        // Tách thành từng khoản theo người bán, trong CÙNG transaction.
+        // Bản cũ không hề gọi bước này, nên đơn trả qua PayOS chưa bao giờ
+        // sinh ra bản ghi ký quỹ nào.
+        await this.escrowsService.createOrderEscrows(don.id, em);
+
+        // CHÈN KÝ QUỸ TRƯỚC, GHI SỔ SAU (tiền PayOS về).
+        //
+        // Thứ tự khoá chung của mọi đường tiền là đơn, rồi ký quỹ, rồi sổ cái:
+        // huỷ đơn và giải ngân khoá ký quỹ rồi mới ghi sổ. Đường này từng làm
+        // ngược lại (khoá két giữ hộ trong `ledger.post` rồi mới chèn ký quỹ),
+        // tức là hai giao dịch đi hai chiều trên cùng hai tài nguyên: công thức
+        // của deadlock 1213 (review 3). Cùng transaction nên ghi sổ hỏng thì ký
+        // quỹ vừa chèn cũng quay lui theo.
+        //
+        // Tiền từ cổng thanh toán vào thẳng ô giữ hộ, KHÔNG đi qua ví người
+        // mua: người mua chưa bao giờ cầm số tiền này.
+        const hold = await this.ledgerService.getOrCreateAccount(
+          LedgerOwnerType.PLATFORM,
+          null,
+          LedgerPurpose.ESCROW_HOLD,
+          em,
+        );
+        await this.ledgerService.post(
+          {
+            idempotencyKey: opts.idempotencyKey,
+            type: LedgerTxType.ORDER_HOLD,
+            reference: { type: 'order', id: don.id },
+            metadata: { ...opts.metadata, paymentId: payment.id },
+            entries: [
+              { accountId: Number(gateway.id), amount: -amount },
+              { accountId: Number(hold.id), amount },
+            ],
+          },
+          em,
+        );
+      }
     } else {
       throw new BadRequestException(
         `Payment #${payment.id} có type=${payment.type} nhưng thiếu dữ liệu đi kèm`,

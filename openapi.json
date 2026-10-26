@@ -8543,6 +8543,10 @@
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "quantity_adjusted_from": {
+            "type": "number",
+            "description": "Số lượng cũ, chỉ có khi GET /cart vừa hạ dòng này xuống bằng kho hiện tại (kho giảm sau khi đã bỏ vào giỏ). Client dùng để báo người mua vì sao số lượng đổi."
           }
         },
         "required": [

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -21,9 +22,12 @@ import {
 import { WalletsService } from '@money/wallets/wallets.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
+import { KHONG_NHAN_TIEN_DON, PayosService } from '@money/payos/payos.service';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
@@ -35,6 +39,7 @@ export class PaymentsService {
     private readonly escrowsService: EscrowsService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly payosService: PayosService,
   ) {}
 
   async create(createPaymentDto: CreatePaymentDto, user: IUser) {
@@ -135,7 +140,57 @@ export class PaymentsService {
       // `status = confirmed` theo quyết định của Đạt 24/09: "Confirmed là trạng
       // thái đã trả, đợi giao hàng" — trả bằng ví hay bằng PayOS thì người mua
       // cũng đã trả xong, không có lý do gì để hai đường khác nhau.
-      return this.dataSource.transaction(async (em) => {
+      const daTra = await this.dataSource.transaction(async (em) => {
+        // KHOÁ DÒNG ĐƠN, ĐỌC LẠI, CHỈ NHẬN ĐƠN `pending` CHƯA TRẢ.
+        //
+        // Phép kiểm phía trên chạy trên bản đọc không khoá và chỉ hỏi chủ đơn
+        // với `is_paid`. Đơn đã huỷ (hàng đã về kho) trả bằng ví được và bị
+        // đặt lại thành `confirmed`: đơn sống lại trên số hàng đã bán cho
+        // người khác. Kiểm thêm trạng thái trên bản đọc cũ cũng không đủ, vì
+        // lượt huỷ có thể commit ngay sau lúc đọc (bài kiểm D thứ hai trong
+        // `tra-bang-vi-don-da-dong.spec.ts`). Khoá đơn trước khi trừ ví, cùng
+        // thứ tự với `applyCancellation` (đơn rồi mới tới sổ cái).
+        const don = await em.findOne(Order, {
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!don) throw new NotFoundException('Không tìm thấy đơn hàng');
+        if (don.is_paid) {
+          throw new BadRequestException('Đơn hàng đã được thanh toán');
+        }
+        // Cùng luật với PayOS (`KHONG_NHAN_TIEN_DON`). Bản đầu của chỗ này chỉ
+        // nhận `pending`, nên đơn đã xác nhận mà chưa trả tiền thì PayOS nhận
+        // còn ví từ chối (review 7).
+        if (KHONG_NHAN_TIEN_DON.includes(don.status)) {
+          throw new BadRequestException(
+            `Đơn hàng đang ở trạng thái "${don.status}" nên không thanh toán ` +
+              'được nữa.',
+          );
+        }
+
+        // Chỉ đi `pending -> confirmed`, như PayOS: đơn đã xác nhận hay đang
+        // chuẩn bị thì giữ nguyên trạng thái, chỉ ghi nhận tiền.
+        await em.update(Order, orderId, {
+          is_paid: true,
+          paid_at: new Date(),
+          ...(don.status === OrderStatus.PENDING
+            ? { status: OrderStatus.CONFIRMED }
+            : {}),
+        });
+
+        // Sau `em.update` ở trên nên `createOrderEscrows` đọc lại sẽ thấy
+        // `is_paid = 1`, đúng điều kiện nó đòi.
+        await this.escrowsService.createOrderEscrows(orderId, em);
+
+        // CHÈN KÝ QUỸ TRƯỚC, TRỪ VÍ SAU (trả bằng ví).
+        //
+        // Thứ tự khoá chung của mọi đường tiền là đơn, rồi ký quỹ, rồi sổ cái:
+        // huỷ đơn và giải ngân khoá ký quỹ rồi mới ghi sổ. Đường này từng làm
+        // ngược lại (khoá két giữ hộ trong `ledger.post` rồi mới chèn ký quỹ),
+        // tức là hai giao dịch đi hai chiều trên cùng hai tài nguyên: công thức
+        // của deadlock 1213 (review 3). Cùng transaction nên ví không đủ tiền
+        // thì ký quỹ vừa chèn cũng quay lui theo.
+        //
         // Khoá chống trùng tất định theo đơn: bấm thanh toán hai lần thì chỉ
         // trừ tiền một lần.
         await this.walletsService.deduct(
@@ -146,16 +201,6 @@ export class PaymentsService {
           `order_pay:${orderId}`,
           em,
         );
-
-        await em.update(Order, orderId, {
-          is_paid: true,
-          paid_at: new Date(),
-          status: OrderStatus.CONFIRMED,
-        });
-
-        // Sau `em.update` ở trên nên `createOrderEscrows` đọc lại sẽ thấy
-        // `is_paid = 1` — đúng điều kiện nó đòi.
-        await this.escrowsService.createOrderEscrows(orderId, em);
 
         return em.save(
           Payment,
@@ -170,6 +215,23 @@ export class PaymentsService {
           }),
         );
       });
+
+      // ĐÓNG LINK PayOS CÒN TREO, SAU KHI ĐÃ COMMIT.
+      //
+      // Người mua tạo link PayOS rồi đổi ý trả bằng ví: link cũ vẫn mở, quét
+      // nốt mã QR là trả lần hai. Webhook có lưới đỡ (tiền thừa vào ví người
+      // mua, xem `applyPaidPayment`), nhưng đóng link thì khỏi phải đỡ. Dùng
+      // đúng hàm mà huỷ đơn dùng. Ngoài transaction vì đây là lời gọi mạng, và
+      // cố gắng hết sức: hỏng thì chỉ log, tiền đã trừ đúng rồi.
+      try {
+        await this.payosService.voidOpenLinkForOrder(orderId);
+      } catch (err) {
+        this.logger.warn(
+          `Không đóng được link PayOS còn treo của đơn #${orderId}: ` +
+            `${(err as Error).message}`,
+        );
+      }
+      return daTra;
     }
 
     const payment = this.paymentRepository.create({

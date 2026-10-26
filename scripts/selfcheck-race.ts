@@ -65,6 +65,7 @@ interface DichVuDon {
 
 async function layDichVuDon(): Promise<{
   svc: DichVuDon;
+  lay: <T>(duongDan: string, ten: string) => T;
   dong: () => Promise<void>;
 }> {
   require('reflect-metadata');
@@ -77,10 +78,44 @@ async function layDichVuDon(): Promise<{
   });
   return {
     svc: app.get(OrdersService) as DichVuDon,
+    // R6..R9 cần thêm các service tiền. Lấy từ CÙNG bộ tiêm phụ thuộc, cùng
+    // lý do R1/R4 lấy `OrdersService` ở đây: đo mã thật, không đo bản chép.
+    lay: <T>(duongDan: string, ten: string): T =>
+      app.get(require(duongDan)[ten]) as T,
     dong: () => app.close() as Promise<void>,
   };
 }
 /* eslint-enable */
+
+/** Đúng phần mặt tiền của từng service tiền mà R6..R9 gọi tới. */
+interface DichVuKyQuy {
+  createOrderEscrowsWithExternalFunding: (orderId: number) => Promise<unknown>;
+  release: (orderId: number, sellerId?: number) => Promise<unknown>;
+  refund: (orderId: number) => Promise<unknown>;
+}
+
+interface DichVuPayos {
+  handleWebhook: (body: unknown) => Promise<unknown>;
+}
+
+interface DichVuThanhToan {
+  create: (dto: unknown, user: unknown) => Promise<unknown>;
+}
+
+interface DichVuRutTien {
+  create: (userId: number, dto: unknown) => Promise<{ id: number }>;
+  approve: (id: number, adminId: number) => Promise<unknown>;
+  reject: (id: number, adminId: number, note?: string) => Promise<unknown>;
+}
+
+interface DichVuSoCai {
+  getOrCreateAccount: (
+    ownerType: string,
+    ownerId: number | null,
+    purpose: string,
+  ) => Promise<{ id: number | string }>;
+  post: (input: unknown) => Promise<unknown>;
+}
 
 let failures = 0;
 const results = new Map<string, boolean>();
@@ -173,6 +208,85 @@ async function khoHienTai(ds: DataSource): Promise<number> {
   return Number(r[0].stock);
 }
 
+/** Số tiền của đơn trong R6..R9. Nhỏ và tròn để đọc kết quả bằng mắt. */
+const GIA_TIEN = 1000;
+const NGUOI_MUA_TIEN = 100;
+
+/**
+ * Dọn các bảng tiền trước mỗi kịch bản R6..R9.
+ *
+ * `dungSanPham` chỉ dọn bảng hàng và đơn. Sổ cái, ký quỹ, payment, lệnh rút
+ * mà để lại từ kịch bản trước thì số dư đầu vào không còn là 0, và phép so
+ * "két giữ hộ = 0" ở cuối kịch bản sau đo nhầm cả phần tiền của kịch bản trước.
+ */
+async function donSachTien(ds: DataSource) {
+  await ds.query('SET FOREIGN_KEY_CHECKS = 0');
+  for (const t of [
+    'ledger_entries',
+    'ledger_transactions',
+    'ledger_accounts',
+    'escrows',
+    'payments',
+    'withdrawals',
+    'order_shipments',
+  ]) {
+    await ds.query(`DELETE FROM ${t}`);
+  }
+  await ds.query('SET FOREIGN_KEY_CHECKS = 1');
+  await ds.query(
+    `INSERT INTO users (id, full_name, email, password, role)
+     VALUES (?, 'mua tien', 'tien@race.local', 'x', 'buyer')`,
+    [NGUOI_MUA_TIEN],
+  );
+}
+
+/** Một đơn một món (sản phẩm 1 của người bán 1), giá `GIA_TIEN`. */
+async function taoDonTien(
+  ds: DataSource,
+  id: number,
+  status: string,
+  daTra: boolean,
+  phuongThuc = 'cod',
+) {
+  await ds.query(
+    `INSERT INTO orders (id, order_code, user_id, total_amount, final_amount, status,
+                         payment_method, receiver_name, receiver_phone, shipping_address, is_paid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'a', '0900000000', 'x', ?)`,
+    [
+      id,
+      `ORD-TIEN-${id}`,
+      NGUOI_MUA_TIEN,
+      GIA_TIEN,
+      GIA_TIEN,
+      status,
+      phuongThuc,
+      daTra ? 1 : 0,
+    ],
+  );
+  await ds.query(
+    `INSERT INTO order_items (order_id, product_id, product_name, price, quantity, subtotal)
+     VALUES (?, 1, 'mon cuoi', ?, 1, ?)`,
+    [id, GIA_TIEN, GIA_TIEN],
+  );
+}
+
+/** Số dư một tài khoản sổ cái, đọc thẳng bảng. Chưa có tài khoản = 0. */
+async function soDu(
+  ds: DataSource,
+  ownerType: string,
+  ownerId: number | null,
+  purpose: string,
+): Promise<bigint> {
+  const r = await ds.query<Array<{ balance: string | number }>>(
+    `SELECT balance FROM ledger_accounts
+     WHERE owner_type = ? AND purpose = ? AND ${
+       ownerId === null ? 'owner_id IS NULL' : 'owner_id = ?'
+     }`,
+    ownerId === null ? [ownerType, purpose] : [ownerType, purpose, ownerId],
+  );
+  return r.length ? BigInt(String(r[0].balance)) : 0n;
+}
+
 /** Chạy `ham` N lần đồng thời, nuốt lỗi lẻ, trả về số lần "thành công". */
 async function dongThoi(
   ham: (i: number) => Promise<boolean>,
@@ -193,7 +307,7 @@ function chot(ten: string, dat: boolean, chiTiet: string) {
 async function main() {
   console.log('\x1b[1m═══ TỰ KIỂM ĐUA — nhiều người cùng lúc ═══\x1b[0m');
   const ds = await AppDataSource.initialize();
-  const { svc, dong } = await layDichVuDon();
+  const { svc, lay, dong } = await layDichVuDon();
   console.log(`Kết nối DB: ${ds.options.database} · ${N} người đồng thời\n`);
 
   // ── R1: gọi THẲNG orders.create ───────────────────────────────────────────
@@ -378,6 +492,247 @@ async function main() {
     'R5 orders.create — một người bấm nhiều lần, một giỏ',
     soDonR5 === 1 && khoR5 === 49,
     `${N} lượt bấm → ${soDonR5} đơn (đúng phải là 1), kho còn ${khoR5} (đúng phải là 49)`,
+  );
+
+  // ── R6: GIẢI NGÂN VÀ HOÀN TIỀN CÙNG LÚC TRÊN MỘT ĐƠN ĐÃ TRẢ ──────────────
+  //
+  // Người mua bấm "đã nhận hàng" (giải ngân cho người bán) và "huỷ đơn" (hoàn
+  // tiền cho mình) cùng lúc. Hai đường dùng HAI khoá chống trùng khác nhau
+  // (`escrow_release:` và `escrow_refund:`), nên R3 không che được: thứ duy
+  // nhất đứng giữa là khoá dòng ký quỹ trong `EscrowsService`. Thiếu khoá thì
+  // cả hai cùng thấy `holding`, tiền đi cả hai đường và két giữ hộ âm.
+  //
+  // Gọi thẳng tầng ký quỹ, không qua `confirmShipmentReceived`/`cancel`: từ
+  // khi huỷ bị chặn với đơn có vận đơn GHN đang đi, hai nút đó hiếm khi cùng
+  // hợp lệ, nhưng tầng ký quỹ vẫn phải tự đứng vững (`autoConfirmDueShipments`
+  // cũng gọi `release` mà không qua đơn).
+  console.log(
+    '\n\x1b[1mR6 · Giải ngân và hoàn tiền cùng lúc trên một đơn đã trả\x1b[0m',
+  );
+  const kyQuy = lay<DichVuKyQuy>(
+    '../src/money/escrows/escrows.service',
+    'EscrowsService',
+  );
+  await dungSanPham(ds, 5);
+  await donSachTien(ds);
+  await taoDonTien(ds, 1, 'confirmed', true);
+  await kyQuy.createOrderEscrowsWithExternalFunding(1);
+  await dongThoi(async (i) => {
+    if (i % 2) await kyQuy.release(1, 1);
+    else await kyQuy.refund(1);
+    return true;
+  });
+  const banNhanR6 = await soDu(ds, 'user', 1, 'available');
+  const muaNhanR6 = await soDu(ds, 'user', NGUOI_MUA_TIEN, 'available');
+  const ketR6 = await soDu(ds, 'platform', null, 'escrow_hold');
+  chot(
+    'R6 ký quỹ: giải ngân và hoàn tiền cùng lúc',
+    banNhanR6 > 0n !== muaNhanR6 > 0n && ketR6 === 0n,
+    `người bán nhận ${banNhanR6}, người mua được hoàn ${muaNhanR6}, két giữ hộ ${ketR6} ` +
+      '(đúng: chỉ một bên nhận, két về 0)',
+  );
+
+  // ── R7: PayOS GỬI CÙNG MỘT WEBHOOK N LẦN CÙNG LÚC ───────────────────────
+  //
+  // PayOS gửi lại webhook khi không nhận được 200 kịp, và `refreshOrderStatus`
+  // đi cùng một đường. Mỗi lượt đọc payment thấy `pending` (đọc không khoá),
+  // nên cả N lượt đều đi tới `applyPaidPayment`. Thứ chặn ghi trùng là khoá
+  // chống trùng TẤT ĐỊNH `payos:<orderCode>:<paymentLinkId>` (cùng cơ chế R3)
+  // cộng khoá dòng đơn: lượt sau thấy đơn đã trả thì cũng chỉ còn ghi được
+  // đúng khoá đó, và bị UNIQUE từ chối.
+  //
+  // Gọi `handleWebhook` thật. Chỉ thay đúng bước kiểm chữ ký (cần khoá
+  // checksum thật của PayOS), và trả lại nguyên bản ngay sau kịch bản.
+  console.log('\n\x1b[1mR7 · Cùng một webhook PayOS tới N lần cùng lúc\x1b[0m');
+  const payos = lay<DichVuPayos>(
+    '../src/money/payos/payos.service',
+    'PayosService',
+  );
+  const vo = payos as unknown as { payos: unknown };
+  const payosGoc = vo.payos;
+  vo.payos = {
+    webhooks: {
+      verify: (body: { data: unknown }) => Promise.resolve(body.data),
+    },
+  };
+  await dungSanPham(ds, 5);
+  await donSachTien(ds);
+  await taoDonTien(ds, 1, 'pending', false, 'payos');
+  await ds.query(
+    `INSERT INTO payments (order_id, user_id, amount, payment_method, status, type,
+                           payos_order_code, payos_payment_link_id)
+     VALUES (1, ?, ?, 'payos', 'pending', 'order_payment', '1', 'link-1')`,
+    [NGUOI_MUA_TIEN, GIA_TIEN],
+  );
+  try {
+    await dongThoi(async () => {
+      await payos.handleWebhook({
+        success: true,
+        data: {
+          orderCode: 1,
+          paymentLinkId: 'link-1',
+          code: '00',
+          reference: 'REF-R7',
+        },
+      });
+      return true;
+    });
+  } finally {
+    vo.payos = payosGoc;
+  }
+  const butToanR7 = await ds.query<Array<{ n: number }>>(
+    `SELECT COUNT(*) AS n FROM ledger_transactions
+     WHERE reference_type = 'order' AND reference_id = '1'`,
+  );
+  const donR7 = await ds.query<Array<{ status: string; is_paid: number }>>(
+    'SELECT status, is_paid FROM orders WHERE id = 1',
+  );
+  const ketR7 = await soDu(ds, 'platform', null, 'escrow_hold');
+  const viR7 = await soDu(ds, 'user', NGUOI_MUA_TIEN, 'available');
+  const soButToanR7 = Number(butToanR7[0].n);
+  chot(
+    'R7 webhook PayOS: cùng một lần trả tiền gửi tới nhiều lần',
+    soButToanR7 === 1 &&
+      ketR7 === BigInt(GIA_TIEN) &&
+      viR7 === 0n &&
+      donR7[0].status === 'confirmed' &&
+      Number(donR7[0].is_paid) === 1,
+    `${N} webhook → ${soButToanR7} bút toán (đúng: 1), két ${ketR7}, ví người mua ${viR7}, ` +
+      `đơn ${donR7[0].status}/is_paid=${donR7[0].is_paid}`,
+  );
+
+  // ── R8: MỘT VÍ, NHIỀU ĐƠN, TRẢ CÙNG LÚC ─────────────────────────────────
+  //
+  // Ví người mua có đúng tiền cho MỘT đơn. Người mua mở N đơn khác nhau
+  // trên nhiều tab và bấm "trả bằng ví" ở tất cả cùng lúc. Mỗi đơn có khoá
+  // chống trùng riêng (`order_pay:<id>`), nên R3 không che được: thứ duy nhất
+  // chặn là `LedgerService.post` khoá tài khoản ví (`FOR UPDATE`) rồi mới kiểm
+  // "không được âm". Thiếu khoá thì mọi lượt cùng đọc thấy đủ tiền, nhiều đơn
+  // cùng được trả bằng một lần tiền.
+  console.log('\n\x1b[1mR8 · Một ví, nhiều đơn, trả bằng ví cùng lúc\x1b[0m');
+  const thanhToan = lay<DichVuThanhToan>(
+    '../src/money/payments/payments.service',
+    'PaymentsService',
+  );
+  const soCai = lay<DichVuSoCai>(
+    '../src/money/ledger/ledger.service',
+    'LedgerService',
+  );
+  await dungSanPham(ds, 50);
+  await donSachTien(ds);
+  for (let i = 1; i <= N; i++) {
+    await taoDonTien(ds, i, 'pending', false, 'wallet');
+  }
+  const congNap = await soCai.getOrCreateAccount(
+    'external',
+    null,
+    'gateway_clearing',
+  );
+  const viMua = await soCai.getOrCreateAccount(
+    'user',
+    NGUOI_MUA_TIEN,
+    'available',
+  );
+  await soCai.post({
+    idempotencyKey: 'race:r8:nap',
+    type: 'topup',
+    entries: [
+      { accountId: Number(congNap.id), amount: -BigInt(GIA_TIEN) },
+      { accountId: Number(viMua.id), amount: BigInt(GIA_TIEN) },
+    ],
+  });
+  const traR8 = await dongThoi(async (i) => {
+    await thanhToan.create(
+      { order_id: i + 1, payment_method: 'wallet' },
+      { id: NGUOI_MUA_TIEN, role: 'buyer' },
+    );
+    return true;
+  });
+  const daTraR8 = await ds.query<Array<{ n: number }>>(
+    'SELECT COUNT(*) AS n FROM orders WHERE is_paid = 1',
+  );
+  // Số dư thấp nhất từng xuất hiện trong sổ của ví, không chỉ số dư cuối:
+  // "chưa bao giờ âm" là bất biến, "cuối cùng không âm" thì chưa đủ.
+  const thapNhatR8 = await ds.query<Array<{ m: string | number | null }>>(
+    `SELECT MIN(e.balance_after) AS m FROM ledger_entries e
+     JOIN ledger_accounts a ON a.id = e.account_id
+     WHERE a.owner_type = 'user' AND a.owner_id = ? AND a.purpose = 'available'`,
+    [NGUOI_MUA_TIEN],
+  );
+  const viR8 = await soDu(ds, 'user', NGUOI_MUA_TIEN, 'available');
+  const ketR8 = await soDu(ds, 'platform', null, 'escrow_hold');
+  const soDonTraR8 = Number(daTraR8[0].n);
+  const thapNhat = BigInt(String(thapNhatR8[0].m ?? 0));
+  chot(
+    'R8 trả bằng ví: nhiều đơn, một ví chỉ đủ một đơn',
+    traR8 === 1 && soDonTraR8 === 1 && viR8 === 0n && thapNhat >= 0n &&
+      ketR8 === BigInt(GIA_TIEN),
+    `${N} đơn trả cùng lúc → ${traR8} lượt thành công, ${soDonTraR8} đơn đã trả (đúng: 1), ` +
+      `ví còn ${viR8}, thấp nhất ${thapNhat}, két ${ketR8}`,
+  );
+
+  // ── R9: HAI ADMIN, MỘT LỆNH RÚT: DUYỆT VÀ TỪ CHỐI CÙNG LÚC ──────────────
+  //
+  // Hai admin cùng mở một lệnh rút đang chờ. Từ chối là trả tiền về ví người
+  // bán; duyệt là hứa sẽ chuyển khoản. Không khoá thì cả hai cùng thấy
+  // `pending` và cùng "thành công": tiền đã về ví theo lượt từ chối mà lệnh
+  // lại nằm ở `approved` theo lượt ghi sau, và admin đi chuyển khoản thật cho
+  // một khoản người bán vẫn còn tiêu được.
+  console.log(
+    '\n\x1b[1mR9 · Hai admin duyệt và từ chối một lệnh rút cùng lúc\x1b[0m',
+  );
+  const rutTien = lay<DichVuRutTien>(
+    '../src/money/withdrawals/withdrawals.service',
+    'WithdrawalsService',
+  );
+  const SO_RUT = 100_000;
+  await dungSanPham(ds, 5);
+  await donSachTien(ds);
+  await ds.query(
+    `INSERT INTO users (id, full_name, email, password, role)
+     VALUES (2, 'quan tri', 'admin@race.local', 'x', 'admin')`,
+  );
+  const congR9 = await soCai.getOrCreateAccount(
+    'external',
+    null,
+    'gateway_clearing',
+  );
+  const viBanR9 = await soCai.getOrCreateAccount('user', 1, 'available');
+  await soCai.post({
+    idempotencyKey: 'race:r9:nap',
+    type: 'topup',
+    entries: [
+      { accountId: Number(congR9.id), amount: -BigInt(SO_RUT) },
+      { accountId: Number(viBanR9.id), amount: BigInt(SO_RUT) },
+    ],
+  });
+  const lenh = await rutTien.create(1, {
+    amount: SO_RUT,
+    bank_name: 'VCB',
+    bank_account: '0123456789',
+    bank_holder: 'NGUOI BAN',
+  });
+  const thangR9 = await dongThoi(async (i) => {
+    if (i % 2) await rutTien.approve(lenh.id, 2);
+    else await rutTien.reject(lenh.id, 2, 'race r9');
+    return true;
+  });
+  const lenhR9 = await ds.query<Array<{ status: string }>>(
+    'SELECT status FROM withdrawals WHERE id = ?',
+    [lenh.id],
+  );
+  const conR9 = await soDu(ds, 'user', 1, 'available');
+  const giuR9 = await soDu(ds, 'user', 1, 'withdrawal_pending');
+  const trangThaiR9 = lenhR9[0].status;
+  // Tiền phải đứng đúng chỗ theo bên thắng, và không đồng nào sinh thêm.
+  const tienDungCho =
+    (trangThaiR9 === 'approved' && giuR9 === BigInt(SO_RUT) && conR9 === 0n) ||
+    (trangThaiR9 === 'rejected' && conR9 === BigInt(SO_RUT) && giuR9 === 0n);
+  chot(
+    'R9 rút tiền: duyệt và từ chối cùng lúc',
+    thangR9 === 1 && tienDungCho,
+    `${N} lượt → ${thangR9} lượt thành công (đúng: 1), lệnh ${trangThaiR9}, ` +
+      `ví ${conR9}, đang giữ ${giuR9}`,
   );
 
   await ds.destroy();

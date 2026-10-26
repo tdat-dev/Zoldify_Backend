@@ -37,4 +37,11 @@ export class Cart {
 
   @UpdateDateColumn({ type: 'timestamp', nullable: true })
   updated_at: Date;
+
+  /**
+   * Số lượng cũ, chỉ có khi GET /cart vừa hạ dòng này xuống bằng kho hiện tại (kho giảm sau khi đã bỏ vào giỏ). Client dùng để báo người mua vì sao số lượng đổi.
+   */
+  // `declare` chứ không khai trường thường: target ES2023 biến trường thường
+  // thành thuộc tính riêng mang undefined trên MỌI dòng giỏ. Không phải cột.
+  declare quantity_adjusted_from?: number;
 }

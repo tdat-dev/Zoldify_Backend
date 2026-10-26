@@ -2,22 +2,41 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { CreateCartDto } from './dto/create-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
 import { IUser } from '@identity/users/users.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cart } from './entities/cart.entity';
-import { Repository } from 'typeorm';
-import { ProductsService } from '@catalog/products/products.service';
-import { ProductStatus } from '@catalog/products/entities/product.entity';
+import { QueryFailedError, Repository } from 'typeorm';
+import {
+  Product,
+  ProductStatus,
+} from '@catalog/products/entities/product.entity';
+
+/** Mã lỗi MySQL khi đụng ràng buộc UNIQUE. Cùng hằng số mà `orders.service.ts` dùng. */
+const ER_DUP_ENTRY = 1062;
+
+function laLoiTrungKhoa(err: unknown): boolean {
+  if (!(err instanceof QueryFailedError)) return false;
+  const driverError = err.driverError as { errno?: number } | undefined;
+  return driverError?.errno === ER_DUP_ENTRY;
+}
+
+/**
+ * Số vòng "thử cộng, không có dòng thì chèn" tối đa. Vòng 2 chỉ xảy ra khi lần
+ * chèn đụng `unique_user_product` vì một request khác vừa chèn trước; lúc đó
+ * dòng đã có và lần cộng ở vòng 2 sẽ ăn. Vòng 3 là dư phòng cho trường hợp
+ * dòng vừa chèn lại bị xoá ngay giữa hai bước.
+ */
+const SO_VONG_THEM = 3;
 
 @Injectable()
 export class CartService {
   constructor(
     @InjectRepository(Cart)
     private readonly cartRepository: Repository<Cart>,
-    private readonly productService: ProductsService,
   ) {}
 
   /**
@@ -36,10 +55,18 @@ export class CartService {
    * Đây KHÔNG phải lớp chặn về tiền — lớp đó vẫn là `orders.create`, nơi có
    * khoá hàng và đọc lại kho dưới khoá. Giỏ hàng đọc kho không khoá, và điều
    * đó đúng: giữa lúc thêm vào giỏ và lúc đặt hàng có thể là vài ngày.
+   *
+   * CỘNG DỒN PHẢI LÀ MỘT CÂU SQL (26/10). Bản trước đọc dòng giỏ rồi ghi
+   * `quantity = cũ + mới`: đo trên MySQL thật, 10 lần bấm "Thêm" cùng lúc vào
+   * dòng đang có 1 để lại 2 chứ không phải 11, và cả 10 lần đều báo thành công.
+   * Giờ phép cộng và phép so với kho nằm chung một câu UPDATE có điều kiện, nên
+   * MySQL tự xếp hàng các lần cộng trên khoá dòng của nó.
    */
   async create(createCartDto: CreateCartDto, user: IUser) {
-    const { product_id, quantity } = createCartDto;
-    const product = await this.productService.findOne(+product_id);
+    const { product_id } = createCartDto;
+    const muonThem = createCartDto.quantity || 1;
+
+    const product = await this.docSanPhamTuoi(+product_id);
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
     }
@@ -53,41 +80,84 @@ export class CartService {
         'Bạn không thể mua sản phẩm của chính mình',
       );
     }
-
-    const existingCart = await this.cartRepository.findOne({
-      where: { user: { id: user.id }, product: { id: product_id } },
-    });
-
-    // CỘNG DỒN CŨNG PHẢI ĐẾM. Bản cũ làm `existingCart.quantity += quantity`
-    // không trần, nên bấm "Thêm vào giỏ" đủ nhiều lần là giỏ vượt kho.
-    const dangCo = existingCart?.quantity ?? 0;
-    const muonThem = quantity || 1;
-    const tong = dangCo + muonThem;
-    if (tong > product.stock) {
+    if (muonThem > product.stock) {
       throw new BadRequestException(
-        `Sản phẩm "${product.name}" chỉ còn ${product.stock} trong kho` +
-          (dangCo > 0 ? `, giỏ của bạn đang có ${dangCo}` : ''),
+        `Sản phẩm "${product.name}" chỉ còn ${product.stock} trong kho`,
       );
     }
 
-    if (existingCart) {
-      existingCart.quantity = tong;
-      await this.cartRepository.save(existingCart);
-      return this.findOne(existingCart.id, user);
+    for (let vong = 0; vong < SO_VONG_THEM; vong++) {
+      if (await this.congCoTran(user.id, product_id, muonThem)) {
+        return this.dongCuaSanPham(product_id, user);
+      }
+
+      // Cộng không ăn: hoặc chưa có dòng, hoặc có rồi mà cộng thêm thì vượt kho.
+      const hienTai = await this.dongVaKho(user.id, product_id);
+      if (hienTai) {
+        throw new BadRequestException(
+          this.cauVuotKho(hienTai.quantity, hienTai.stock),
+        );
+      }
+
+      try {
+        await this.cartRepository.insert({
+          user: { id: user.id },
+          product: { id: product_id },
+          quantity: muonThem,
+        });
+        return this.dongCuaSanPham(product_id, user);
+      } catch (err) {
+        // Lần thêm ĐẦU TIÊN bấm cùng lúc: cả năm request cùng thấy "chưa có
+        // dòng", cùng chèn, bốn cái đụng `unique_user_product`. Bản trước để
+        // lỗi đó thành 500. Giờ quay lại vòng sau: dòng đã có, phép cộng ăn.
+        if (!laLoiTrungKhoa(err)) throw err;
+      }
     }
-    const saved = await this.cartRepository.save({
-      user: { id: user.id },
-      product: { id: product_id },
-      quantity: quantity || 1,
-    });
-    return this.findOne(saved.id, user);
+    throw new ConflictException(
+      'Giỏ hàng đang được cập nhật ở nơi khác, vui lòng thử lại',
+    );
   }
 
+  /**
+   * HẠ DÒNG VƯỢT KHO NGAY LÚC ĐỌC GIỎ (26/10).
+   *
+   * Kho giảm SAU khi người mua bỏ hàng vào giỏ (người khác mua mất, người bán
+   * sửa kho) thì không có ai đụng tới dòng giỏ. Ảnh chụp giỏ web 26/10: ô số
+   * lượng hiện 7, kho còn 4, thành tiền tính theo 4. Hạ luôn trong database để
+   * mọi client (web, app, màn thanh toán) cùng thấy một con số, và trả kèm
+   * `quantity_adjusted_from` để client báo cho người mua biết vì sao số đổi.
+   *
+   * KHÔNG hạ dòng hết hàng (kho 0), ngừng bán, hay sản phẩm đã xoá: hạ về 0 là
+   * xoá mất ý định mua của người ta, mà hàng có thể về lại. Client hiện các
+   * dòng đó là "hết hàng" và loại khỏi tổng tiền.
+   */
   async findAll(user: IUser) {
     const [result, totalItems] = await this.cartRepository.findAndCount({
       where: { user: { id: user.id } },
       relations: ['product'],
     });
+
+    for (const dong of result) {
+      const sp = dong.product;
+      if (
+        !sp ||
+        sp.status !== ProductStatus.ACTIVE ||
+        sp.stock <= 0 ||
+        dong.quantity <= sp.stock
+      ) {
+        continue;
+      }
+      const cu = dong.quantity;
+      // Điều kiện `quantity = cu`: nếu giữa lúc đọc và lúc ghi người mua vừa
+      // sửa số lượng ở tab khác thì không ghi đè số mới của họ.
+      const kq = await this.cartRepository.update(
+        { id: dong.id, quantity: cu },
+        { quantity: sp.stock },
+      );
+      if (!kq.affected) continue;
+      dong.quantity = sp.stock;
+      dong.quantity_adjusted_from = cu;
+    }
 
     return {
       meta: {
@@ -112,6 +182,8 @@ export class CartService {
   }
 
   async update(id: number, updateCartDto: UpdateCartDto, user: IUser) {
+    // Kho ở đây đọc qua quan hệ `product` của chính câu SELECT này, tức là đọc
+    // thẳng database, không qua cache 60s của ProductsService như `create` cũ.
     const cart = await this.cartRepository.findOne({
       where: { id, user: { id: user.id } },
       // `product` cần để kiểm tồn kho — bản cũ không nạp nên không kiểm được.
@@ -146,5 +218,96 @@ export class CartService {
     }
     await this.cartRepository.delete(id);
     return { message: 'Xóa giỏ hàng thành công' };
+  }
+
+  /**
+   * Đọc sản phẩm THẲNG từ database, không qua `ProductsService.findOne`.
+   *
+   * `findOne` cache chi tiết sản phẩm ~60s trong Redis cho trang công khai.
+   * Đúng cho trang sản phẩm, sai cho phép kiểm kho: đo trên MySQL thật, kho
+   * vừa hạ từ 5 xuống 1 mà cache còn ghi 5, giỏ vẫn nhận thêm. Trang chi tiết
+   * cũng tăng view_count, nên bấm "Thêm vào giỏ" còn đếm nhầm một lượt xem.
+   */
+  private docSanPhamTuoi(id: number) {
+    return this.cartRepository.manager.findOne(Product, {
+      where: { id },
+      relations: { seller: true },
+      select: {
+        id: true,
+        name: true,
+        stock: true,
+        status: true,
+        seller: { id: true },
+      },
+    });
+  }
+
+  /**
+   * Cộng `them` vào dòng giỏ đang có, CHỈ KHI tổng không vượt kho hiện tại.
+   * Trả false khi không có dòng nào được cộng (chưa có dòng, hoặc sẽ vượt kho).
+   *
+   * Câu con đọc `products` chứ không đọc `carts`, nên MySQL không báo lỗi 1093
+   * ("không được đọc chính bảng đang UPDATE"). Sản phẩm đã xoá mềm cho câu con
+   * ra NULL, phép so ra NULL, dòng không được cộng.
+   */
+  private async congCoTran(
+    userId: number,
+    productId: number,
+    them: number,
+  ): Promise<boolean> {
+    const kq = await this.cartRepository
+      .createQueryBuilder()
+      .update(Cart)
+      .set({ quantity: () => 'quantity + :them' })
+      .where('user_id = :userId AND product_id = :productId')
+      .andWhere(
+        'quantity + :them <= (SELECT p.stock FROM products p WHERE p.id = :productId AND p.deleted_at IS NULL)',
+      )
+      .setParameters({ them, userId, productId })
+      .execute();
+    return (kq.affected ?? 0) > 0;
+  }
+
+  /** Số đang có trong dòng giỏ và kho hiện tại, đọc trong cùng một câu. */
+  private async dongVaKho(
+    userId: number,
+    productId: number,
+  ): Promise<{ quantity: number; stock: number } | undefined> {
+    const rows = await this.cartRepository.manager.query<
+      Array<{ quantity: number; stock: number }>
+    >(
+      `SELECT c.quantity, p.stock
+         FROM carts c JOIN products p ON p.id = c.product_id
+        WHERE c.user_id = ? AND c.product_id = ?`,
+      [userId, productId],
+    );
+    if (!rows[0]) return undefined;
+    return { quantity: Number(rows[0].quantity), stock: Number(rows[0].stock) };
+  }
+
+  /**
+   * Câu từ chối khi dòng giỏ đã có hàng. Nói rõ giỏ ĐANG có bao nhiêu: câu cũ
+   * chỉ nói "chỉ còn 4 trong kho", người mua không biết là do món đã nằm sẵn
+   * trong giỏ, tưởng bấm "Thêm" là được thêm một dòng mới.
+   */
+  private cauVuotKho(dangCo: number, kho: number): string {
+    if (dangCo === kho) {
+      return `Giỏ của bạn đã có ${dangCo} cái, bằng số còn trong kho`;
+    }
+    if (dangCo > kho) {
+      return `Giỏ của bạn đã có ${dangCo} cái, nhiều hơn số còn trong kho (${kho})`;
+    }
+    return `Giỏ của bạn đã có ${dangCo} cái, kho còn ${kho}, chỉ thêm được ${kho - dangCo} cái nữa`;
+  }
+
+  private async dongCuaSanPham(productId: number, user: IUser) {
+    const dong = await this.cartRepository.findOne({
+      where: { user: { id: user.id }, product: { id: productId } },
+      select: { id: true },
+    });
+    if (!dong) {
+      throw new NotFoundException('Không tìm thấy giỏ hàng');
+    }
+    return this.findOne(dong.id, user);
   }
 }

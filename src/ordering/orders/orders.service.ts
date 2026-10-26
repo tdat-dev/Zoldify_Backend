@@ -33,6 +33,7 @@ import {
   In,
   IsNull,
   LessThan,
+  Not,
   QueryFailedError,
 } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -42,7 +43,11 @@ import { GhnService, ghnErrorMessage } from '@ordering/ghn/ghn.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Escrow, EscrowStatus } from '@money/escrows/entities/escrow.entity';
 import { PayosService } from '@money/payos/payos.service';
-import { assertTransitionAllowed, OrderActor } from './order-status.policy';
+import {
+  assertTransitionAllowed,
+  DA_DONG_KHONG_GIAO,
+  OrderActor,
+} from './order-status.policy';
 import {
   normalizePagination,
   decodeCursor,
@@ -62,6 +67,15 @@ function laLoiTrungKhoa(err: unknown): boolean {
   if (!(err instanceof QueryFailedError)) return false;
   const driverError = err.driverError as { errno?: number } | undefined;
   return driverError?.errno === ER_DUP_ENTRY;
+}
+
+/** Dòng hàng sắp theo id sản phẩm tăng dần (dòng mất sản phẩm xếp cuối). */
+function theoIdSanPham(items: OrderItem[] | undefined): OrderItem[] {
+  return [...(items ?? [])].sort(
+    (a, b) =>
+      (a.product?.id ?? Number.MAX_SAFE_INTEGER) -
+      (b.product?.id ?? Number.MAX_SAFE_INTEGER),
+  );
 }
 
 @Injectable()
@@ -864,6 +878,10 @@ export class OrdersService {
     const { order, actors } = await this.findOneForActor(id, user);
     const isAdmin = actors.includes(OrderActor.ADMIN);
     const nextStatus = updateOrderDto.status;
+    // Trạng thái lúc ĐỌC. Mọi kiểm tra bên dưới đứng trên nó, nên lúc ghi phải
+    // chứng minh nó vẫn còn đúng (khối khoá dòng phía dưới).
+    const trangThaiDaDoc = order.status;
+    const maVanDonDaDoc = order.tracking_code;
 
     if (nextStatus) {
       assertTransitionAllowed(order.status, nextStatus, actors);
@@ -888,40 +906,118 @@ export class OrdersService {
       order.tracking_code = updateOrderDto.tracking_code;
     }
 
-    this.applyDeliveryInfo(order, updateOrderDto, actors);
+    const giaoHang = this.applyDeliveryInfo(order, updateOrderDto, actors);
 
     // Tạo vận đơn GHN khi người bán xác nhận — MỘT vận đơn cho MỖI người bán,
     // gửi từ địa chỉ của chính họ. Lỗi GHN KHÔNG chặn việc xác nhận: vận đơn
     // không phải tiền, thiếu thì điền tay sau được. Idempotent theo (đơn, người
     // bán) nên gọi lại không tạo trùng.
+    //
+    // Chạy TRƯỚC và NGOÀI khoá dòng bên dưới: đây là lời gọi mạng, timeout 10s
+    // nhân số lần thử lại. Giữ `FOR UPDATE` suốt quãng đó là bắt mọi thao tác
+    // khác trên đơn (huỷ, webhook tiền về) xếp hàng chờ GHN.
     if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
       await this.createGhnShipmentsPerSeller(order);
     }
 
-    // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU — không đảo ngược.
+    // CHỐT CHUYỂN TRẠNG THÁI DƯỚI KHOÁ DÒNG, CHỈ GHI ĐÚNG CỘT VỪA ĐỔI.
     //
-    // Thứ tự cũ gọi `createOrderEscrows` rồi mới đặt `is_paid`, nên lúc hàm đó
-    // chạy thì database vẫn ghi đơn là CHƯA trả tiền. Nay `createOrderEscrows`
-    // từ chối đúng trường hợp ấy (xem lời giải thích trong `escrows.service.ts`),
-    // nên phải lưu cờ xuống trước.
-    const vuaDanhDauDaTra = updateOrderDto.is_paid === true && !order.is_paid;
-    if (vuaDanhDauDaTra) {
-      order.is_paid = true;
-      order.paid_at = new Date();
-    }
+    // Bản cũ `save(order)` NGUYÊN entity đọc từ đầu hàm, sau cả lời gọi GHN.
+    // Trong quãng đó người mua huỷ đơn (hoàn kho, CANCELLED, commit xong) thì
+    // lần lưu này ghi đè về CONFIRMED: đơn sống lại trên số hàng đã trả về kho.
+    // Webhook PayOS đặt `is_paid = 1` giữa chừng cũng bị kéo về 0. Đo bằng hai
+    // bài kiểm B trong `dua-trang-thai-don.spec.ts`.
+    //
+    // Nay: khoá dòng, đọc lại trạng thái. Khác lúc đọc thì quyết định phía trên
+    // đã đứng trên dữ liệu cũ, trả 409 cho người gọi tải lại chứ không đoán hộ.
+    const ketQua = await this.dataSource.transaction(async (em) => {
+      const chot = await em.findOne(Order, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!chot) throw new NotFoundException('Không tìm thấy đơn hàng');
+      if (chot.status !== trangThaiDaDoc) {
+        return { doiThanh: chot.status };
+      }
 
-    if (nextStatus) {
-      order.status = nextStatus;
-    }
+      const thayDoi: Partial<Order> = { ...giaoHang };
+      // Mã vận đơn: CHỈ ghi khi chính yêu cầu này đổi nó. Bản đầu ghi hễ
+      // khác database, nên một yêu cầu chỉ đổi trạng thái kéo mã vừa được lần
+      // tạo lại vận đơn song song điền về null (bài kiểm "review 9").
+      if (updateOrderDto.tracking_code !== undefined) {
+        thayDoi.tracking_code = updateOrderDto.tracking_code;
+      } else if (order.tracking_code !== maVanDonDaDoc && !chot.tracking_code) {
+        // GHN vừa cấp ở trên, và chưa ai điền mã nào khác trong lúc chờ.
+        thayDoi.tracking_code = order.tracking_code;
+      }
 
-    await this.orderRepository.save(order);
+      // ĐÁNH DẤU ĐÃ TRẢ TIỀN TRƯỚC, TÁCH KHOẢN KÝ QUỸ SAU, không đảo ngược.
+      //
+      // Thứ tự cũ gọi `createOrderEscrows` rồi mới đặt `is_paid`, nên lúc hàm
+      // đó chạy thì database vẫn ghi đơn là CHƯA trả tiền. Nay
+      // `createOrderEscrows` từ chối đúng trường hợp ấy (xem lời giải thích
+      // trong `escrows.service.ts`), nên phải lưu cờ xuống trước.
+      const daTra = updateOrderDto.is_paid === true && !chot.is_paid;
+      // Đơn đã huỷ/hoàn tiền: hàng đã về kho, ký quỹ sinh ra lúc này nằm
+      // `holding` mãi mãi vì đơn đóng rồi, không đường nào giải ngân hay hoàn
+      // được nữa (bài kiểm H). Đơn đã giao cũng vậy: giải ngân chạy lúc chuyển
+      // sang `delivered`, đơn đã qua bước đó, và PayOS cũng coi nó là đã đóng
+      // (bài kiểm "review 10").
+      if (
+        daTra &&
+        [...DA_DONG_KHONG_GIAO, OrderStatus.DELIVERED].includes(chot.status)
+      ) {
+        throw new BadRequestException(
+          `Đơn hàng đang ở trạng thái "${chot.status}" nên không ghi nhận đã ` +
+            'thu tiền được. Nếu tiền thật đã về, cần hoàn tay cho người mua.',
+        );
+      }
+      if (daTra) {
+        thayDoi.is_paid = true;
+        thayDoi.paid_at = new Date();
+      }
+      if (nextStatus) thayDoi.status = nextStatus;
 
-    if (vuaDanhDauDaTra) {
-      // Đường THỦ CÔNG: admin khẳng định tiền đã về (chủ yếu là đơn COD do
-      // GHN thu hộ). Không có webhook nào đưa tiền vào két nên phải ghi bút
-      // toán đó ở đây, nếu không lần giải ngân đầu tiên kéo escrow_hold xuống
-      // âm. Xem lời giải thích đầy đủ trong escrows.service.ts.
-      await this.escrowsService.createOrderEscrowsWithExternalFunding(order.id);
+      // HOÀN TIỀN, TRẢ KHO VÀ GHI `refunded`: CÙNG MỘT TRANSACTION.
+      //
+      // Bản cũ lưu `refunded` trước rồi mới hoàn tiền trong transaction riêng.
+      // Người bán đã tiêu hết số vừa nhận thì sổ cái từ chối lệnh đòi lại
+      // (đúng thiết kế), nhưng đơn đã nằm ở `refunded`: người mua thấy "đã
+      // hoàn tiền" mà ví không có đồng nào, và admin không bấm lại được vì bảng
+      // trạng thái chặn `refunded -> refunded`. Đo bằng bài kiểm F trong
+      // `dua-trang-thai-don.spec.ts`. Không có lời gọi mạng nào trong này nên
+      // giữ khoá dòng suốt quãng đó không sao.
+      if (nextStatus === OrderStatus.REFUNDED) {
+        await this.hoanTienVaTraKho(em, order, chot.status);
+      }
+
+      if (Object.keys(thayDoi).length) {
+        await em.update(Order, { id }, thayDoi);
+      }
+
+      // Đường THỦ CÔNG: admin khẳng định tiền đã về (chủ yếu là đơn COD do GHN
+      // thu hộ). Không có webhook nào đưa tiền vào két nên phải ghi bút toán đó
+      // ở đây, nếu không lần giải ngân đầu tiên kéo escrow_hold xuống âm. Xem
+      // lời giải thích đầy đủ trong escrows.service.ts.
+      //
+      // CÙNG transaction với `is_paid`, và SAU câu UPDATE ở trên để
+      // `createOrderEscrows` đọc thấy cờ đã bật. Bản cũ ghi két trong một
+      // transaction riêng sau khi cờ đã lưu: bước này hỏng thì đơn "đã trả" mà
+      // két rỗng, và lần bấm lại thấy cờ đã bật nên không bao giờ ghi két nữa.
+      if (daTra) {
+        await this.escrowsService.createOrderEscrowsWithExternalFunding(id, em);
+      }
+      return { vuaDanhDauDaTra: daTra };
+    });
+
+    if (ketQua.doiThanh) {
+      if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
+        await this.baoVanDonMoCoi(order.id, ketQua.doiThanh);
+      }
+      throw new ConflictException(
+        `Đơn hàng vừa chuyển sang "${ketQua.doiThanh}" trong lúc bạn thao tác. ` +
+          'Tải lại đơn rồi thử lại.',
+      );
     }
 
     // Tiền đi sau khi trạng thái đã lưu. Lỗi ở đây được NÉM RA, không nuốt:
@@ -930,51 +1026,59 @@ export class OrdersService {
     if (nextStatus === OrderStatus.DELIVERED) {
       await this.releaseEscrowOrExplain(order.id, 'giải ngân');
     }
-    // HOÀN TIỀN THÌ HÀNG CŨNG PHẢI VỀ KHO.
-    //
-    // `cancel()` hoàn kho, còn nhánh này thì không — hai đường cùng nghĩa "giao
-    // dịch không thành" mà chỉ một đường trả hàng lại. Đơn hoàn tiền để lại
-    // hàng bị trừ vĩnh viễn: người bán mất chỗ trên kệ mà không ai lấy hàng đi.
-    // Đo bằng TC-P1-07.
-    //
-    // Tiền và kho trong CÙNG một transaction: hoàn tiền hỏng (người bán đã tiêu
-    // hết số đã nhận) thì kho cũng không được cộng lại, nếu không thì kho phình
-    // ra hàng không có thật mà tiền vẫn chưa trả người mua.
-    if (nextStatus === OrderStatus.REFUNDED) {
-      await this.dataSource.transaction(async (em) => {
-        try {
-          await this.escrowsService.refund(order.id, em, true);
-        } catch (err) {
-          // CHỈ nuốt đúng một trường hợp, y như `applyCancellation` đã làm:
-          // đơn không có khoản ký quỹ nào để hoàn (đơn COD, hoặc đơn có từ
-          // trước khi hệ thống ký quỹ tồn tại). Hàng vẫn phải về kho — việc trừ
-          // kho xảy ra lúc đặt đơn, không phụ thuộc vào việc tiền đi đường nào.
-          //
-          // Mọi lỗi khác phải làm hỏng cả transaction: tiền chưa về mà kho đã
-          // cộng lại thì sàn vừa mất hàng lẫn tiền.
-          if (!(err instanceof NotFoundException)) throw err;
-          this.logger.warn(
-            `Đơn #${order.id} hoàn tiền nhưng không có khoản ký quỹ nào. ` +
-              'Vẫn trả hàng về kho, nhưng cần đối soát tay xem tiền ở đâu.',
-          );
-        }
-        for (const item of order.items ?? []) {
-          if (item.product) {
-            await em.increment(
-              Product,
-              { id: item.product.id },
-              'stock',
-              item.quantity,
-            );
-          }
-        }
-      });
-    }
 
     return this.orderRepository.findOne({
       where: { id: order.id },
       relations: ['user', 'items', 'items.product'],
     });
+  }
+
+  /**
+   * Nhánh `refunded` của `updateStatus`: hoàn tiền (đòi lại cả phần đã giải
+   * ngân) và trả hàng về kho. Chạy bên trong transaction chốt trạng thái.
+   *
+   * HOÀN TIỀN THÌ HÀNG CŨNG PHẢI VỀ KHO. `cancel()` hoàn kho, còn nhánh này
+   * từng không: đơn hoàn tiền để lại hàng bị trừ vĩnh viễn. Đo bằng TC-P1-07.
+   *
+   * NHƯNG KHÔNG CỘNG LẦN HAI. Bảng trạng thái cho `cancelled -> refunded`, và
+   * lúc huỷ thì kho đã được cộng lại rồi. Bản cũ cộng vô điều kiện: huỷ rồi
+   * hoàn tiền một đơn 2 món thì kho 48 -> 50 -> 52, phình ra 2 món không có
+   * thật (bài kiểm F). Nên đơn đi từ `cancelled` thì chỉ hoàn tiền.
+   */
+  private async hoanTienVaTraKho(
+    em: EntityManager,
+    order: Order,
+    trangThaiTruoc: OrderStatus,
+  ): Promise<void> {
+    try {
+      await this.escrowsService.refund(order.id, em, true);
+    } catch (err) {
+      // CHỈ nuốt đúng một trường hợp, y như `applyCancellation` đã làm: đơn
+      // không có khoản ký quỹ nào để hoàn (đơn COD, hoặc đơn có từ trước khi
+      // hệ thống ký quỹ tồn tại). Mọi lỗi khác phải làm hỏng cả transaction,
+      // kể cả việc ghi `refunded`: tiền chưa về thì đơn chưa được hoàn.
+      if (!(err instanceof NotFoundException)) throw err;
+      this.logger.warn(
+        `Đơn #${order.id} hoàn tiền nhưng không có khoản ký quỹ nào. ` +
+          'Cần đối soát tay xem tiền ở đâu.',
+      );
+    }
+
+    if (trangThaiTruoc === OrderStatus.CANCELLED) return;
+
+    // Cộng kho theo id sản phẩm TĂNG dần, đúng thứ tự `orders.create` khoá
+    // sản phẩm. Đi theo thứ tự dòng hàng thì một lượt đặt hàng chạm cùng hai
+    // món theo chiều ngược lại là đủ cho deadlock 1213 (review 5).
+    for (const item of theoIdSanPham(order.items)) {
+      if (item.product) {
+        await em.increment(
+          Product,
+          { id: item.product.id },
+          'stock',
+          item.quantity,
+        );
+      }
+    }
   }
 
   /**
@@ -1046,6 +1150,15 @@ export class OrdersService {
         'Lô hàng này chưa gửi được, chưa thể xác nhận đã nhận',
       );
     }
+    // Đơn đã huỷ hoặc đã hoàn tiền thì không còn gì để "nhận". Không chặn ở
+    // đây thì một lô GHN sống sót (vận đơn mồ côi) đủ để kéo đơn huỷ sang
+    // `delivered` qua `reconcileOrderDelivered` bên dưới.
+    if (DA_DONG_KHONG_GIAO.includes(order.status)) {
+      throw new BadRequestException(
+        `Đơn hàng đang ở trạng thái "${order.status}" nên không xác nhận ` +
+          'đã nhận hàng được.',
+      );
+    }
 
     await this.escrowsService.release(orderId, sellerId);
 
@@ -1078,13 +1191,17 @@ export class OrdersService {
       active.every((s) => s.status === ShipmentStatus.RECEIVED);
     if (!allReceived) return;
 
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-    });
-    if (order && order.status !== OrderStatus.DELIVERED) {
-      order.status = OrderStatus.DELIVERED;
-      await this.orderRepository.save(order);
-    }
+    // MỘT câu UPDATE có điều kiện, không đọc-rồi-ghi: điều kiện cũ chỉ là
+    // "chưa phải delivered", nên đơn đã huỷ hoặc đã hoàn tiền cũng bị kéo sang
+    // delivered. Điều kiện nằm trong WHERE thì một lượt huỷ commit chen giữa
+    // cũng không bị ghi đè.
+    await this.orderRepository.update(
+      {
+        id: orderId,
+        status: Not(In([...DA_DONG_KHONG_GIAO, OrderStatus.DELIVERED])),
+      },
+      { status: OrderStatus.DELIVERED },
+    );
   }
 
   /**
@@ -1209,9 +1326,43 @@ export class OrdersService {
         'Đơn này không dùng địa chỉ GHN nên không tạo được vận đơn',
       );
     }
+    const maTruoc = order.tracking_code;
     await this.createGhnShipmentsPerSeller(order);
-    // createGhnShipmentsPerSeller có thể điền order.tracking_code (UI cũ đọc).
-    await this.orderRepository.save(order);
+
+    // GHI ĐÚNG MỘT CỘT, DƯỚI KHOÁ DÒNG ĐƠN.
+    //
+    // `createGhnShipmentsPerSeller` có thể điền `order.tracking_code` (UI cũ
+    // đọc). Bản cũ `save(order)` NGUYÊN entity đọc từ trước lời gọi GHN: tiền
+    // về trong quãng đó thì `is_paid` bị kéo về 0, đơn bị huỷ trong quãng đó
+    // thì sống lại thành `confirmed` (bài kiểm "review 2"). Cùng lỗi mà bản vá
+    // B đã sửa ở `updateStatus`, ở đây chỉ sót lại.
+    const maMoi =
+      order.tracking_code !== maTruoc ? order.tracking_code : undefined;
+    const trangThai = await this.dataSource.transaction(async (em) => {
+      const chot = await em.findOne(Order, {
+        where: { id: orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!chot) throw new NotFoundException('Không tìm thấy đơn hàng');
+      // Chỉ điền khi còn trống: một lần tạo lại khác chạy song song có thể đã
+      // điền mã của nó rồi, ghi đè là đổi mã đại diện mà không ai yêu cầu.
+      if (
+        maMoi &&
+        !chot.tracking_code &&
+        !DA_DONG_KHONG_GIAO.includes(chot.status)
+      ) {
+        await em.update(Order, { id: orderId }, { tracking_code: maMoi });
+      }
+      return chot.status;
+    });
+    if (DA_DONG_KHONG_GIAO.includes(trangThai)) {
+      await this.baoVanDonMoCoi(orderId, trangThai);
+      throw new ConflictException(
+        `Đơn hàng vừa chuyển sang "${trangThai}" trong lúc tạo lại vận đơn. ` +
+          'Vận đơn vừa tạo cần được huỷ trên GHN.',
+      );
+    }
+
     return this.shipmentRepository.find({
       where: { order: { id: orderId } },
       relations: ['seller'],
@@ -1276,6 +1427,10 @@ export class OrdersService {
         status: ShipmentStatus.DELIVERED,
         received_at: IsNull(),
         delivered_at: LessThan(cutoff),
+        // Lô của đơn đã huỷ/hoàn tiền thì không tự chốt: chốt là giải ngân và
+        // đặt đơn sang delivered. Lô đó đã được đánh dấu cần xử lý tay (xem
+        // `baoVanDonMoCoi`), job không được tự quyết thay.
+        order: { status: Not(In(DA_DONG_KHONG_GIAO)) },
       },
       relations: ['seller', 'order'],
     });
@@ -1313,7 +1468,7 @@ export class OrdersService {
     order: Order,
     dto: UpdateOrderDto,
     actors: OrderActor[],
-  ): void {
+  ): Partial<Order> {
     const fields = [
       'shipping_address',
       'receiver_name',
@@ -1324,7 +1479,7 @@ export class OrdersService {
     ] as const;
 
     const touched = fields.filter((f) => dto[f] !== undefined);
-    if (!touched.length) return;
+    if (!touched.length) return {};
 
     const isAdmin = actors.includes(OrderActor.ADMIN);
     if (!isAdmin) {
@@ -1344,6 +1499,55 @@ export class OrdersService {
     for (const field of touched) {
       (order as any)[field] = dto[field];
     }
+    // Trả riêng phần vừa đổi để người gọi ghi ĐÚNG những cột này, không lưu
+    // cả entity (xem khối khoá dòng trong `updateStatus`).
+    return Object.fromEntries(touched.map((f) => [f, dto[f]]));
+  }
+
+  /**
+   * Vận đơn GHN vừa tạo cho một lần xác nhận KHÔNG thành, vì đơn đã bị huỷ
+   * (hoặc hoàn tiền) trong lúc chờ GHN trả lời.
+   *
+   * Vận đơn đó vẫn sống bên GHN: tài xế vẫn tới lấy hàng, vẫn thu hộ, trong
+   * khi tiền đã hoàn và hàng đã về kho ở phía mình. Không tự gọi API huỷ của
+   * GHN ở đây (chưa có trong `GhnService`, và gọi mạng thêm một vòng trong
+   * đường lỗi là đổi một sự cố thành hai). Nên: log ERROR để có người đọc, và
+   * ghi thẳng vào cột `error` của vận đơn để người bán/admin nhìn thấy trên
+   * màn đơn hàng. Gỡ khi `GhnService` có hàm huỷ vận đơn.
+   */
+  private async baoVanDonMoCoi(
+    orderId: number,
+    trangThai: OrderStatus,
+  ): Promise<void> {
+    if (
+      trangThai !== OrderStatus.CANCELLED &&
+      trangThai !== OrderStatus.REFUNDED
+    ) {
+      return;
+    }
+    const moCoi = await this.shipmentRepository.find({
+      where: {
+        order: { id: orderId },
+        status: ShipmentStatus.CREATED,
+        tracking_code: Not(IsNull()),
+      },
+    });
+    if (!moCoi.length) return;
+
+    const ma = moCoi.map((s) => s.tracking_code).join(', ');
+    this.logger.error(
+      `Đơn #${orderId} đã sang "${trangThai}" trong lúc tạo vận đơn GHN. ` +
+        `Vận đơn ${ma} không còn đơn sống đứng sau: CẦN HUỶ TAY TRÊN GHN, nếu ` +
+        'không tài xế vẫn tới lấy hàng và thu hộ.',
+    );
+    await this.shipmentRepository.update(
+      { id: In(moCoi.map((s) => s.id)) },
+      {
+        error:
+          `Đơn đã ${trangThai === OrderStatus.CANCELLED ? 'huỷ' : 'hoàn tiền'} ` +
+          'trong lúc tạo vận đơn. Cần huỷ vận đơn này trên GHN bằng tay.',
+      },
+    );
   }
 
   /**
@@ -1739,6 +1943,32 @@ export class OrdersService {
         );
       }
 
+      // KIỆN HÀNG ĐÃ NẰM TRONG TAY GHN THÌ KHÔNG HUỶ ĐƯỢC NỮA.
+      //
+      // Cron huỷ đơn quá hạn đã tránh đúng trường hợp này từ lâu
+      // (`tasks.service.ts`, lọc `tracking_code IS NULL`), nhưng nút huỷ của
+      // người mua và "huỷ bán" của người bán thì không: người mua huỷ một đơn
+      // đã gửi đi là được hoàn tiền trong khi món hàng vẫn đang trên đường tới
+      // nhà họ, và GHN không hề biết đơn đã huỷ. Đo bằng bài kiểm E trong
+      // `dua-trang-thai-don.spec.ts`.
+      //
+      // Kiểm ở ĐÂY, dưới khoá dòng đơn, chứ không ở `assertCancellable`: ba
+      // đường huỷ đều đi qua đây, và đọc trong transaction thì không lọt qua
+      // khe giữa lúc kiểm và lúc huỷ. Lô FAILED không tính: GHN chưa nhận hàng.
+      const vanDonDangDi = await em.count(OrderShipment, {
+        where: {
+          order: { id: order.id },
+          tracking_code: Not(IsNull()),
+          status: Not(ShipmentStatus.FAILED),
+        },
+      });
+      if (vanDonDangDi > 0) {
+        throw new BadRequestException(
+          'Đơn hàng đã có vận đơn GHN đang giao nên không huỷ được nữa. ' +
+            'Liên hệ người bán hoặc quản trị viên để xử lý hoàn hàng.',
+        );
+      }
+
       // Đọc `is_paid` từ bản vừa khoá, không dùng bản nạp từ trước: tiền có thể
       // vừa về trong lúc chờ.
       order.is_paid = chot.is_paid;
@@ -1792,7 +2022,10 @@ export class OrdersService {
           .filter((id): id is number => id !== undefined),
       );
 
-      for (const item of order.items) {
+      // Cộng kho theo id sản phẩm TĂNG dần, đúng thứ tự `orders.create` khoá
+      // sản phẩm. Đi theo thứ tự dòng hàng thì một lượt đặt hàng chạm cùng hai
+      // món theo chiều ngược lại là đủ cho deadlock 1213 (review 5).
+      for (const item of theoIdSanPham(order.items)) {
         if (!item.product) continue;
 
         const sellerId = item.product.seller?.id;
@@ -1826,6 +2059,83 @@ export class OrdersService {
         .findOne({ where: { id: productId }, select: { stock: true } })
         .catch(() => null);
       if (p) await this.stockEvents.phat(productId, p.stock);
+    }
+  }
+
+  /**
+   * Huỷ vận đơn GHN còn sống của đơn, TRƯỚC khi huỷ đơn.
+   *
+   * VÌ SAO. Bản vá E chặn huỷ đơn có vận đơn GHN đang đi, nhưng vận đơn được
+   * tạo ngay lúc người bán xác nhận: chặn mà không huỷ vận đơn thì không còn
+   * ai huỷ được một đơn GHN đã xác nhận (review 6), trong khi web và mobile
+   * vẫn hiện nút huỷ. Nên: hỏi GHN huỷ trước, GHN nhận thì huỷ đơn như thường.
+   *
+   * NGOÀI transaction và ngoài mọi khoá: đây là lời gọi mạng.
+   *
+   *  · Lô đã DELIVERED/RECEIVED (hàng tới tay người mua): từ chối luôn, không
+   *    hỏi GHN. Lớp chặn trong `applyCancellation` vẫn giữ nguyên.
+   *  · GHN từ chối mã nào (thường vì tài xế đã lấy hàng): từ chối huỷ đơn.
+   *  · GHN lỗi mạng: từ chối, vì "không rõ đã huỷ chưa" không phải "đã huỷ".
+   *  · GHN nhận huỷ: lô chuyển FAILED kèm lý do. Dùng lại FAILED chứ không
+   *    thêm trạng thái mới (đổi enum là thêm migration): lô FAILED không còn
+   *    tính là "đang đi", và đơn đã huỷ thì `retryGhnShipments` không tạo lại.
+   *
+   * Nợ kỹ thuật, nói thẳng: đơn nhiều người bán mà GHN nhận huỷ lô này, từ
+   * chối lô kia thì lô đã huỷ ở lại FAILED trên một đơn chưa huỷ; người bán
+   * của lô đó phải bấm tạo lại vận đơn. Gỡ khi có huỷ theo từng người bán.
+   */
+  private async huyVanDonGhnTruoc(orderId: number): Promise<void> {
+    const lo = (
+      await this.shipmentRepository.find({
+        where: { order: { id: orderId }, tracking_code: Not(IsNull()) },
+      })
+    ).filter((s) => s.status !== ShipmentStatus.FAILED);
+    if (!lo.length) return;
+
+    if (lo.some((s) => s.status !== ShipmentStatus.CREATED)) {
+      throw new BadRequestException(
+        'Kiện hàng đã được GHN giao tới người nhận nên không huỷ được đơn nữa. ' +
+          'Liên hệ người bán hoặc quản trị viên để xử lý hoàn hàng.',
+      );
+    }
+
+    let ketQua: Array<{ order_code: string; result: boolean; message: string }>;
+    try {
+      ketQua = await this.ghnService.cancelOrders(
+        lo.map((s) => s.tracking_code),
+      );
+    } catch (err) {
+      throw new BadRequestException(
+        `Chưa huỷ được vận đơn trên GHN (${ghnErrorMessage(err)}) nên chưa huỷ ` +
+          'đơn. Thử lại sau ít phút.',
+      );
+    }
+
+    const ghnNhan = new Set(
+      ketQua.filter((k) => k.result).map((k) => k.order_code),
+    );
+    const daHuy = lo.filter((s) => ghnNhan.has(s.tracking_code));
+    if (daHuy.length) {
+      await this.shipmentRepository.update(
+        { id: In(daHuy.map((s) => s.id)), status: ShipmentStatus.CREATED },
+        {
+          status: ShipmentStatus.FAILED,
+          error: 'Đã huỷ vận đơn trên GHN vì đơn hàng bị huỷ.',
+        },
+      );
+    }
+
+    const biTuChoi = lo.filter((s) => !ghnNhan.has(s.tracking_code));
+    if (biTuChoi.length) {
+      const lyDo = ketQua.find(
+        (k) =>
+          !k.result && k.message && k.order_code === biTuChoi[0].tracking_code,
+      )?.message;
+      throw new BadRequestException(
+        'GHN đã lấy hàng, không huỷ được nữa' +
+          (lyDo ? ` (${lyDo})` : '') +
+          '. Liên hệ người bán hoặc quản trị viên để xử lý hoàn hàng.',
+      );
     }
   }
 
@@ -1875,6 +2185,7 @@ export class OrdersService {
     const order = await this.findOneAsBuyerOrAdmin(id, user);
     this.assertCancellable(order, 'hủy đơn hàng');
 
+    await this.huyVanDonGhnTruoc(order.id);
     await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
 
@@ -1903,6 +2214,7 @@ export class OrdersService {
     if (!order) return;
 
     this.assertCancellable(order, 'hủy đơn quá hạn');
+    await this.huyVanDonGhnTruoc(order.id);
     await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
   }
@@ -2042,6 +2354,7 @@ export class OrdersService {
     // Dùng chung đúng một đường huỷ với `cancel()`. Trước đây hai hàm này là
     // hai bản chép tay của cùng một việc, thứ tự các bước còn khác nhau — nên
     // sửa một chỗ là bỏ sót chỗ kia.
+    await this.huyVanDonGhnTruoc(order.id);
     await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
 

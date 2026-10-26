@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import { BadRequestException } from '@nestjs/common';
 import { CartService } from './cart.service';
 import { Cart } from './entities/cart.entity';
 import { ProductsService } from '@catalog/products/products.service';
@@ -60,6 +61,7 @@ jest.setTimeout(60_000);
 describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => {
   let ds: DataSource;
   let cart: CartService;
+  let products: ProductsService;
 
   let buyerId: number;
   let sellerId: number;
@@ -126,7 +128,9 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
       create: () => Promise.resolve(undefined),
     } as unknown as NotificationsService;
 
-    const products = new ProductsService(
+    // ProductsService vẫn dựng (cache trong bộ nhớ) để bài kiểm cache còn ý
+    // nghĩa: nó làm ấm cache, rồi CartService phải KHÔNG đọc từ đó.
+    products = new ProductsService(
       ds.getRepository(Product),
       ds.getRepository(Follow),
       ds.getRepository(Shop),
@@ -134,7 +138,7 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
       createCache({ ttl: 30_000 }),
       khoPhat,
     );
-    cart = new CartService(ds.getRepository(Cart), products);
+    cart = new CartService(ds.getRepository(Cart));
   });
 
   async function taoUser(email: string, role: UserRole): Promise<number> {
@@ -226,5 +230,165 @@ describe('CartService — giỏ hàng phải kiểm trước khi nhận', () => 
       nguoiMua(),
     );
     expect(item.quantity).toBe(2);
+  });
+
+  // ─── GIỎ KHÔNG ĐƯỢC GIỮ NHIỀU HƠN KHO HIỆN TẠI (26/10) ─────────────────────
+  //
+  // Ảnh chụp giỏ web ngày 26/10: nồi chiên 20.000đ, ô số lượng hiện 7, dòng ghi
+  // "Chỉ còn 4 cái, giỏ đang để 7", thành tiền 80.000đ (4 x 20.000). Giỏ giữ 7
+  // khi kho còn 4, giao diện hiện một số nhưng tính tiền theo số khác. Ba đường
+  // dẫn tới đó, mỗi đường một bài kiểm dưới đây:
+  //
+  //   · `create` đọc kho qua `ProductsService.findOne`, bản cache ~60s trong
+  //     Redis: kho vừa giảm mà cache còn số cũ thì vẫn nhận.
+  //   · `create` cộng dồn kiểu đọc rồi ghi: hai lần bấm sát nhau cùng đọc một
+  //     số cũ, cùng qua kiểm, lần sau ghi đè lần trước.
+  //   · kho giảm SAU khi đã bỏ vào giỏ (người khác mua mất): không ai hạ dòng
+  //     giỏ xuống, nên `findAll` trả về 7 trong khi kho còn 4.
+
+  async function soTrongGio(pid: number): Promise<number | undefined> {
+    const rows = await ds.query<Array<{ quantity: number }>>(
+      'SELECT quantity FROM carts WHERE user_id = ? AND product_id = ?',
+      [buyerId, pid],
+    );
+    return rows[0] ? Number(rows[0].quantity) : undefined;
+  }
+
+  async function datThangVaoGio(pid: number, soLuong: number): Promise<void> {
+    await ds.query(
+      'INSERT INTO carts (user_id, product_id, quantity) VALUES (?, ?, ?)',
+      [buyerId, pid, soLuong],
+    );
+  }
+
+  it('kho vừa giảm thì "Thêm vào giỏ" phải thấy số mới, không đọc bản cache', async () => {
+    const pid = await taoSanPham(ProductStatus.ACTIVE, 5);
+    // Lần đầu: ProductsService.findOne đưa sản phẩm (kho 5) vào cache.
+    await products.findOne(pid);
+    await cart.create({ product_id: pid, quantity: 1 }, nguoiMua());
+
+    // Người khác mua hết, kho trong database còn 1. Cache vẫn ghi 5.
+    await ds.query('UPDATE products SET stock = 1 WHERE id = ?', [pid]);
+
+    await expect(
+      cart.create({ product_id: pid, quantity: 1 }, nguoiMua()),
+    ).rejects.toThrow(BadRequestException);
+    expect(await soTrongGio(pid)).toBe(1);
+  });
+
+  it('mười lần bấm "Thêm" cùng lúc vào dòng đã có: không mất lượt nào', async () => {
+    const pid = await taoSanPham(ProductStatus.ACTIVE, 50);
+    await cart.create({ product_id: pid, quantity: 1 }, nguoiMua());
+
+    const kq = await Promise.allSettled(
+      Array.from({ length: 10 }, () =>
+        cart.create({ product_id: pid, quantity: 1 }, nguoiMua()),
+      ),
+    );
+    const thanhCong = kq.filter((k) => k.status === 'fulfilled').length;
+
+    expect(thanhCong).toBe(10);
+    expect(await soTrongGio(pid)).toBe(11);
+  });
+
+  it('bấm "Thêm" cùng lúc sát trần kho: số trong giỏ khớp số lần thành công và không vượt kho', async () => {
+    const pid = await taoSanPham(ProductStatus.ACTIVE, 5);
+    await cart.create({ product_id: pid, quantity: 1 }, nguoiMua());
+
+    const kq = await Promise.allSettled(
+      Array.from({ length: 10 }, () =>
+        cart.create({ product_id: pid, quantity: 1 }, nguoiMua()),
+      ),
+    );
+    const thanhCong = kq.filter((k) => k.status === 'fulfilled').length;
+    const trongGio = await soTrongGio(pid);
+
+    expect(trongGio).toBe(1 + thanhCong);
+    expect(trongGio).toBe(5);
+    expect(thanhCong).toBe(4);
+  });
+
+  it('lần thêm ĐẦU TIÊN bấm cùng lúc (chưa có dòng giỏ): không lần nào nổ trùng khoá', async () => {
+    const pid = await taoSanPham(ProductStatus.ACTIVE, 50);
+
+    const kq = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        cart.create({ product_id: pid, quantity: 1 }, nguoiMua()),
+      ),
+    );
+    const loi = kq
+      .filter((k): k is PromiseRejectedResult => k.status === 'rejected')
+      .map((k) => (k.reason as Error).message);
+
+    expect(loi).toEqual([]);
+    expect(await soTrongGio(pid)).toBe(5);
+  });
+
+  it('dòng giỏ đã bằng kho thì từ chối và nói rõ giỏ đang có bao nhiêu', async () => {
+    const pid = await taoSanPham(ProductStatus.ACTIVE, 4);
+    await cart.create({ product_id: pid, quantity: 4 }, nguoiMua());
+
+    await expect(
+      cart.create({ product_id: pid, quantity: 1 }, nguoiMua()),
+    ).rejects.toThrow('Giỏ của bạn đã có 4 cái, bằng số còn trong kho');
+    expect(await soTrongGio(pid)).toBe(4);
+  });
+
+  it('dòng giỏ đã VƯỢT kho (kho giảm sau khi bỏ vào giỏ) thì "Thêm" cũng từ chối, không cộng tiếp', async () => {
+    const pid = await taoSanPham(ProductStatus.ACTIVE, 4);
+    await datThangVaoGio(pid, 7);
+
+    await expect(
+      cart.create({ product_id: pid, quantity: 1 }, nguoiMua()),
+    ).rejects.toThrow('Giỏ của bạn đã có 7 cái');
+  });
+
+  it('findAll hạ dòng vượt kho xuống bằng kho, ghi vào database và báo số cũ', async () => {
+    const vuot = await taoSanPham(ProductStatus.ACTIVE, 4);
+    const hetHang = await taoSanPham(ProductStatus.ACTIVE, 0);
+    const ngungBan = await taoSanPham(ProductStatus.PENDING, 4);
+    const daXoa = await taoSanPham(ProductStatus.ACTIVE, 4);
+    const binhThuong = await taoSanPham(ProductStatus.ACTIVE, 10);
+
+    await datThangVaoGio(vuot, 7);
+    await datThangVaoGio(hetHang, 3);
+    await datThangVaoGio(ngungBan, 7);
+    await datThangVaoGio(daXoa, 7);
+    await datThangVaoGio(binhThuong, 2);
+    await ds.query('UPDATE products SET deleted_at = NOW() WHERE id = ?', [
+      daXoa,
+    ]);
+
+    const { meta, result } = await cart.findAll(nguoiMua());
+    expect(meta.total).toBe(5);
+
+    const dongCua = async (pid: number) => {
+      const [row] = await ds.query<Array<{ id: number }>>(
+        'SELECT id FROM carts WHERE user_id = ? AND product_id = ?',
+        [buyerId, pid],
+      );
+      const dong = result.find((d) => d.id === row.id);
+      if (!dong) throw new Error(`findAll thiếu dòng của sản phẩm ${pid}`);
+      return dong as typeof dong & { quantity_adjusted_from?: number };
+    };
+
+    const dVuot = await dongCua(vuot);
+    expect(dVuot.quantity).toBe(4);
+    expect(dVuot.quantity_adjusted_from).toBe(7);
+    expect(await soTrongGio(vuot)).toBe(4);
+
+    // Hết hàng, ngừng bán, đã xoá: để nguyên, client hiện "hết hàng" và loại
+    // khỏi tổng tiền. Hạ về 0 là xoá mất ý định mua của người ta.
+    for (const pid of [hetHang, ngungBan, daXoa]) {
+      const d = await dongCua(pid);
+      expect(d).not.toHaveProperty('quantity_adjusted_from');
+    }
+    expect(await soTrongGio(hetHang)).toBe(3);
+    expect(await soTrongGio(ngungBan)).toBe(7);
+    expect(await soTrongGio(daXoa)).toBe(7);
+
+    const dThuong = await dongCua(binhThuong);
+    expect(dThuong.quantity).toBe(2);
+    expect(dThuong).not.toHaveProperty('quantity_adjusted_from');
   });
 });

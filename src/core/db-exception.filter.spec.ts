@@ -135,4 +135,22 @@ describe('DatabaseExceptionFilter — lỗi database nói được tiếng ngư�
     expect(body).not.toMatch(/ORD-20260921-746/);
     expect(body).not.toMatch(/Duplicate entry/);
   });
+
+  /**
+   * Review 11: deadlock (1213) và chờ khoá quá hạn (1205) rơi vào nhánh mặc
+   * định, nên người dùng nhận 500 "không ghi được dữ liệu". Cả hai đều do hai
+   * thao tác chạm nhau cùng lúc, MySQL đã quay lui trọn transaction và thử lại
+   * là đúng cách xử lý: 409 kèm lời mời thử lại, không phải lỗi máy chủ.
+   */
+  it.each([
+    [1213, 'Deadlock found when trying to get lock'],
+    [1205, 'Lock wait timeout exceeded; try restarting transaction'],
+  ])('tranh khoá (%i) → 409, mời thử lại', (errno, msg) => {
+    const { host, ghi } = dungHost();
+    filter.catch(loiMySQL(errno, msg), host);
+
+    expect(ghi.status).toBe(409);
+    expect(String(ghi.body?.message)).toMatch(/thử lại/i);
+    expect(String(ghi.body?.message)).not.toMatch(/Deadlock|Lock wait/);
+  });
 });

@@ -161,11 +161,13 @@ export class WithdrawalsService {
    * Bước này chỉ nói "được, tôi sẽ chuyển khoản".
    */
   async approve(id: number, adminId: number) {
-    const withdrawal = await this.loadPending(id);
-    withdrawal.status = WithdrawalStatus.APPROVED;
-    withdrawal.approved_by = { id: adminId } as any;
-    withdrawal.processed_at = new Date();
-    return this.withdrawalRepository.save(withdrawal);
+    return this.dataSource.transaction(async (em) => {
+      const withdrawal = await this.loadPending(id, em);
+      withdrawal.status = WithdrawalStatus.APPROVED;
+      withdrawal.approved_by = { id: adminId } as any;
+      withdrawal.processed_at = new Date();
+      return em.save(Withdrawal, withdrawal);
+    });
   }
 
   /** Admin từ chối — trả tiền về ví người dùng. */
@@ -209,18 +211,12 @@ export class WithdrawalsService {
    */
   async complete(id: number, adminId: number) {
     return this.dataSource.transaction(async (em) => {
-      const withdrawal = await em.findOne(Withdrawal, {
-        where: { id },
-        relations: ['user'],
-      });
-      if (!withdrawal) {
-        throw new NotFoundException('Không tìm thấy yêu cầu rút tiền');
-      }
-      if (withdrawal.status !== WithdrawalStatus.APPROVED) {
-        throw new BadRequestException(
-          'Chỉ đánh dấu hoàn tất được yêu cầu đã duyệt',
-        );
-      }
+      const withdrawal = await this.khoaVaKiem(
+        em,
+        id,
+        WithdrawalStatus.APPROVED,
+        'Chỉ đánh dấu hoàn tất được yêu cầu đã duyệt',
+      );
 
       const amount = BigInt(Math.round(Number(withdrawal.amount)));
       const pending = await this.pendingAccount(withdrawal.user.id, em);
@@ -251,18 +247,51 @@ export class WithdrawalsService {
     });
   }
 
-  private async loadPending(id: number, manager?: EntityManager) {
-    const em = manager ?? this.dataSource.manager;
+  private loadPending(id: number, em: EntityManager) {
+    return this.khoaVaKiem(
+      em,
+      id,
+      WithdrawalStatus.PENDING,
+      'Yêu cầu đã được xử lý',
+    );
+  }
+
+  /**
+   * Nạp yêu cầu rút tiền DƯỚI KHOÁ DÒNG, rồi mới kiểm trạng thái mong đợi.
+   *
+   * VÌ SAO. `approve` từng chạy không transaction, `reject` và `complete`
+   * đọc bằng câu đọc thường. Hai admin cùng mở một yêu cầu, một người duyệt
+   * một người từ chối: cả hai thấy `pending`, cả hai trả 200, tiền đã về ví
+   * người bán theo lượt từ chối mà yêu cầu lại nằm ở `approved` theo lượt
+   * duyệt ghi sau. Đo bằng `duyet-rut-tien-dua.spec.ts`: 5/5 cặp chạy song
+   * song đều "thắng" cả hai.
+   *
+   * Có `FOR UPDATE` thì lượt sau phải chờ lượt trước commit, đọc thấy trạng
+   * thái mới và nhận 400. Khoá riêng bảng withdrawals rồi mới nạp `user` bằng
+   * câu thứ hai, để không khoá lây dòng `users` qua JOIN (cùng lý do với
+   * `EscrowsService.napVaKhoa`); `user` của một yêu cầu không bao giờ đổi.
+   */
+  private async khoaVaKiem(
+    em: EntityManager,
+    id: number,
+    canCo: WithdrawalStatus,
+    loi: string,
+  ): Promise<Withdrawal> {
     const withdrawal = await em.findOne(Withdrawal, {
       where: { id },
-      relations: ['user'],
+      lock: { mode: 'pessimistic_write' },
     });
     if (!withdrawal) {
       throw new NotFoundException('Không tìm thấy yêu cầu rút tiền');
     }
-    if (withdrawal.status !== WithdrawalStatus.PENDING) {
-      throw new BadRequestException('Yêu cầu đã được xử lý');
+    if (withdrawal.status !== canCo) {
+      throw new BadRequestException(loi);
     }
+    const coUser = await em.findOne(Withdrawal, {
+      where: { id },
+      relations: ['user'],
+    });
+    if (coUser) withdrawal.user = coUser.user;
     return withdrawal;
   }
 }

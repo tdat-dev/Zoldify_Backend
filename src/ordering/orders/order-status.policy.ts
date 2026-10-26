@@ -78,6 +78,24 @@ const RULES: Record<OrderStatus, TransitionRule> = {
   },
 };
 
+/**
+ * Đơn đã khép lại mà hàng KHÔNG tới tay người mua: huỷ, hoặc đã hoàn tiền.
+ *
+ * Mọi đường đặt `delivered` không qua bảng RULES (người mua bấm nhận từng lô,
+ * job tự xác nhận sau N ngày) phải loại các trạng thái này. Thiếu nó thì đơn
+ * đã huỷ vẫn bị kéo sang `delivered` chỉ vì còn một lô GHN sống sót (bài kiểm
+ * E trong `dua-trang-thai-don.spec.ts`).
+ *
+ * Vì sao liệt kê trạng thái ĐÓNG chứ không liệt kê trạng thái "đang giao":
+ * đơn COD được admin ghi nhận đã thu tiền có thể vẫn nằm ở `pending` trong
+ * lúc hàng đi (TC-P0-05b, TC-P2-17). Chặn theo danh sách "đang giao" là chặn
+ * nhầm cả những đơn đó.
+ */
+export const DA_DONG_KHONG_GIAO: OrderStatus[] = [
+  OrderStatus.CANCELLED,
+  OrderStatus.REFUNDED,
+];
+
 /** Trạng thái đích nào kéo theo việc tiền đổi chủ */
 export const MONEY_MOVING_STATUSES: OrderStatus[] = [
   OrderStatus.DELIVERED,
