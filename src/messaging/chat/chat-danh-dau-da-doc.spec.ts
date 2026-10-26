@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ChatService } from './chat.service';
 import { Conversation } from './entities/conversation.entity';
@@ -116,10 +116,15 @@ describe('markAsRead: chỉ thành viên, chỉ tin của người kia', () => {
     }
   });
 
-  it('người ngoài hội thoại bị từ chối, không tin nào đổi', async () => {
+  // 404 như hội thoại không tồn tại, không phải 400 "không phải thành viên":
+  // hai câu khác nhau là cho người ngoài biết id nào có thật (dò hội thoại).
+  it('người ngoài hội thoại nhận cùng 404 như id không tồn tại, không tin nào đổi', async () => {
     await expect(
       svc.markAsRead(convId, { id: NGOAI, role: 'buyer' } as IUser),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow(NotFoundException);
+    await expect(
+      svc.markAsRead(987654321, { id: NGOAI, role: 'buyer' } as IUser),
+    ).rejects.toThrow(NotFoundException);
 
     expect(await daDoc(tinCuaMua)).toBe(false);
     expect(await daDoc(tinCuaBan)).toBe(false);
