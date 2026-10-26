@@ -5,7 +5,7 @@ import { ganBatLoiTienTrinh } from './common/loi-tien-trinh';
 
 // Cùng bộ bắt với api. Worker còn cần nó hơn: job chạy nền là nơi dễ có lời
 // hứa không ai chờ nhất, và tiến trình chết câm thì cron tiền đứng theo.
-ganBatLoiTienTrinh('worker');
+const batLoi = ganBatLoiTienTrinh('worker');
 
 /**
  * Điểm vào của TIẾN TRÌNH WORKER (task #14).
@@ -35,6 +35,8 @@ async function bootstrap() {
     bufferLogs: false,
   });
   app.enableShutdownHooks();
+  // Từ đây lời hứa mồ côi chỉ ghi log; trước đây thì thoát mã 1.
+  batLoi.daKhoiDong();
 
   logger.log('Worker đã khởi động. Cron KHÔNG còn chạy trong tiến trình API.');
 }

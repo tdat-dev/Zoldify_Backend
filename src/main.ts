@@ -20,9 +20,10 @@ import { JsonLogger } from './common/json-logger';
 import { chanTaiLieu, taiKhoanTuMoiTruong } from './core/swagger-guard';
 import { ganBatLoiTienTrinh } from './common/loi-tien-trinh';
 
-// Gắn TRƯỚC khi dựng app: lời hứa mồ côi trong lúc khởi động cũng phải ra log
-// thay vì tắt tiến trình (xem loi-tien-trinh.ts).
-ganBatLoiTienTrinh('api');
+// Gắn TRƯỚC khi dựng app. Tới lúc `daKhoiDong()` (ngay sau app.listen) mọi
+// lời hứa mồ côi đều làm tiến trình thoát mã 1: hỏng lúc boot thì phải chết
+// để được dựng lại, không treo "Up" mà không nghe cổng (xem loi-tien-trinh.ts).
+const batLoi = ganBatLoiTienTrinh('api');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -148,8 +149,18 @@ async function bootstrap() {
   }
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
+  batLoi.daKhoiDong();
   console.log(`🚀 Backend running on http://localhost:${port}`);
   console.log(`📘 API docs:      http://localhost:${port}/api/docs`);
   console.log(`📡 CORS allowed: ${allowedOrigins.join(', ')}`);
 }
-bootstrap();
+
+// Hỏng lúc khởi động (DB không nối được, cổng bị chiếm, cấu hình sai) thì
+// CHẾT với mã 1 để `restart: unless-stopped` dựng lại, cùng luật với worker.ts.
+// Trước đây `bootstrap();` trần: lời hứa bị từ chối rơi vào bộ bắt chung.
+bootstrap().catch((e: unknown) => {
+  console.error(
+    `API KHÔNG khởi động được: ${(e as Error)?.message ?? String(e)}`,
+  );
+  process.exit(1);
+});

@@ -13,10 +13,16 @@ import type { EventEmitter } from 'node:events';
  * chối là đủ để api sập. Chỗ đó đã vá, nhưng chỗ tiếp theo sẽ có người viết.
  *
  * HAI LOẠI, HAI CÁCH XỬ.
- *  · unhandledRejection: GHI LOG, KHÔNG THOÁT. Đây gần như luôn là một việc
- *    phụ chạy nền (đẩy push, phát tồn kho) quên `.catch`; trạng thái của tiến
- *    trình vẫn nguyên vẹn, giết nó vì thế là đổi một dòng lỗi lấy hàng trăm
- *    request đang dở.
+ *  · unhandledRejection SAU KHI ĐÃ KHỞI ĐỘNG: GHI LOG, KHÔNG THOÁT. Đây gần
+ *    như luôn là một việc phụ chạy nền (đẩy push, phát tồn kho) quên `.catch`;
+ *    trạng thái của tiến trình vẫn nguyên vẹn, giết nó vì thế là đổi một dòng
+ *    lỗi lấy hàng trăm request đang dở.
+ *  · unhandledRejection TRONG LÚC KHỞI ĐỘNG: GHI LOG rồi THOÁT MÃ 1. Bản đầu
+ *    (review 26/10) chỉ ghi log ở mọi lúc, nên cổng bị chiếm (EADDRINUSE), DB
+ *    không nối được hay cấu hình sai lúc boot để lại một container "Up" không
+ *    nghe cổng nào, và `restart: unless-stopped` không bao giờ dựng lại nó.
+ *    Người gọi báo "đã khởi động xong" bằng `daKhoiDong()` của giá trị trả về,
+ *    NGAY SAU `app.listen` (api) hoặc sau khi dựng xong module (worker).
  *  · uncaughtException: GHI LOG rồi THOÁT MÃ 1. Lỗi đồng bộ đã xé ngang một
  *    ngăn xếp gọi giữa chừng, tài liệu Node nói rõ trạng thái sau đó không còn
  *    tin được. Không có bộ bắt thì Node cũng thoát 1; khác biệt duy nhất là
@@ -32,17 +38,24 @@ export function ganBatLoiTienTrinh(
     logger?: { error: (message: string, stack?: string) => void };
     thoat?: (ma: number) => void;
   } = {},
-): void {
+): { daKhoiDong: () => void } {
   const tienTrinh = boCuc.tienTrinh ?? process;
   const logger = boCuc.logger ?? new Logger(ten);
   const thoat = boCuc.thoat ?? ((ma: number) => process.exit(ma));
+  let xong = false;
 
   tienTrinh.on('unhandledRejection', (lyDo: unknown) => {
     const e = lyDo instanceof Error ? lyDo : undefined;
-    logger.error(
-      `unhandledRejection (tiến trình vẫn chạy): ${e ? e.message : String(lyDo)}`,
-      e?.stack,
-    );
+    const moTa = e ? e.message : String(lyDo);
+    if (!xong) {
+      logger.error(
+        `unhandledRejection lúc khởi động (thoát mã 1): ${moTa}`,
+        e?.stack,
+      );
+      thoat(1);
+      return;
+    }
+    logger.error(`unhandledRejection (tiến trình vẫn chạy): ${moTa}`, e?.stack);
   });
 
   tienTrinh.on('uncaughtException', (loi: unknown) => {
@@ -53,4 +66,10 @@ export function ganBatLoiTienTrinh(
     );
     thoat(1);
   });
+
+  return {
+    daKhoiDong: () => {
+      xong = true;
+    },
+  };
 }
