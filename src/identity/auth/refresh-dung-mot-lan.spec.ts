@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DataSource } from 'typeorm';
 import { AuthService } from './auth.service';
@@ -84,10 +84,26 @@ describe('Refresh token chỉ dùng được một lần', () => {
       new JwtService({ secret: 'bi-mat-access-cho-test' }),
       { get: (k: string) => cauHinh[k] } as never,
       ds.getRepository(User),
-      {} as never,
+      cache as never,
       {} as never,
     );
   });
+
+  // Cache trong RAM, đủ get/set/del; `hetHan()` giả lập qua hết khoảng ân
+  // hạn (TTL của cache thật) mà không phải chờ 30 giây.
+  const kho = new Map<string, unknown>();
+  const cache = {
+    get: (k: string) => Promise.resolve(kho.get(k)),
+    set: (k: string, v: unknown) => {
+      kho.set(k, v);
+      return Promise.resolve();
+    },
+    del: (k: string) => {
+      kho.delete(k);
+      return Promise.resolve();
+    },
+  };
+  const hetHanAnHan = () => kho.clear();
 
   beforeEach(async () => {
     await ds.getRepository(User).delete({ id: ID });
@@ -113,19 +129,29 @@ describe('Refresh token chỉ dùng được một lần', () => {
     expect(daLuu).toBe(sha256(t.refresh_token));
   });
 
-  it('dùng lại refresh token đã đổi thì bị từ chối', async () => {
-    const t = await svc.login(nguoi);
-    await svc.refreshToken(t.refresh_token);
-
-    await expect(svc.refreshToken(t.refresh_token)).rejects.toThrow(
-      BadRequestException,
-    );
-  });
-
-  it('gặp token cũ quay lại: tăng token_version, token mới nhất cũng chết', async () => {
+  // KHOẢNG ÂN HẠN. Hai request làm mới cùng lúc bằng một token (hai tab, app
+  // thử lại khi mạng chập chờn) là chuyện bình thường, không phải trộm. Bản
+  // trước coi request thua là "dùng lại" và tăng token_version, tức giết luôn
+  // token vừa phát cho request thắng: người dùng bị đá ra vì chính mình.
+  it('token vừa đổi gửi lại trong khoảng ân hạn: 409, không thu hồi phiên', async () => {
     const t = await svc.login(nguoi);
     const moi = await svc.refreshToken(t.refresh_token);
     const truoc = await tokenVersion();
+
+    await expect(svc.refreshToken(t.refresh_token)).rejects.toThrow(
+      ConflictException,
+    );
+
+    expect(await tokenVersion()).toBe(truoc);
+    const tiep = await svc.refreshToken(moi.refresh_token);
+    expect(tiep.access_token).toBeTruthy();
+  });
+
+  it('gặp token cũ quay lại sau khoảng ân hạn: tăng token_version, token mới nhất cũng chết', async () => {
+    const t = await svc.login(nguoi);
+    const moi = await svc.refreshToken(t.refresh_token);
+    const truoc = await tokenVersion();
+    hetHanAnHan();
 
     await expect(svc.refreshToken(t.refresh_token)).rejects.toThrow(
       BadRequestException,
@@ -157,5 +183,22 @@ describe('Refresh token chỉ dùng được một lần', () => {
     ]);
 
     expect(kq.filter((k) => k.status === 'fulfilled')).toHaveLength(1);
+  });
+
+  it('request thua trong cặp đồng thời nhận 409 và không giết token của request thắng', async () => {
+    const t = await svc.login(nguoi);
+
+    const kq = await Promise.allSettled([
+      svc.refreshToken(t.refresh_token),
+      svc.refreshToken(t.refresh_token),
+    ]);
+    const thang = kq.find((k) => k.status === 'fulfilled');
+    const thua = kq.find((k) => k.status === 'rejected');
+
+    expect(thua?.reason).toBeInstanceOf(ConflictException);
+    expect(await tokenVersion()).toBe(0);
+    const moi = (thang as PromiseFulfilledResult<{ refresh_token: string }>)
+      .value.refresh_token;
+    await expect(svc.refreshToken(moi)).resolves.toBeTruthy();
   });
 });
