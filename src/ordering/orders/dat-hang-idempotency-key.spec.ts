@@ -1,4 +1,4 @@
-import { DataSource } from 'typeorm';
+import { DataSource, FindManyOptions } from 'typeorm';
 import { OrdersService } from './orders.service';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -223,6 +223,49 @@ describe('POST /orders với Idempotency-Key', () => {
       /Idempotency-Key/,
     );
     expect(await soDon()).toBe(0);
+  });
+
+  /**
+   * Review 26/10 mục 2. Hai lượt CÙNG khoá chạy song song trên món CUỐI CÙNG:
+   * lượt B đứng chờ khoá dòng sản phẩm tới khi A commit, rồi đọc lại kho dưới
+   * khoá thấy 0 và ném "chỉ còn 0" trước khi kịp tới câu INSERT (nơi khoá
+   * UNIQUE sẽ cho nó nhận lại đơn của A). Người mua gửi lại đúng như luật
+   * Idempotency-Key mà vẫn nhận lỗi hết hàng.
+   */
+  it('hai lượt cùng khoá song song trên món cuối cùng: cả hai nhận CÙNG một đơn', async () => {
+    await ds.query('UPDATE products SET stock = 1 WHERE id = ?', [productId]);
+    await gioCua(buyerId, 1);
+
+    const [a, b] = await Promise.all([
+      taoDon(don(), ai(buyerId), 'mon-cuoi-1'),
+      taoDon(don(), ai(buyerId), 'mon-cuoi-1'),
+    ]);
+
+    expect(a.id).toBe(b.id);
+    expect(await soDon()).toBe(1);
+  });
+
+  it('lượt gửi lại đọc giỏ SAU khi lượt đầu đã xoá giỏ: nhận đơn đầu, không "Giỏ hàng trống"', async () => {
+    await gioCua(buyerId, 1);
+    const gioRepo = ds.getRepository(Cart);
+    const goc = gioRepo.find.bind(gioRepo) as (
+      o: FindManyOptions<Cart>,
+    ) => Promise<Cart[]>;
+    let dau: Order | undefined;
+    // Lượt B qua bước tra khoá lúc đơn A CHƯA có; ngay trước khi B đọc giỏ,
+    // A chạy trọn vẹn và xoá giỏ.
+    const spy = jest
+      .spyOn(gioRepo, 'find')
+      .mockImplementationOnce(async (o: FindManyOptions<Cart>) => {
+        dau = await taoDon(don(), ai(buyerId), 'gio-da-xoa');
+        return goc(o);
+      });
+
+    const lai = await taoDon(don(), ai(buyerId), 'gio-da-xoa');
+    spy.mockRestore();
+
+    expect(lai.id).toBe(dau?.id);
+    expect(await soDon()).toBe(1);
   });
 
   it('đối chứng: không gửi khoá thì gửi lại sau commit vẫn báo giỏ trống như cũ', async () => {
