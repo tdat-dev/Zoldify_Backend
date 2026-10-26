@@ -215,8 +215,12 @@ export class AuthService {
     // mail (email giả dạng IDN, xem common/email.ts).
     email = emailChuanHoaHoacLoi(email);
     const user = await this.userRepository.findOne({ where: { email } });
-    if (!user)
-      throw new NotFoundException('Không tìm thấy tài khoản với email này');
+    // Không có tài khoản: trả ĐÚNG câu như khi có, không gửi thư. Bản trước
+    // trả 404 "Không tìm thấy tài khoản với email này", tức ai cũng dò được
+    // một danh sách email xem cái nào là khách của sàn. Chỉ chủ hộp thư biết
+    // có thư hay không. (Còn độ chênh thời gian do gửi mail; chấp nhận, vì
+    // route đã bị throttle 5 lần/phút.)
+    if (!user) return { message: 'Mã OTP đã được gửi đến email của bạn' };
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     // Khoá theo ID TÀI KHOẢN, gửi tới EMAIL TRONG DB, không dùng chuỗi gõ vào.
