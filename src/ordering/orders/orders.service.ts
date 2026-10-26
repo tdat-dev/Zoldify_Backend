@@ -36,7 +36,6 @@ import {
   IsNull,
   LessThan,
   Not,
-  QueryFailedError,
 } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { IUser } from '@identity/users/users.interface';
@@ -55,21 +54,6 @@ import {
   decodeCursor,
   encodeCursor,
 } from '@common/dto/pagination.dto';
-
-/** Mã lỗi MySQL khi đụng ràng buộc UNIQUE. Cùng hằng số mà `ledger.service.ts` dùng. */
-const ER_DUP_ENTRY = 1062;
-
-/**
- * Lỗi này có phải do đụng khoá UNIQUE không?
- *
- * Tách khỏi `create()` vì đây là chi tiết của driver, không phải của nghiệp vụ
- * đặt hàng. Cùng cách nhận diện với `LedgerService.isDuplicateKey`.
- */
-function laLoiTrungKhoa(err: unknown): boolean {
-  if (!(err instanceof QueryFailedError)) return false;
-  const driverError = err.driverError as { errno?: number } | undefined;
-  return driverError?.errno === ER_DUP_ENTRY;
-}
 
 /** Dòng hàng sắp theo id sản phẩm tăng dần (dòng mất sản phẩm xếp cuối). */
 function theoIdSanPham(items: OrderItem[] | undefined): OrderItem[] {
@@ -177,6 +161,29 @@ export class OrdersService {
     return k;
   }
 
+  /**
+   * Đơn đã tạo cho cùng một lần đặt hàng: theo khoá của client (Idempotency-Key,
+   * thuộc về từng người dùng) rồi theo khoá giỏ hàng.
+   */
+  private async timDonDaTao(
+    userId: number,
+    khoaKhach: string | null,
+    khoaGio?: string,
+  ): Promise<Order | null> {
+    if (khoaKhach) {
+      const theoKhach = await this.orderRepository.findOne({
+        where: { user: { id: userId }, client_idempotency_key: khoaKhach },
+      });
+      if (theoKhach) return theoKhach;
+    }
+    if (khoaGio) {
+      return this.orderRepository.findOne({
+        where: { idempotency_key: khoaGio },
+      });
+    }
+    return null;
+  }
+
   /** Trả lại một đơn đã tạo, cùng hình dạng với phản hồi đặt hàng mới. */
   private async traLaiDonDaTao(
     id: number,
@@ -205,10 +212,7 @@ export class OrdersService {
     // trùng chuỗi với người khác không bao giờ trả đơn của họ.
     const khoaKhach = this.chuanHoaKhoaKhach(idempotencyKey);
     if (khoaKhach) {
-      const daCo = await this.orderRepository.findOne({
-        where: { user: { id: user.id }, client_idempotency_key: khoaKhach },
-        select: { id: true },
-      });
+      const daCo = await this.timDonDaTao(user.id, khoaKhach);
       if (daCo) {
         this.logger.log(
           `Gửi lại POST /orders cùng Idempotency-Key của user ${user.id}: ` +
@@ -222,6 +226,39 @@ export class OrdersService {
       }
     }
 
+    // LỖI GÌ CŨNG TRA LẠI KHOÁ CỦA CLIENT TRƯỚC KHI TRẢ LỖI.
+    //
+    // Tra ở trên chỉ thấy đơn ĐÃ commit lúc đó. Lượt A cùng khoá đang chạy dở
+    // thì lượt B đi tiếp và vấp đúng hậu quả của A: đọc giỏ sau khi A xoá giỏ
+    // ("Giỏ hàng trống"), hay chờ khoá dòng sản phẩm rồi thấy kho A vừa trừ
+    // ("chỉ còn 0"). Review 26/10 đo được cả hai. Người mua gửi lại đúng luật
+    // Idempotency-Key thì phải nhận đơn của A, không phải lỗi do chính A gây ra.
+    try {
+      return await this.taoDonMoi(createOrderDto, user, khoaKhach);
+    } catch (err) {
+      if (khoaKhach) {
+        const daCo = await this.timDonDaTao(user.id, khoaKhach);
+        if (daCo) {
+          this.logger.log(
+            `Lượt cùng Idempotency-Key của user ${user.id} hỏng vì lượt song ` +
+              `song (${(err as Error).message}): trả lại đơn #${daCo.id}.`,
+          );
+          return this.traLaiDonDaTao(
+            daCo.id,
+            user,
+            createOrderDto.payment_method,
+          );
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async taoDonMoi(
+    createOrderDto: CreateOrderDto,
+    user: IUser,
+    khoaKhach: string | null,
+  ) {
     const {
       shipping_address,
       receiver_name,
@@ -665,26 +702,19 @@ export class OrdersService {
     // Vì sao vẫn tra theo khoá thay vì tin rằng lỗi trùng LUÔN là do khoá này:
     // `orders` còn một khoá UNIQUE nữa (`order_code`). Tra hụt thì ném tiếp,
     // không đoán.
+    //
+    // KHÔNG CHỈ LỖI TRÙNG KHOÁ (review 26/10). Lượt thứ hai cùng giỏ đứng chờ
+    // khoá dòng sản phẩm tới khi lượt đầu commit, rồi đọc lại kho dưới khoá:
+    // món cuối đã bị chính lượt đầu mua nên nó ném "chỉ còn 0" (hay 409 giá
+    // đổi) TRƯỚC khi tới câu INSERT. Bản trước chỉ tra lại khi `ER_DUP_ENTRY`
+    // nên người bấm đúp trên món cuối nhận lỗi hết hàng. Nay lỗi gì cũng tra:
+    // khoá giỏ băm từ id các dòng giỏ, mà các dòng đó bị xoá khi đặt thành
+    // công, nên có đơn mang khoá này nghĩa là CHÍNH giỏ này đã đặt xong.
     let savedOrder: Order;
     try {
       savedOrder = await chayTransaction();
     } catch (err) {
-      if (!laLoiTrungKhoa(err)) throw err;
-
-      // Đụng khoá giỏ hàng HOẶC khoá của client (hai lượt cùng Idempotency-Key
-      // chạy song song mà giỏ khác nhau): tra cả hai, theo thứ tự đó.
-      const daTao =
-        (await this.orderRepository.findOne({
-          where: { idempotency_key: khoaChongTrung },
-        })) ??
-        (khoaKhach
-          ? await this.orderRepository.findOne({
-              where: {
-                user: { id: user.id },
-                client_idempotency_key: khoaKhach,
-              },
-            })
-          : null);
+      const daTao = await this.timDonDaTao(user.id, khoaKhach, khoaChongTrung);
       if (!daTao) throw err;
 
       this.logger.log(
@@ -745,7 +775,9 @@ export class OrdersService {
       if (conLai) await this.stockEvents.phat(ci.product.id, conLai.stock);
     }
 
-    const result: any = await this.findOne(savedOrder.id, user);
+    const result = (await this.findOne(savedOrder.id, user)) as Order & {
+      needs_payOS?: boolean;
+    };
     // Đánh dấu payment_method để frontend biết cần gọi PayOS
     result.needs_payOS = payment_method === PaymentMethod.PAYOS;
     return result;
