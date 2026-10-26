@@ -13,6 +13,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { IUser } from '@identity/users/users.interface';
 import { User } from '@identity/users/entities/user.entity';
+import { laAnhCuaSan } from '@common/public-url';
 
 /**
  * Người kia trong khung chat, chỉ phần client cần: tên, ảnh, lần cuối online.
@@ -333,6 +334,17 @@ export class ChatService {
     }
 
     const { content, images } = sendMessageDto;
+
+    // Ảnh chat thật luôn tải qua POST /files/upload, tức nằm trên host của sàn.
+    // URL trỏ ra máy chủ khác là ảnh theo dõi (lộ IP, giờ mở tin của người
+    // nhận), ảnh đổi nội dung sau khi gửi (sàn mất bằng chứng), hoặc
+    // javascript:/data: chờ một client render không cẩn thận. Kiểm ở service để
+    // cả HTTP lẫn socket đều đi qua.
+    if ((images ?? []).some((u) => !laAnhCuaSan(u, process.env))) {
+      throw new BadRequestException(
+        'Ảnh đính kèm phải được tải lên qua Zoldify',
+      );
+    }
 
     const message = this.messageRepository.create({
       conversation: { id: conversationId },
