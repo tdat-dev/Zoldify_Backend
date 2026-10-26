@@ -441,9 +441,12 @@ async function main(): Promise<void> {
     nOrders === 2,
     `đếm được ${nOrders}`,
   );
+  // Từ 26/10 trang sửa sản phẩm (`update`) đổi kho qua cùng câu UPDATE có
+  // điều kiện với `updateStock`, nên cũng phải phát: người đang xem trang phải
+  // thấy kho mới dù người bán đổi nó từ ô kho nhanh hay từ form sửa.
   kiem(
-    'products.service.ts có 1 chỗ phát (người bán sửa kho)',
-    nProducts === 1,
+    'products.service.ts có 2 chỗ phát (ô kho nhanh + form sửa sản phẩm)',
+    nProducts === 2,
     `đếm được ${nProducts}`,
   );
 
