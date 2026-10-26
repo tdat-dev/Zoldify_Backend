@@ -69,6 +69,15 @@ function laLoiTrungKhoa(err: unknown): boolean {
   return driverError?.errno === ER_DUP_ENTRY;
 }
 
+/** Dòng hàng sắp theo id sản phẩm tăng dần (dòng mất sản phẩm xếp cuối). */
+function theoIdSanPham(items: OrderItem[] | undefined): OrderItem[] {
+  return [...(items ?? [])].sort(
+    (a, b) =>
+      (a.product?.id ?? Number.MAX_SAFE_INTEGER) -
+      (b.product?.id ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -1046,7 +1055,10 @@ export class OrdersService {
 
     if (trangThaiTruoc === OrderStatus.CANCELLED) return;
 
-    for (const item of order.items ?? []) {
+    // Cộng kho theo id sản phẩm TĂNG dần, đúng thứ tự `orders.create` khoá
+    // sản phẩm. Đi theo thứ tự dòng hàng thì một lượt đặt hàng chạm cùng hai
+    // món theo chiều ngược lại là đủ cho deadlock 1213 (review 5).
+    for (const item of theoIdSanPham(order.items)) {
       if (item.product) {
         await em.increment(
           Product,
@@ -2001,7 +2013,10 @@ export class OrdersService {
           .filter((id): id is number => id !== undefined),
       );
 
-      for (const item of order.items) {
+      // Cộng kho theo id sản phẩm TĂNG dần, đúng thứ tự `orders.create` khoá
+      // sản phẩm. Đi theo thứ tự dòng hàng thì một lượt đặt hàng chạm cùng hai
+      // món theo chiều ngược lại là đủ cho deadlock 1213 (review 5).
+      for (const item of theoIdSanPham(order.items)) {
         if (!item.product) continue;
 
         const sellerId = item.product.seller?.id;
