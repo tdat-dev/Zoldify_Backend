@@ -4,6 +4,7 @@ import { FindOptionsWhere, Repository } from 'typeorm';
 import { FileEntity } from './entities/file.entity';
 import type { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
+import { normalizePagination } from '@common/dto/pagination.dto';
 
 /**
  * Ba route đọc/xoá ở /files từng chỉ có JwtAuthGuard: ai đăng nhập cũng liệt
@@ -48,18 +49,23 @@ export class FilesService {
     if (folder) where.folder = folder;
     if (!laAdmin(user)) where.uploaded_by = { id: user.id };
 
+    // Controller chỉ làm `+limit || 20`: `?limit=1000000` lọt qua nguyên vẹn
+    // và `?page=-5` ra skip âm (TypeORM ném, route 500). Ép về khuôn chung
+    // [1, MAX_PAGE_SIZE] như findAll của sản phẩm/đơn (rà soát 26/10 mục 3).
+    const { page: trang, size, offset } = normalizePagination(page, limit, 20);
+
     const [result, total] = await this.fileRepository.findAndCount({
       where,
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: offset,
+      take: size,
       order: { created_at: 'DESC' },
     });
 
     return {
       meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
+        current: trang,
+        pageSize: size,
+        pages: Math.ceil(total / size),
         total,
       },
       result,

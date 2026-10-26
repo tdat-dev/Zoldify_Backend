@@ -8,6 +8,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Withdrawal, WithdrawalStatus } from './entities/withdrawal.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { LedgerService } from '@money/ledger/ledger.service';
+import { normalizePagination } from '@common/dto/pagination.dto';
 import {
   LedgerOwnerType,
   LedgerPurpose,
@@ -116,17 +117,21 @@ export class WithdrawalsService {
   }
 
   async findByUser(userId: number, page: number, limit: number) {
+    // Cùng khuôn với mọi danh sách khác: limit trong [1, MAX_PAGE_SIZE], page
+    // âm/NaN về 1. Controller chỉ làm `Number(limit) || 20`, nên trước 26/10
+    // `?limit=1000000` đi thẳng xuống `take` (rà soát 26/10 mục 3).
+    const { page: trang, size, offset } = normalizePagination(page, limit, 20);
     const [result, total] = await this.withdrawalRepository.findAndCount({
       where: { user: { id: userId } },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: offset,
+      take: size,
       order: { created_at: 'DESC' },
     });
     return {
       meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
+        current: trang,
+        pageSize: size,
+        pages: Math.ceil(total / size),
         total,
       },
       result,
@@ -136,20 +141,21 @@ export class WithdrawalsService {
   async findAll(page: number, limit: number, status?: string) {
     const where: any = {};
     if (status) where.status = status;
+    const { page: trang, size, offset } = normalizePagination(page, limit, 20);
 
     const [result, total] = await this.withdrawalRepository.findAndCount({
       where,
       relations: ['user', 'approved_by'],
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: offset,
+      take: size,
       order: { created_at: 'DESC' },
     });
 
     return {
       meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
+        current: trang,
+        pageSize: size,
+        pages: Math.ceil(total / size),
         total,
       },
       result,

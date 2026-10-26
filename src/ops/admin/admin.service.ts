@@ -15,6 +15,7 @@ import {
 } from '@money/withdrawals/entities/withdrawal.entity';
 import { WithdrawalsService } from '@money/withdrawals/withdrawals.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
+import { normalizePagination } from '@common/dto/pagination.dto';
 
 @Injectable()
 export class AdminService {
@@ -43,18 +44,22 @@ export class AdminService {
     if (role) where.role = role;
     if (is_locked !== undefined) where.is_locked = is_locked === 'true' ? 1 : 0;
 
+    // Trang admin cũng là một danh sách: `?limit=1000000` nạp cả bảng users,
+    // `?page=-5` ra skip âm và 500. Khuôn chung (rà soát 26/10 mục 3).
+    const { page: trang, size, offset } = normalizePagination(page, limit, 20);
+
     const [result, total] = await this.userRepository.findAndCount({
       where,
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: offset,
+      take: size,
       order: { created_at: 'DESC' },
     });
 
     return {
       meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
+        current: trang,
+        pageSize: size,
+        pages: Math.ceil(total / size),
         total,
       },
       result,
@@ -212,20 +217,21 @@ export class AdminService {
   async getWithdrawals(page: number, limit: number, status?: string) {
     const where: any = {};
     if (status) where.status = status;
+    const { page: trang, size, offset } = normalizePagination(page, limit, 20);
 
     const [result, total] = await this.withdrawalRepository.findAndCount({
       where,
       relations: ['user', 'approved_by'],
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: offset,
+      take: size,
       order: { created_at: 'DESC' },
     });
 
     return {
       meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
+        current: trang,
+        pageSize: size,
+        pages: Math.ceil(total / size),
         total,
       },
       result,
