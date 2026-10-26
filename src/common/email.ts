@@ -1,6 +1,7 @@
 import { applyDecorators, BadRequestException } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { IsEmail, Matches } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * CHUẨN HOÁ EMAIL: một chỗ, dùng cho MỌI cửa vào nhận email của luồng xác thực
@@ -45,6 +46,10 @@ export const LOI_EMAIL_KHONG_ASCII =
  */
 export function EmailChuanHoa(): PropertyDecorator {
   return applyDecorators(
+    // Plugin Swagger chỉ suy ra format: email khi thấy @IsEmail đặt thẳng trên
+    // trường; gói trong applyDecorators thì mất, và client sinh từ openapi.json
+    // mất kiểu email. Khai lại tường minh.
+    ApiProperty({ type: String, format: 'email' }),
     Transform(({ value }) => chuanHoaEmail(value)),
     Matches(CHI_ASCII, { message: LOI_EMAIL_KHONG_ASCII }),
     IsEmail({}, { message: 'Email không hợp lệ' }),
