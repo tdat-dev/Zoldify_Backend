@@ -622,11 +622,20 @@ export class OrdersService {
         // chối kèm câu giải thích thì họ nhìn thấy giá mới rồi tự quyết, đúng
         // khuôn `ConflictException('Kho vừa thay đổi, mời bạn đặt lại đơn')`.
         const giaThat = new Map(daKhoa.map((p) => [p.id, Number(p.price)]));
+        // TRẠNG THÁI CŨNG ĐỌC LẠI DƯỚI KHOÁ (review 26/10). Kiểm `active` ở
+        // vòng duyệt giỏ là trên bản đọc NGOÀI transaction: admin khoá người
+        // bán (hàng chuyển `draft`) đúng lúc đó thì đơn vẫn chốt món đã ẩn.
+        const trangThaiThat = new Map(daKhoa.map((p) => [p.id, p.status]));
         for (const item of orderItemsData) {
           const con = khoThat.get(item.product.id);
           if (con === undefined) {
             throw new NotFoundException(
               `Sản phẩm ID ${item.product.id} không tồn tại`,
+            );
+          }
+          if (trangThaiThat.get(item.product.id) !== ProductStatus.ACTIVE) {
+            throw new BadRequestException(
+              `Sản phẩm "${item.product_name}" hiện không mở bán, không thể đặt hàng`,
             );
           }
           if (con < item.quantity) {
