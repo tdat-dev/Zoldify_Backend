@@ -145,6 +145,21 @@ export class OrdersService {
       cart_item_ids,
     } = createOrderDto;
 
+    // KHÔNG CÓ ĐỊA CHỈ GHN THÌ KHÔNG CÓ ĐƠN.
+    //
+    // DTO đã bắt buộc hai trường này, nhưng service còn được gọi thẳng (job,
+    // script, check:race) không qua ValidationPipe, nên chặn lại ở đây. Thiếu
+    // chúng thì trước 26/10 khối tính phí ship bên dưới bị bỏ qua: đơn tạo
+    // với phí ship 0, rồi tới lúc người bán xác nhận thì không tạo được vận
+    // đơn GHN vì `createGhnShipmentsPerSeller` cần đúng hai trường đó. Chặn
+    // TRƯỚC khi đọc giỏ: không tốn truy vấn nào cho một đơn chắc chắn hỏng.
+    if (!createOrderDto.ghn_district_id || !createOrderDto.ghn_ward_code) {
+      throw new BadRequestException(
+        'Thiếu địa chỉ giao hàng GHN (quận/huyện và phường/xã). Mời bạn chọn ' +
+          'lại địa chỉ nhận hàng trước khi đặt.',
+      );
+    }
+
     const cartWhere: any = { user: { id: user.id } };
     if (cart_item_ids && cart_item_ids.length > 0) {
       cartWhere.id = In(cart_item_ids);
@@ -283,8 +298,9 @@ export class OrdersService {
     // vận đơn và hàng kẹt giữa chừng.
     //
     // Hai bản vá phủ hai lỗ KHÁC NHAU nên phải có cả hai: của Đạt lo lúc CÓ
-    // địa chỉ GHN mà tính lỗi; của vai B lo lúc client KHÔNG gửi địa chỉ GHN
-    // (hai trường đó `@IsOptional`, bỏ trống là khối `if` không chạy).
+    // địa chỉ GHN mà tính lỗi; của vai B lo lúc client KHÔNG gửi địa chỉ GHN.
+    // Lỗ thứ hai nay đóng hẳn ở đầu hàm (rà soát 26/10): thiếu địa chỉ GHN là
+    // 400, nên khối dưới luôn chạy.
     //
     // `shipping_fee` vẫn còn trong DTO nhưng bị BỎ QUA. Không gỡ khỏi DTO vì
     // `forbidNonWhitelisted: true` sẽ khiến frontend đang gửi trường đó nhận
@@ -299,24 +315,22 @@ export class OrdersService {
           `user ${user.id} — đã bỏ qua, phí ship do server tính.`,
       );
     }
-    if (createOrderDto.ghn_district_id && createOrderDto.ghn_ward_code) {
-      const quote = await this.quoteShippingBySellerFromCart(
-        cartItems,
-        createOrderDto.ghn_district_id,
-        createOrderDto.ghn_ward_code,
+    const quote = await this.quoteShippingBySellerFromCart(
+      cartItems,
+      createOrderDto.ghn_district_id,
+      createOrderDto.ghn_ward_code,
+    );
+    if (!quote.ok) {
+      const reason = quote.items.find((i) => i.error)?.error;
+      this.logger.warn(
+        `Từ chối đơn của user ${user.id}: không tính được phí ship (${reason})`,
       );
-      if (!quote.ok) {
-        const reason = quote.items.find((i) => i.error)?.error;
-        this.logger.warn(
-          `Từ chối đơn của user ${user.id}: không tính được phí ship (${reason})`,
-        );
-        throw new BadRequestException(
-          `Chưa tính được phí vận chuyển tới địa chỉ này (${reason}). ` +
-            'Chọn địa chỉ khác giúp mình.',
-        );
-      }
-      shippingFee = quote.total;
+      throw new BadRequestException(
+        `Chưa tính được phí vận chuyển tới địa chỉ này (${reason}). ` +
+          'Chọn địa chỉ khác giúp mình.',
+      );
     }
+    shippingFee = quote.total;
     const discountAmount = 0;
     const finalAmount = totalAmount + shippingFee - discountAmount;
 

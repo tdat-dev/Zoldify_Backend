@@ -44,13 +44,20 @@ export class CreateOrderDto {
   @Min(0)
   shipping_fee?: number;
 
-  @IsOptional()
-  @IsInt()
-  ghn_district_id?: number;
+  /**
+   * BẮT BUỘC từ rà soát 26/10. Trước đó hai trường này `@IsOptional`: bỏ
+   * trống là khối tính phí ship không chạy, đơn tạo với phí ship 0 và người
+   * bán không tạo nổi vận đơn GHN lúc xác nhận. Web (`checkout/page.tsx`) và
+   * mobile (`checkout-screen.tsx`) đều đã khoá nút đặt hàng khi thiếu chúng.
+   */
+  @IsNotEmpty({ message: 'Thiếu quận/huyện giao hàng (GHN)' })
+  @IsInt({ message: 'Mã quận/huyện GHN phải là số nguyên' })
+  @Min(1, { message: 'Thiếu quận/huyện giao hàng (GHN)' })
+  ghn_district_id: number;
 
-  @IsOptional()
-  @IsString()
-  ghn_ward_code?: string;
+  @IsNotEmpty({ message: 'Thiếu phường/xã giao hàng (GHN)' })
+  @IsString({ message: 'Mã phường/xã GHN phải là chuỗi' })
+  ghn_ward_code: string;
 
   @IsOptional()
   @IsArray()
