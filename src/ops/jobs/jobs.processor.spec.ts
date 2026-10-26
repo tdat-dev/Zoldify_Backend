@@ -1,4 +1,8 @@
-import { JOB_CHOT_VAN_DON, JOB_HUY_DON_QUA_HAN } from './jobs.constants';
+import {
+  JOB_BAO_HANG_MOI,
+  JOB_CHOT_VAN_DON,
+  JOB_HUY_DON_QUA_HAN,
+} from './jobs.constants';
 import { taoBoXuLy, type CongViecNen } from './jobs.processor';
 
 /**
@@ -36,9 +40,28 @@ describe('taoBoXuLy — ánh xạ tên job sang việc', () => {
         daChay.push('chot');
         return Promise.resolve();
       },
+      flushViewCount: () => {
+        daChay.push('view');
+        return Promise.resolve();
+      },
+      phatThongBaoHangMoi: (d: { product_id: number }) => {
+        daChay.push(`hang-moi:${d.product_id}`);
+        return Promise.resolve();
+      },
     };
     return { tasks, daChay };
   }
+
+  // Rà soát 26/10 mục 6: job báo hàng mới mang DỮ LIỆU (khác ba job lịch lặp),
+  // nên bộ xử lý phải chuyển `job.data` xuống, không gọi trống.
+  it(`"${JOB_BAO_HANG_MOI}" gọi phatThongBaoHangMoi kèm job.data`, async () => {
+    const { tasks, daChay } = tasksGia();
+    await taoBoXuLy(tasks)({
+      name: JOB_BAO_HANG_MOI,
+      data: { product_id: 42 },
+    });
+    expect(daChay).toEqual(['hang-moi:42']);
+  });
 
   it(`"${JOB_HUY_DON_QUA_HAN}" gọi autoCancelOrders`, async () => {
     const { tasks, daChay } = tasksGia();
