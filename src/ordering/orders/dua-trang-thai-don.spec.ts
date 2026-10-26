@@ -1026,4 +1026,23 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     );
     expect(d.tracking_code).toBe('GHN-MOI');
   });
+
+  /**
+   * Review 10: đơn đã \`delivered\` mà admin ghi nhận đã thu tiền thì ký quỹ
+   * sinh ra nằm \`holding\` không lối ra: giải ngân chạy lúc chuyển sang
+   * delivered, mà đơn đã qua bước đó rồi. PayOS cũng coi delivered là đã đóng.
+   */
+  it('review 10: không ghi nhận đã thu tiền cho đơn đã giao', async () => {
+    const orderId = await taoDonCod();
+    await ds.query(`UPDATE orders SET status = 'delivered' WHERE id = ?`, [
+      orderId,
+    ]);
+
+    await expect(
+      orders.updateStatus(orderId, { is_paid: true }, quanTri()),
+    ).rejects.toThrow();
+
+    expect((await donLuc(orderId)).is_paid).toBe(0);
+    expect(await soKyQuy(orderId)).toBe(0);
+  });
 });
