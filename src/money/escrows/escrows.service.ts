@@ -207,6 +207,16 @@ export class EscrowsService {
       });
       if (daCo > 0) return this.createOrderEscrows(orderId, em);
 
+      // CHÈN KÝ QUỸ TRƯỚC, GHI SỔ SAU (admin ghi nhận đã thu tiền).
+      //
+      // Thứ tự khoá chung của mọi đường tiền là đơn, rồi ký quỹ, rồi sổ cái:
+      // huỷ đơn và giải ngân khoá ký quỹ rồi mới ghi sổ. Đường này từng làm
+      // ngược lại (khoá két giữ hộ trong `ledger.post` rồi mới chèn ký quỹ),
+      // tức là hai giao dịch đi hai chiều trên cùng hai tài nguyên: công thức
+      // của deadlock 1213 (review 3). Cùng transaction nên ghi sổ hỏng thì ký
+      // quỹ vừa chèn cũng quay lui theo.
+      const daTach = await this.createOrderEscrows(orderId, em);
+
       const soTien = BigInt(Math.round(Number(order.final_amount)));
       if (soTien > 0n) {
         const gateway = await this.ledger.getOrCreateAccount(
@@ -237,7 +247,7 @@ export class EscrowsService {
         );
       }
 
-      return this.createOrderEscrows(orderId, em);
+      return daTach;
     };
 
     return manager ? run(manager) : this.dataSource.transaction(run);

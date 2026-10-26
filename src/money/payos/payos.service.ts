@@ -653,6 +653,34 @@ export class PayosService {
             `#${payment.user.id} thay vì ký quỹ; đơn giữ nguyên.`,
         );
       } else {
+        // Chỉ đúng hai cột tiền, và chỉ đi `pending -> confirmed`. Đơn COD
+        // đang giao mà người mua chuyển khoản thì vẫn là đang giao.
+        await em.update(
+          Order,
+          { id: don.id },
+          {
+            is_paid: true,
+            paid_at: new Date(),
+            ...(don.status === OrderStatus.PENDING
+              ? { status: OrderStatus.CONFIRMED }
+              : {}),
+          },
+        );
+
+        // Tách thành từng khoản theo người bán, trong CÙNG transaction.
+        // Bản cũ không hề gọi bước này, nên đơn trả qua PayOS chưa bao giờ
+        // sinh ra bản ghi ký quỹ nào.
+        await this.escrowsService.createOrderEscrows(don.id, em);
+
+        // CHÈN KÝ QUỸ TRƯỚC, GHI SỔ SAU (tiền PayOS về).
+        //
+        // Thứ tự khoá chung của mọi đường tiền là đơn, rồi ký quỹ, rồi sổ cái:
+        // huỷ đơn và giải ngân khoá ký quỹ rồi mới ghi sổ. Đường này từng làm
+        // ngược lại (khoá két giữ hộ trong `ledger.post` rồi mới chèn ký quỹ),
+        // tức là hai giao dịch đi hai chiều trên cùng hai tài nguyên: công thức
+        // của deadlock 1213 (review 3). Cùng transaction nên ghi sổ hỏng thì ký
+        // quỹ vừa chèn cũng quay lui theo.
+        //
         // Tiền từ cổng thanh toán vào thẳng ô giữ hộ, KHÔNG đi qua ví người
         // mua: người mua chưa bao giờ cầm số tiền này.
         const hold = await this.ledgerService.getOrCreateAccount(
@@ -674,25 +702,6 @@ export class PayosService {
           },
           em,
         );
-
-        // Chỉ đúng hai cột tiền, và chỉ đi `pending -> confirmed`. Đơn COD
-        // đang giao mà người mua chuyển khoản thì vẫn là đang giao.
-        await em.update(
-          Order,
-          { id: don.id },
-          {
-            is_paid: true,
-            paid_at: new Date(),
-            ...(don.status === OrderStatus.PENDING
-              ? { status: OrderStatus.CONFIRMED }
-              : {}),
-          },
-        );
-
-        // Tách thành từng khoản theo người bán, trong CÙNG transaction.
-        // Bản cũ không hề gọi bước này, nên đơn trả qua PayOS chưa bao giờ
-        // sinh ra bản ghi ký quỹ nào.
-        await this.escrowsService.createOrderEscrows(don.id, em);
       }
     } else {
       throw new BadRequestException(

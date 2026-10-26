@@ -164,6 +164,25 @@ export class PaymentsService {
           );
         }
 
+        await em.update(Order, orderId, {
+          is_paid: true,
+          paid_at: new Date(),
+          status: OrderStatus.CONFIRMED,
+        });
+
+        // Sau `em.update` ở trên nên `createOrderEscrows` đọc lại sẽ thấy
+        // `is_paid = 1`, đúng điều kiện nó đòi.
+        await this.escrowsService.createOrderEscrows(orderId, em);
+
+        // CHÈN KÝ QUỸ TRƯỚC, TRỪ VÍ SAU (trả bằng ví).
+        //
+        // Thứ tự khoá chung của mọi đường tiền là đơn, rồi ký quỹ, rồi sổ cái:
+        // huỷ đơn và giải ngân khoá ký quỹ rồi mới ghi sổ. Đường này từng làm
+        // ngược lại (khoá két giữ hộ trong `ledger.post` rồi mới chèn ký quỹ),
+        // tức là hai giao dịch đi hai chiều trên cùng hai tài nguyên: công thức
+        // của deadlock 1213 (review 3). Cùng transaction nên ví không đủ tiền
+        // thì ký quỹ vừa chèn cũng quay lui theo.
+        //
         // Khoá chống trùng tất định theo đơn: bấm thanh toán hai lần thì chỉ
         // trừ tiền một lần.
         await this.walletsService.deduct(
@@ -174,16 +193,6 @@ export class PaymentsService {
           `order_pay:${orderId}`,
           em,
         );
-
-        await em.update(Order, orderId, {
-          is_paid: true,
-          paid_at: new Date(),
-          status: OrderStatus.CONFIRMED,
-        });
-
-        // Sau `em.update` ở trên nên `createOrderEscrows` đọc lại sẽ thấy
-        // `is_paid = 1` — đúng điều kiện nó đòi.
-        await this.escrowsService.createOrderEscrows(orderId, em);
 
         return em.save(
           Payment,
