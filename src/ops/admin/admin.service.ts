@@ -95,13 +95,16 @@ export class AdminService {
    * cùng kết quả. Bỏ trống `khoa` thì vẫn lật như cũ: web admin hiện gọi
    * PATCH /admin/users/:id/toggle-lock không có body.
    *
-   * Chỉ khi trạng thái THẬT SỰ đổi mới thu hồi phiên và dọn dẹp:
+   * Thu hồi phiên CHỈ khi trạng thái thật sự đổi sang khoá. Dọn dẹp thì chạy
+   * MỖI LẦN đặt trạng thái đích, đổi hay không:
    *  · khoá: ẩn hàng đang bán (người bán bị khoá không xác nhận hay giao được
    *    nữa) và huỷ đơn pending chưa trả tiền của họ, để kho không bị giữ tới
    *    khi cron 48 giờ dọn;
    *  · mở khoá: bày lại những tin đã bị ẩn lúc khoá.
-   * Hai việc đó chạy SAU khi đã ghi khoá: dọn hỏng giữa chừng thì tài khoản
-   * vẫn đã khoá, gọi lại `lock` là dọn tiếp (cả hai việc đều làm lại được).
+   * VÌ SAO KHÔNG CHỈ KHI ĐỔI (review 26/10): dọn dẹp chạy SAU khi khoá đã
+   * ghi. Bản đầu gắn nó vào "trạng thái có đổi không", nên dọn hỏng giữa chừng
+   * thì lần gọi lại thấy "đã khoá rồi" và bỏ qua mãi mãi. Cả hai việc đều làm
+   * lại được vô hại (đổi trạng thái có điều kiện, huỷ đơn bỏ qua đơn đã huỷ).
    */
   async toggleUserLock(id: number, khoa?: boolean) {
     const user = await this.userRepository.findOne({ where: { id } });
@@ -111,8 +114,6 @@ export class AdminService {
 
     const dich = khoa ?? !user.is_locked;
     const doi = Boolean(user.is_locked) !== dich;
-    let anSanPham = 0;
-    let huyDon: number[] = [];
     if (doi) {
       // `update` đúng hai cột, không `save` cả entity đã đọc: `save` ghi đè
       // mọi cột bằng bản đọc từ trước, kể cả `role` vừa bị admin khác đổi.
@@ -125,11 +126,14 @@ export class AdminService {
         { id: user.id },
         { is_locked: dich, token_version: tokenVersion },
       );
-      if (dich) {
-        ({ anSanPham, huyDon } = await this.donHangVaDonCua(user.id));
-      } else {
-        anSanPham = -(await this.productsService.moLaiHangCuaNguoiBan(user.id));
-      }
+    }
+
+    let anSanPham = 0;
+    let huyDon: number[] = [];
+    if (dich) {
+      ({ anSanPham, huyDon } = await this.donHangVaDonCua(user.id));
+    } else {
+      anSanPham = -(await this.productsService.moLaiHangCuaNguoiBan(user.id));
     }
     return {
       id: user.id,
