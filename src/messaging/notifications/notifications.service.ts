@@ -20,7 +20,19 @@ export class NotificationsService {
     private readonly firebaseService: FirebaseService,
   ) {}
 
-  async create(createNotificationDto: CreateNotificationDto) {
+  /**
+   * `tuyChon.choDayPush`: CHỜ lần đẩy FCM xong rồi mới trả về (lỗi đẩy vẫn
+   * chỉ ghi log, không ném). Mặc định KHÔNG chờ, giữ nguyên hành vi của mọi
+   * nơi gọi đang có: request của người dùng không được chậm theo FCM.
+   *
+   * Chỉ job báo hàng mới bật nó (review 26/10): job đặt trần 10 lời gọi cùng
+   * lúc, mà không chờ đẩy thì `create` xong ngay sau câu INSERT, FCM chạy nền
+   * không giới hạn và trần chỉ còn đếm INSERT.
+   */
+  async create(
+    createNotificationDto: CreateNotificationDto,
+    tuyChon: { choDayPush?: boolean } = {},
+  ) {
     const { user_id, type, title, content, data } = createNotificationDto;
 
     const notification = this.notiRepository.create({
@@ -41,12 +53,13 @@ export class NotificationsService {
     // vì nó, kéo theo mọi request đang chạy. Đo bằng
     // `day-push-khong-nuot-loi.spec.ts`. Thông báo đã lưu xong rồi, nên hỏng ở
     // đây chỉ là mất một lần đẩy.
-    void this.pushToUser(user_id, saved).catch((e: unknown) =>
+    const day = this.pushToUser(user_id, saved).catch((e: unknown) =>
       this.logger.warn(
         `Không đẩy được push cho user ${user_id} (thông báo #${saved.id} ` +
           `vẫn đã lưu): ${(e as Error)?.message ?? String(e)}`,
       ),
     );
+    if (tuyChon.choDayPush) await day;
 
     return saved;
   }

@@ -450,15 +450,20 @@ export class ProductsService {
         while (ke < lo.length) {
           const f = lo[ke++];
           try {
-            await this.notificationsService.create({
-              user_id: f.follower_id,
-              type: 'new_product' as any,
-              title: `${d.seller_name || 'Shop'} vừa đăng sản phẩm mới`,
-              // Không ghép cứng chữ "đ": một món niêm yết bằng USD mà báo cho
-              // người theo dõi là "2.400đ" thì sai lệch hơn hai mươi lần.
-              content: `${d.product_name}: ${formatMoney(d.price, d.currency)}`,
-              data: { product_id: d.product_id, seller_id: d.seller_id },
-            });
+            // `choDayPush`: chờ cả lần đẩy FCM, để trần SONG_SONG_THONG_BAO
+            // giới hạn đúng số lời gọi FCM chứ không chỉ số câu INSERT.
+            await this.notificationsService.create(
+              {
+                user_id: f.follower_id,
+                type: 'new_product' as any,
+                title: `${d.seller_name || 'Shop'} vừa đăng sản phẩm mới`,
+                // Không ghép cứng chữ "đ": một món niêm yết bằng USD mà báo
+                // cho người theo dõi là "2.400đ" thì sai lệch hơn hai mươi lần.
+                content: `${d.product_name}: ${formatMoney(d.price, d.currency)}`,
+                data: { product_id: d.product_id, seller_id: d.seller_id },
+              },
+              { choDayPush: true },
+            );
             daBao++;
           } catch {
             hong++;
