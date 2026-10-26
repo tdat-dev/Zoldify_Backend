@@ -98,6 +98,11 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
   let categoryId: number;
   let productId: number;
   let giuaGhn: (() => Promise<unknown>) | undefined;
+  // GHN trả lời lệnh huỷ vận đơn ra sao. Mặc định: nhận huỷ hết.
+  let huyGhn: jest.Mock<
+    Promise<Array<{ order_code: string; result: boolean; message: string }>>,
+    [string[]]
+  >;
 
   const GIA = 100_000;
   const KHO_BAN_DAU = 50;
@@ -197,7 +202,13 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
         return { order_code: `GHN-${Date.now()}` };
       },
       getOrderStatus: () => Promise.resolve('delivered'),
+      cancelOrders: (codes: string[]) => huyGhn(codes),
     } as unknown as GhnService;
+    huyGhn = jest.fn((codes: string[]) =>
+      Promise.resolve(
+        codes.map((c) => ({ order_code: c, result: true, message: 'OK' })),
+      ),
+    );
 
     // Phát tồn kho: không đo ở đây (xem `dat-hang-va-ton-kho.spec.ts`).
     const khoPhat = {
@@ -532,19 +543,63 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
    * huỷ lúc đó là hoàn tiền người mua trong khi món hàng vẫn đang đi tới nhà
    * họ. Nút huỷ của người mua và "huỷ bán" của người bán thì không kiểm gì.
    */
-  it('E: không huỷ được đơn đã có vận đơn GHN đang đi', async () => {
+  it('E: không huỷ được đơn mà GHN đã lấy hàng', async () => {
+    const orderId = await taoDonDaTra();
+    await taoLoGhn(orderId, ShipmentStatus.CREATED);
+    huyGhn.mockImplementation((codes: string[]) =>
+      Promise.resolve(
+        codes.map((c) => ({
+          order_code: c,
+          result: false,
+          message: 'Đơn hàng đã được lấy',
+        })),
+      ),
+    );
+
+    await expect(orders.cancel(orderId, nguoiMua())).rejects.toThrow(
+      /GHN đã lấy hàng/,
+    );
+    await expect(orders.cancelSale(orderId, nguoiBan())).rejects.toThrow(
+      /GHN đã lấy hàng/,
+    );
+
+    expect(huyGhn).toHaveBeenCalledWith([`GHN-${orderId}`]);
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CONFIRMED);
+    expect(await viCua(buyerId)).toBe(0n);
+  });
+
+  /**
+   * Review 6: chặn huỷ đơn có vận đơn đang đi (bản vá E) mà KHÔNG huỷ vận đơn
+   * bên GHN thì không ai huỷ được một đơn đã xác nhận nữa: vận đơn được tạo
+   * ngay lúc xác nhận, nên mọi đơn GHN đã xác nhận đều có. Web và mobile vẫn
+   * hiện nút huỷ, cron huỷ quá hạn cũng chạm đúng chỗ đó.
+   *
+   * Đúng ra: huỷ vận đơn trên GHN trước. GHN nhận thì huỷ đơn như thường.
+   */
+  it('review 6: GHN nhận huỷ vận đơn thì huỷ được đơn, tiền về người mua', async () => {
     const orderId = await taoDonDaTra();
     await taoLoGhn(orderId, ShipmentStatus.CREATED);
 
-    await expect(orders.cancel(orderId, nguoiMua())).rejects.toThrow(
-      /vận đơn/i,
-    );
-    await expect(orders.cancelSale(orderId, nguoiBan())).rejects.toThrow(
-      /vận đơn/i,
-    );
+    await orders.cancel(orderId, nguoiMua());
 
+    expect(huyGhn).toHaveBeenCalledWith([`GHN-${orderId}`]);
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CANCELLED);
+    expect(await viCua(buyerId)).toBe(BigInt(GIA));
+    const [lo] = await ds.getRepository(OrderShipment).find({
+      where: { order: { id: orderId } },
+    });
+    expect(lo.status).toBe(ShipmentStatus.FAILED);
+    expect(lo.error ?? '').toMatch(/huỷ.*GHN/);
+  });
+
+  it('review 6: lô đã giao tới người mua thì từ chối, không hỏi GHN', async () => {
+    const orderId = await taoDonDaTra();
+    await taoLoGhn(orderId, ShipmentStatus.DELIVERED, new Date());
+
+    await expect(orders.cancel(orderId, nguoiMua())).rejects.toThrow();
+
+    expect(huyGhn).not.toHaveBeenCalled();
     expect((await donLuc(orderId)).status).toBe(OrderStatus.CONFIRMED);
-    expect(await viCua(buyerId)).toBe(0n);
   });
 
   /**
