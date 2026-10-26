@@ -315,6 +315,33 @@ describe('Khoá / xoá người bán', () => {
     expect(Number((await userLuc(sellerId)).is_locked)).toBe(0);
   });
 
+  /**
+   * Review 26/10 mục 3. Dọn dẹp chỉ chạy khi trạng thái THẬT SỰ đổi. Khoá đã
+   * ghi xong mà bước ẩn hàng/huỷ đơn hỏng (mất kết nối DB giữa chừng), thì
+   * lần gọi lại thấy "đã khoá rồi" và bỏ qua dọn dẹp mãi mãi: hàng của người
+   * bị khoá vẫn bày bán, đơn chờ vẫn giữ kho.
+   */
+  it('khoá xong mà dọn dẹp hỏng: gọi lại khoá thì dọn tiếp, phiên chỉ bị thu hồi một lần', async () => {
+    const sp = await taoSanPham(sellerId, 10);
+    const choTra = await datDon(sp, 1);
+    const an = jest
+      .spyOn(products, 'anHangCuaNguoiBan')
+      .mockRejectedValueOnce(new Error('mất kết nối giữa chừng'));
+
+    await expect(khoa(sellerId, true)).rejects.toThrow(/mất kết nối/);
+    const sauLan1 = await userLuc(sellerId);
+    expect(Number(sauLan1.is_locked)).toBe(1);
+
+    await khoa(sellerId, true);
+    an.mockRestore();
+
+    expect(await trangThaiSp(sp)).not.toBe(ProductStatus.ACTIVE);
+    expect(await trangThaiDon(choTra)).toBe(OrderStatus.CANCELLED);
+    expect(Number((await userLuc(sellerId)).token_version)).toBe(
+      Number(sauLan1.token_version),
+    );
+  });
+
   it('mở khoá: hàng bị ẩn vì khoá được bày bán lại', async () => {
     const sp = await taoSanPham(sellerId);
     await khoa(sellerId, true);
