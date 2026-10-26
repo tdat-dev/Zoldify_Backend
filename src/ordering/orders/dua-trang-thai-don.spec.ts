@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, FindOneOptions } from 'typeorm';
 import { OrdersService } from './orders.service';
 import { Order, OrderStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -984,5 +984,46 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     );
 
     expect(thuTu).toEqual(ids);
+  });
+
+  /**
+   * Review 9: \`updateStatus\` ghi \`tracking_code\` hễ nó khác giá trị đang có
+   * trong database, kể cả khi yêu cầu này KHÔNG hề đụng tới mã vận đơn. Một
+   * lần tạo lại vận đơn chạy song song vừa điền mã mới thì bản đọc cũ (null)
+   * ghi đè nó về null: UI cũ mất mã vận đơn.
+   */
+  it('review 9: đổi trạng thái không ghi đè mã vận đơn vừa được điền', async () => {
+    await themVaoGio(productId, 1);
+    const don = (await orders.create(donMacDinh(), nguoiMua())) as Order;
+    await ds.query(`UPDATE orders SET status = 'confirmed' WHERE id = ?`, [
+      don.id,
+    ]);
+
+    const repo = ds.getRepository(Order);
+    const goc = repo.findOne.bind(repo) as (
+      o: FindOneOptions<Order>,
+    ) => Promise<Order | null>;
+    jest
+      .spyOn(repo, 'findOne')
+      .mockImplementationOnce(async (opts: FindOneOptions<Order>) => {
+        const d = await goc(opts);
+        await ds.query(
+          `UPDATE orders SET tracking_code = 'GHN-MOI' WHERE id = ?`,
+          [don.id],
+        );
+        return d;
+      });
+
+    await orders.updateStatus(
+      don.id,
+      { status: OrderStatus.PROCESSING },
+      nguoiBan(),
+    );
+
+    const [d] = await ds.query<Array<{ tracking_code: string | null }>>(
+      'SELECT tracking_code FROM orders WHERE id = ?',
+      [don.id],
+    );
+    expect(d.tracking_code).toBe('GHN-MOI');
   });
 });
