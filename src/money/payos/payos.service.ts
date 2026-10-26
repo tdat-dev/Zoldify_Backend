@@ -32,9 +32,11 @@ import { siteUrlChinh } from '@common/site-url';
 /**
  * Đơn ở các trạng thái này không nhận tiền vào ký quỹ nữa: tiền PayOS về trễ
  * thì vào ví người mua. Cùng danh sách mà `createOrderPaymentLink` dùng để
- * không phát link mới.
+ * không phát link mới, và trả bằng ví cũng dùng đúng danh sách này
+ * (`PaymentsService`): hai cổng tiền khác luật thì người mua bị một cổng từ
+ * chối, cổng kia nhận, cho cùng một đơn (review 7).
  */
-const KHONG_NHAN_TIEN_DON: OrderStatus[] = [
+export const KHONG_NHAN_TIEN_DON: OrderStatus[] = [
   OrderStatus.CANCELLED,
   OrderStatus.REFUNDED,
   OrderStatus.DELIVERED,

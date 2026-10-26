@@ -22,7 +22,10 @@ import {
 import { WalletsService } from '@money/wallets/wallets.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
-import { PayosService } from '@money/payos/payos.service';
+import {
+  KHONG_NHAN_TIEN_DON,
+  PayosService,
+} from '@money/payos/payos.service';
 
 @Injectable()
 export class PaymentsService {
@@ -154,20 +157,28 @@ export class PaymentsService {
           where: { id: orderId },
           lock: { mode: 'pessimistic_write' },
         });
-        if (!don || don.is_paid) {
+        if (!don) throw new NotFoundException('Không tìm thấy đơn hàng');
+        if (don.is_paid) {
           throw new BadRequestException('Đơn hàng đã được thanh toán');
         }
-        if (don.status !== OrderStatus.PENDING) {
+        // Cùng luật với PayOS (`KHONG_NHAN_TIEN_DON`). Bản đầu của chỗ này chỉ
+        // nhận `pending`, nên đơn đã xác nhận mà chưa trả tiền thì PayOS nhận
+        // còn ví từ chối (review 7).
+        if (KHONG_NHAN_TIEN_DON.includes(don.status)) {
           throw new BadRequestException(
             `Đơn hàng đang ở trạng thái "${don.status}" nên không thanh toán ` +
               'được nữa.',
           );
         }
 
+        // Chỉ đi `pending -> confirmed`, như PayOS: đơn đã xác nhận hay đang
+        // chuẩn bị thì giữ nguyên trạng thái, chỉ ghi nhận tiền.
         await em.update(Order, orderId, {
           is_paid: true,
           paid_at: new Date(),
-          status: OrderStatus.CONFIRMED,
+          ...(don.status === OrderStatus.PENDING
+            ? { status: OrderStatus.CONFIRMED }
+            : {}),
         });
 
         // Sau `em.update` ở trên nên `createOrderEscrows` đọc lại sẽ thấy
