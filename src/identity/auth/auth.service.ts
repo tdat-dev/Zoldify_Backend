@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -31,6 +32,19 @@ import { emailChuanHoaHoacLoi } from '@common/email';
  */
 const bamRefresh = (token: string) =>
   createHash('sha256').update(token).digest('hex');
+
+/**
+ * Bao lâu sau khi một refresh token được đổi thì việc gửi lại CHÍNH nó vẫn coi
+ * là trùng lặp vô hại (409) chứ không phải trộm (thu hồi mọi phiên).
+ *
+ * Vì sao cần: hai request làm mới cùng lúc bằng một token (hai tab, app thử
+ * lại khi mạng chập chờn) là chuyện thường. Không có ân hạn thì request thua
+ * tăng token_version và giết luôn token vừa phát cho request thắng: người dùng
+ * bị đá ra vì chính mình. Lưu trong cache (Redis khi có), không cần migration.
+ * Đánh đổi: kẻ trộm gửi lại token cũ trong 30 giây đó chỉ nhận 409 chứ không
+ * kích hoạt thu hồi; nó cũng không nhận được token nào, nên không lấy được gì.
+ */
+const AN_HAN_REFRESH_MS = 30_000;
 
 /** OTP sống 5 phút. */
 const OTP_SONG_MS = 300_000;
@@ -561,6 +575,25 @@ export class AuthService {
     // mới đồng thời thành một (single-flight). Hôm nay chưa client nào gọi
     // route này (kiểm 25/10). Muốn nhiều phiên song song thì cần bảng phiên
     // riêng, mỗi thiết bị một dòng.
+    // KHOẢNG ÂN HẠN 30 GIÂY cho request trùng (xem hằng AN_HAN_REFRESH_MS).
+    //
+    // Đánh dấu TRƯỚC câu UPDATE, và chỉ khi token gửi lên đúng là token cột
+    // đang giữ. Đánh dấu sau UPDATE thì request thua có thể đọc cache trước
+    // khi request thắng kịp ghi, và vẫn bị coi là trộm. Đánh dấu vô điều kiện
+    // thì kẻ gửi lại token cũ cũng tự cấp ân hạn cho mình và né được phát hiện
+    // dùng lại; điều kiện "cột đang giữ đúng token này" chặn ca đó.
+    const hashCu = bamRefresh(refreshToken);
+    const dangGiu = await this.userRepository
+      .createQueryBuilder('u')
+      .select('u.refresh_token', 'rt')
+      .where('u.id = :id', { id: user.id })
+      .getRawOne<{ rt: string | null }>();
+    if (dangGiu?.rt === hashCu || dangGiu?.rt === refreshToken) {
+      await this.cacheManager
+        .set(`refresh_an_han_${hashCu}`, 1, AN_HAN_REFRESH_MS)
+        .catch(() => undefined);
+    }
+
     const doi = await this.userRepository
       .createQueryBuilder()
       .update(User)
@@ -571,6 +604,16 @@ export class AuthService {
       })
       .execute();
     if (!doi.affected) {
+      const trungHopLe = await this.cacheManager
+        .get(`refresh_an_han_${hashCu}`)
+        .catch(() => undefined);
+      if (trungHopLe) {
+        // Một request khác vừa đổi CHÍNH token này: trùng lặp vô hại, không
+        // phải trộm. 409 và không thu hồi; client dùng token request kia nhận.
+        throw new ConflictException(
+          'Refresh token vừa được làm mới bởi một yêu cầu khác',
+        );
+      }
       await this.userRepository.increment({ id: user.id }, 'token_version', 1);
       await this.userRepository.update(user.id, { refresh_token: null });
       this.logger.warn(
