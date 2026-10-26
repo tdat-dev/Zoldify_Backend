@@ -5,12 +5,14 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { ShipmentTrackingService } from './shipment-tracking.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
+import { ProductsService } from '@catalog/products/products.service';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
@@ -105,7 +107,32 @@ export class OrdersService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly stockEvents: StockEventsService,
+    // @Optional chỉ vì hơn chục spec dựng OrdersService bằng tay với 14 tham
+    // số. Thiếu nó thì mất đúng một thứ: cache sản phẩm cũ thêm tối đa một
+    // TTL (60s chi tiết, 30s danh sách), không sai dữ liệu nào trong DB. Bộ
+    // tiêm phụ thuộc luôn có nó vì OrdersModule nhập ProductsModule.
+    @Optional() private readonly productsService?: ProductsService,
   ) {}
+
+  /**
+   * Bỏ cache chi tiết và đổi đời danh sách của các sản phẩm vừa đổi kho.
+   *
+   * VÌ SAO Ở ĐÂY. Cache `product:{id}` (60s) và đời danh sách chỉ được làm
+   * mới trong ProductsService, nên tới 26/10 kho đổi qua đặt hàng, huỷ đơn
+   * hay hoàn tiền thì trang sản phẩm vẫn hiện số cũ tới hết TTL: còn 0 mà
+   * hiện "còn 1", người mua bấm mua rồi mới nhận lỗi hết hàng. Đo bằng
+   * `cache-va-dem-sau-dat-huy.spec.ts`.
+   *
+   * Gọi SAU KHI transaction đã commit: xoá cache trước commit thì một request
+   * chen giữa đọc lại bản cũ từ DB và nạp nó vào cache thêm một TTL nữa.
+   * Fail-open như mọi thao tác cache (invalidateProductCache tự nuốt lỗi).
+   */
+  private async lamMoiCacheSanPham(ids: number[]): Promise<void> {
+    if (!this.productsService) return;
+    for (const id of new Set(ids)) {
+      await this.productsService.invalidateProductCache(id);
+    }
+  }
 
   async getStats() {
     const total_users = await this.userRepository.count();
@@ -599,6 +626,10 @@ export class OrdersService {
       return cu;
     }
 
+    // Kho vừa trừ đã commit: trang sản phẩm phải thấy ngay (xem
+    // lamMoiCacheSanPham). Đặt TRƯỚC thông báo vì thông báo đi ra mạng.
+    await this.lamMoiCacheSanPham(idTheoThuTu);
+
     // THÔNG BÁO HỎNG THÌ MẤT THÔNG BÁO, KHÔNG MẤT ĐƠN.
     //
     // Lời gọi này nằm SAU transaction và trước đây KHÔNG có try/catch. Nó đi
@@ -1038,6 +1069,15 @@ export class OrdersService {
       }
       return { vuaDanhDauDaTra: daTra };
     });
+
+    // Hoàn tiền vừa trả hàng về kho (đã commit): làm mới cache sản phẩm.
+    if (!ketQua.doiThanh && nextStatus === OrderStatus.REFUNDED) {
+      await this.lamMoiCacheSanPham(
+        (order.items ?? [])
+          .map((i) => i.product?.id)
+          .filter((pid): pid is number => pid !== undefined),
+      );
+    }
 
     if (ketQua.doiThanh) {
       if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
@@ -2146,6 +2186,7 @@ export class OrdersService {
         .catch(() => null);
       if (p) await this.stockEvents.phat(productId, p.stock);
     }
+    await this.lamMoiCacheSanPham(daHoan);
   }
 
   /**
