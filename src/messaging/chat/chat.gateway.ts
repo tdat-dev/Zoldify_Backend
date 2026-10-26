@@ -333,6 +333,7 @@ export class ChatGateway
 
   onModuleDestroy() {
     if (this.henQuet) clearInterval(this.henQuet);
+    void this.nhipGui.dong();
   }
 
   @SubscribeMessage('send_message')

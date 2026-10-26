@@ -33,7 +33,9 @@ export interface RedisDem {
  * đếm đúng phần của nó.
  */
 export class BoDemNhip {
-  private readonly redis: RedisDem | null;
+  private redis: RedisDem | null;
+  private redisUrl: string | null = null;
+  private tuTao: Redis | null = null;
   private readonly trongRam = new Map<string, number[]>();
 
   constructor(
@@ -46,29 +48,57 @@ export class BoDemNhip {
       this.redis = redis;
       return;
     }
-    const url = process.env.REDIS_URL;
-    if (!url) {
-      this.redis = null;
-      return;
-    }
+    // KHÔNG nối Redis ngay lúc dựng. Bản đầu nối luôn trong constructor, và
+    // ChatGateway dựng bộ đếm này cho mọi instance: mỗi bài kiểm `new ChatGateway`
+    // mở một kết nối không ai đóng. Đo 26/10 trên nhánh gộp: có REDIS_URL thì jest
+    // chạy xong 507/507 bài trong 114 giây rồi treo tới hết hạn 10 phút của
+    // nghiem-thu ("Jest did not exit"); không có REDIS_URL thì thoát sau 128 giây.
+    // Giờ chỉ nối ở lần đếm đầu tiên.
+    this.redis = null;
+    this.redisUrl = process.env.REDIS_URL || null;
+  }
+
+  private layRedis(): RedisDem | null {
+    if (this.redis || !this.redisUrl) return this.redis;
     // Cùng khuôn với ProductsService: không xếp hàng lệnh khi mất kết nối (lệnh
     // hỏng ngay để rơi về RAM), và có listener 'error' để lỗi kết nối không
     // thành lỗi chưa bắt giết cả tiến trình.
-    const client = new Redis(url, {
+    const client = new Redis(this.redisUrl, {
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
     });
     client.on('error', () => undefined);
+    // Bộ đếm nhịp không phải lý do để tiến trình còn sống: unref socket (và
+    // socket mới sau mỗi lần nối lại) để kết nối này không giữ tiến trình lúc
+    // tắt, cũng không giữ jest sau khi chạy xong.
+    client.on('connect', () => {
+      (
+        client as unknown as { stream?: { unref?: () => void } }
+      ).stream?.unref?.();
+    });
+    this.tuTao = client;
     this.redis = client;
+    return client;
+  }
+
+  /** Đóng kết nối Redis do chính bộ đếm mở (nếu có). Gọi lúc module tắt. */
+  async dong(): Promise<void> {
+    const c = this.tuTao;
+    this.tuTao = null;
+    if (c) {
+      this.redis = null;
+      await c.quit().catch(() => undefined);
+    }
   }
 
   /** true nếu người dùng còn trong hạn mức (và lần này đã được tính). */
   async conTrongHan(userId: number): Promise<boolean> {
     const khoa = `${this.tienTo}:${userId}`;
-    if (this.redis) {
+    const redis = this.layRedis();
+    if (redis) {
       try {
-        await this.redis.set(khoa, 0, 'PX', this.cuaSoMs, 'NX');
-        const n = await this.redis.incr(khoa);
+        await redis.set(khoa, 0, 'PX', this.cuaSoMs, 'NX');
+        const n = await redis.incr(khoa);
         return n <= this.toiDa;
       } catch {
         // Rơi xuống bộ đếm trong RAM.
