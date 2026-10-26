@@ -263,54 +263,63 @@ export class ProductsService {
   /**
    * ẨN mọi hàng đang bán của một người bán, khi tài khoản bị khoá hoặc xoá.
    *
-   * Dùng `draft` vì enum `products.status` không có trạng thái "bị ẩn" riêng
-   * (thêm là thêm migration), và `draft` là trạng thái KHÔNG đường API nào
-   * đặt ra được: DTO sản phẩm không có `status`, mọi tin đăng ra đời `active`.
-   * Nhờ vậy `moLaiHangCuaNguoiBan` biết chắc mọi tin `draft` của người đó là
-   * tin bị ẩn ở đây. Nợ kỹ thuật, nói thẳng: ngày nào có luồng soạn nháp
-   * thật thì phải thêm trạng thái riêng (vd `hidden`) bằng migration, nếu
-   * không mở khoá sẽ đăng luôn cả bản nháp người bán chưa muốn đăng.
+   * Dùng `draft` vì enum `products.status` không có trạng thái "bị ẩn" riêng,
+   * KÈM dấu `hidden_by_lock_at` để mở khoá biết tin nào bị ẩn ở đây. Bản đầu
+   * không có dấu và mở khoá bày lại MỌI tin `draft` của người bán, kể cả bản
+   * nháp thật (review 26/10, đo bằng `khoa-xoa-nguoi-ban.spec.ts`).
+   *
+   * Chỉ chạm tin còn `active`: khoá lặp không đè dấu của lần trước.
    *
    * Trả về số tin đã ẩn. Xoá cache chi tiết từng tin và đổi đời danh sách:
    * tin bị ẩn phải biến khỏi trang chủ ngay, không đợi TTL.
    */
   async anHangCuaNguoiBan(sellerId: number): Promise<number> {
-    return this.doiTrangThaiHangCuaNguoiBan(
-      sellerId,
-      ProductStatus.ACTIVE,
-      ProductStatus.DRAFT,
-    );
+    return this.doiTrangThaiHangCuaNguoiBan(sellerId, 'status = :active', {
+      status: ProductStatus.DRAFT,
+      hidden_by_lock_at: () => 'NOW()',
+    });
   }
 
-  /** Ngược lại của `anHangCuaNguoiBan`, khi admin mở khoá tài khoản. */
+  /**
+   * Ngược lại của `anHangCuaNguoiBan`, khi admin mở khoá tài khoản: CHỈ tin
+   * mang dấu `hidden_by_lock_at` (bị ẩn vì khoá), rồi xoá dấu.
+   */
   async moLaiHangCuaNguoiBan(sellerId: number): Promise<number> {
     return this.doiTrangThaiHangCuaNguoiBan(
       sellerId,
-      ProductStatus.DRAFT,
-      ProductStatus.ACTIVE,
+      'status = :draft AND hidden_by_lock_at IS NOT NULL',
+      { status: ProductStatus.ACTIVE, hidden_by_lock_at: null },
     );
   }
 
   private async doiTrangThaiHangCuaNguoiBan(
     sellerId: number,
-    tu: ProductStatus,
-    sang: ProductStatus,
+    dieuKien: string,
+    giaTri: QueryDeepPartialEntity<Product>,
   ): Promise<number> {
+    const thamSo = {
+      sellerId,
+      active: ProductStatus.ACTIVE,
+      draft: ProductStatus.DRAFT,
+    };
     const ids = (
-      await this.productRepository.find({
-        where: { seller: { id: sellerId }, status: tu },
-        select: { id: true },
-      })
-    ).map((p) => p.id);
+      await this.productRepository
+        .createQueryBuilder('p')
+        .select('p.id', 'id')
+        // Cột không gắn bí danh: một bảng, nên `status` hay `hidden_by_lock_at`
+        // trỏ đúng cột, và cùng một chuỗi điều kiện dùng được cho câu UPDATE.
+        .where(`seller_id = :sellerId AND ${dieuKien}`, thamSo)
+        .getRawMany<{ id: number }>()
+    ).map((p) => Number(p.id));
     if (ids.length === 0) return 0;
 
-    // Điều kiện `status = tu` nằm lại trong WHERE: tin nào vừa đổi trạng thái
+    // Điều kiện lặp lại trong WHERE của câu UPDATE: tin nào vừa đổi trạng thái
     // giữa lúc đọc và lúc ghi thì không bị kéo theo.
     const kq = await this.productRepository
       .createQueryBuilder()
       .update(Product)
-      .set({ status: sang })
-      .where('id IN (:...ids) AND status = :tu', { ids, tu })
+      .set(giaTri)
+      .where(`id IN (:...ids) AND ${dieuKien}`, { ...thamSo, ids })
       .execute();
     for (const id of ids) await this.cacheDel(this.detailKey(id));
     await this.moiDanhSach();
