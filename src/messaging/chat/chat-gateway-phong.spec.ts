@@ -11,25 +11,33 @@ import { ChatGateway } from './chat.gateway';
  * chưa.
  */
 type SocketGia = {
-  data: { user?: { id: number } };
+  data: { user?: { id: number; token_version: number } };
   join: jest.Mock;
   emit: jest.Mock;
+  disconnect: jest.Mock;
 };
 
 function dung(hoiThoai: unknown) {
   const chatService = {
     getConversationById: jest.fn(() => Promise.resolve(hoiThoai)),
   };
+  // Phiên còn hiệu lực: token_version trên socket khớp DB.
+  const userRepository = {
+    findOne: jest.fn(() =>
+      Promise.resolve({ is_locked: false, token_version: 0 }),
+    ),
+  };
   const gateway = new ChatGateway(
     chatService as never,
     {} as never,
     {} as never,
-    {} as never,
+    userRepository as never,
   );
   const socket = (userId: number): SocketGia => ({
-    data: { user: { id: userId } },
+    data: { user: { id: userId, token_version: 0 } },
     join: jest.fn(),
     emit: jest.fn(),
+    disconnect: jest.fn(),
   });
   return { gateway, socket };
 }

@@ -14,8 +14,9 @@ import { ChatGateway } from './chat.gateway';
  * thật nên càng phải có.
  */
 type SocketGia = {
-  data: { user?: { id: number; full_name: string } };
+  data: { user?: { id: number; full_name: string; token_version: number } };
   emit: jest.Mock;
+  disconnect: jest.Mock;
 };
 
 function dung() {
@@ -29,12 +30,19 @@ function dung() {
     chatService as never,
     {} as never,
     { create: jest.fn(() => Promise.resolve()) } as never,
-    { update: jest.fn(() => Promise.resolve()) } as never,
+    // Phiên còn hiệu lực: token_version trên socket khớp DB.
+    {
+      update: jest.fn(() => Promise.resolve()),
+      findOne: jest.fn(() =>
+        Promise.resolve({ is_locked: false, token_version: 0 }),
+      ),
+    } as never,
   );
   gateway.server = { to: () => ({ emit: jest.fn() }) } as never;
   const socket: SocketGia = {
-    data: { user: { id: 2, full_name: 'Người mua' } },
+    data: { user: { id: 2, full_name: 'Người mua', token_version: 0 } },
     emit: jest.fn(),
+    disconnect: jest.fn(),
   };
   return { gateway, chatService, socket };
 }
