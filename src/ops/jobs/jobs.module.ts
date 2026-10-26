@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TasksModule } from '@ops/tasks/tasks.module';
+import { ProductsModule } from '@catalog/products/products.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -13,7 +14,8 @@ import { JobsRunner } from './jobs.runner';
  * FAIL nếu thấy chữ JobsModule trong đó.
  */
 @Module({
-  imports: [TasksModule],
+  // ProductsModule: worker xử lý job "báo hàng mới" bằng ProductsService.
+  imports: [TasksModule, ProductsModule],
   providers: [JobsRunner],
 })
 export class JobsModule {}

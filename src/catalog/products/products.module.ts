@@ -8,6 +8,7 @@ import { FollowsModule } from '@catalog/follows/follows.module';
 import { NotificationsModule } from '@messaging/notifications/notifications.module';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
+import { HangDoiViecNen } from '@common/hang-doi';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { Shop } from '@catalog/shop/entities/shop.entity';
     NotificationsModule,
   ],
   controllers: [ProductsController],
-  providers: [ProductsService],
+  // HangDoiViecNen: bên xếp job "báo hàng mới" (rà soát 26/10 mục 6).
+  providers: [ProductsService, HangDoiViecNen],
   exports: [ProductsService],
 })
 export class ProductsModule {}

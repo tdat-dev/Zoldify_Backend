@@ -7,6 +7,7 @@ import {
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { TasksService } from '@ops/tasks/tasks.service';
+import { ProductsService } from '@catalog/products/products.service';
 import { LICH_LAP, TEN_HANG_DOI } from './jobs.constants';
 import { taoBoXuLy } from './jobs.processor';
 import { dangKyLichLap, donLichThua } from './jobs.schedule';
@@ -31,7 +32,10 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
   private queue?: Queue;
   private worker?: Worker;
 
-  constructor(private readonly tasks: TasksService) {}
+  constructor(
+    private readonly tasks: TasksService,
+    private readonly products: ProductsService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const url = process.env.REDIS_URL;
@@ -64,7 +68,16 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
 
     this.queue = new Queue(TEN_HANG_DOI, { connection: this.conn });
 
-    const boXuLy = taoBoXuLy(this.tasks);
+    // Ghép hai nguồn việc: ba job lịch lặp của TasksService và job "báo hàng
+    // mới" của ProductsService (rà soát 26/10 mục 6). Ghép ở đây thay vì nhét
+    // ProductsService vào TasksService: TasksService được dựng bằng tay trong
+    // spec, thêm tham số là sửa cả loạt spec không liên quan.
+    const boXuLy = taoBoXuLy({
+      autoCancelOrders: () => this.tasks.autoCancelOrders(),
+      settleDeliveredShipments: () => this.tasks.settleDeliveredShipments(),
+      flushViewCount: () => this.tasks.flushViewCount(),
+      phatThongBaoHangMoi: (d) => this.products.phatThongBaoHangMoi(d),
+    });
     this.worker = new Worker(TEN_HANG_DOI, (job) => boXuLy(job), {
       connection: this.conn.duplicate(),
       // MỘT job một lúc trong mỗi tiến trình. Hai job tiền này quét bảng orders

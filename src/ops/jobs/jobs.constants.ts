@@ -7,8 +7,14 @@
  * việc không được làm. Đặt chung ở đây để trình biên dịch bắt thay mình.
  */
 
-/** Một hàng đợi cho mọi job nền. Chưa đủ nhiều việc để phải chia. */
-export const TEN_HANG_DOI = 'zoldify-jobs';
+/**
+ * Một hàng đợi cho mọi job nền. Chưa đủ nhiều việc để phải chia.
+ *
+ * Tên hàng đợi và job "báo hàng mới" khai ở `@common/hang-doi` vì bên XẾP job
+ * đó nằm ở catalog, tầng không được import `ops`. Xuất lại ở đây để mọi chỗ
+ * phía worker vẫn chỉ đọc một file.
+ */
+export { TEN_HANG_DOI, JOB_BAO_HANG_MOI } from '@common/hang-doi';
 
 export const JOB_HUY_DON_QUA_HAN = 'huy-don-qua-han';
 export const JOB_CHOT_VAN_DON = 'chot-van-don';

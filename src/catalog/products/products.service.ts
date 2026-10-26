@@ -4,7 +4,9 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from '@nestjs/cache-manager';
@@ -14,7 +16,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, MoreThan } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
@@ -22,6 +24,16 @@ import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import Redis from 'ioredis';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
+import {
+  DuLieuBaoHangMoi,
+  HangDoiViecNen,
+  JOB_BAO_HANG_MOI,
+} from '@common/hang-doi';
+
+/** Báo hàng mới: đọc người theo dõi theo lô bấy nhiêu dòng một lần. */
+const LO_NGUOI_THEO_DOI = 500;
+/** Báo hàng mới: tối đa bấy nhiêu lời gọi tạo thông báo chạy cùng lúc. */
+const SONG_SONG_THONG_BAO = 10;
 
 // TTL cache (ms). Detail được XOÁ tường minh khi ghi nên để dài hơn.
 const PRODUCT_DETAIL_TTL = 60_000; // 60s
@@ -58,6 +70,7 @@ const DOI_NHO_MS = 1_000;
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
   private readonly redis: Redis | null = null;
 
   constructor(
@@ -71,6 +84,9 @@ export class ProductsService {
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
     private readonly stockEvents: StockEventsService,
+    // @Optional: các spec dựng ProductsService bằng tay với sáu tham số cũ;
+    // thiếu hàng đợi thì `xepBaoHangMoi` tự đi đường lùi.
+    @Optional() private readonly hangDoi?: HangDoiViecNen,
   ) {
     const redisUrl = process.env.REDIS_URL;
     if (!redisUrl) {
@@ -288,28 +304,112 @@ export class ProductsService {
     // Hàng mới phải hiện trong danh sách NGAY, không đợi hết TTL 30 giây.
     await this.moiDanhSach();
 
-    // Notify all followers of the seller
-    const followers = await this.followRepository.find({
-      where: { following_id: user.id },
-      select: ['follower_id'],
+    await this.xepBaoHangMoi({
+      seller_id: user.id,
+      seller_name: user.full_name || 'Shop',
+      product_id: saved.id,
+      product_name: name,
+      price: Number(price),
+      currency,
     });
-    await Promise.all(
-      followers.map((f) =>
-        this.notificationsService
-          .create({
-            user_id: f.follower_id,
-            type: 'new_product' as any,
-            title: `${user.full_name || 'Shop'} vừa đăng sản phẩm mới`,
-            // Không ghép cứng chữ "đ": một món niêm yết bằng USD mà báo cho người
-            // theo dõi là "2.400đ" thì sai lệch hơn hai mươi lần.
-            content: `${name} — ${formatMoney(price, currency)}`,
-            data: { product_id: saved.id, seller_id: user.id },
-          })
-          .catch(() => null),
-      ),
-    );
 
     return this.findOne(saved.id);
+  }
+
+  /**
+   * BÁO NGƯỜI THEO DÕI QUA HÀNG ĐỢI, KHÔNG TRONG REQUEST.
+   *
+   * Tới 26/10 `create` làm `await Promise.all(followers.map(create thông
+   * báo))` ngay trong POST /products: mỗi người theo dõi một INSERT và một
+   * lần đẩy FCM, tất cả cùng lúc. Người bán có 5.000 người theo dõi là 5.000
+   * lời hứa song song, hồ 50 kết nối của api cạn, và người bán chờ hết mới
+   * thấy "Đăng bán thành công"; FCM treo là request treo theo (đo bằng
+   * `thong-bao-hang-moi.spec.ts`).
+   *
+   * Nay request chỉ xếp MỘT job; worker gọi `phatThongBaoHangMoi`. `jobId`
+   * theo id sản phẩm: lỡ xếp hai lần thì BullMQ chỉ giữ một.
+   *
+   * ĐƯỜNG LÙI khi không xếp được (máy dev không Redis, Redis sập): chạy cùng
+   * hàm đó NGAY TRONG TIẾN TRÌNH nhưng KHÔNG chờ. Request vẫn trả về ngay; cái
+   * giá là việc báo không còn được worker gánh, và mất nếu tiến trình tắt giữa
+   * chừng. Thông báo là việc phụ, mất một lượt báo còn hơn chặn đăng bán.
+   */
+  private async xepBaoHangMoi(d: DuLieuBaoHangMoi): Promise<void> {
+    const daXep =
+      (await this.hangDoi?.them(
+        JOB_BAO_HANG_MOI,
+        d,
+        `bao-hang-moi-${d.product_id}`,
+      )) ?? false;
+    if (daXep) return;
+    void this.phatThongBaoHangMoi(d).catch((e: unknown) =>
+      this.logger.error(
+        `Báo hàng mới #${d.product_id} (chạy trong tiến trình) hỏng: ` +
+          `${(e as Error)?.message ?? String(e)}`,
+      ),
+    );
+  }
+
+  /**
+   * Phần việc của WORKER: báo hàng mới cho mọi người theo dõi người bán.
+   *
+   * Đọc người theo dõi theo lô 500 dòng, nhảy bằng `id > con trỏ` chứ không
+   * OFFSET (cùng lý do với sitemap: OFFSET sâu bắt MySQL đếm bỏ cả phần đã
+   * đọc). Mỗi lô chạy tối đa 10 lời gọi cùng lúc: đủ nhanh, mà không bao giờ
+   * chiếm quá 10 kết nối của hồ (worker chỉ có 5, phần dư xếp hàng chờ chứ
+   * không lỗi).
+   *
+   * Một người hỏng (FCM từ chối, user đã xoá) KHÔNG chặn người khác và không
+   * làm job hỏng: job hỏng thì BullMQ có thể chạy lại từ đầu và báo trùng cho
+   * những người đã nhận. Chỉ lỗi đọc người theo dõi mới làm job hỏng.
+   */
+  async phatThongBaoHangMoi(
+    d: DuLieuBaoHangMoi,
+  ): Promise<{ da_bao: number; hong: number }> {
+    let daBao = 0;
+    let hong = 0;
+    let sau = 0;
+    for (;;) {
+      const lo = await this.followRepository.find({
+        where: { following_id: d.seller_id, id: MoreThan(sau) },
+        select: { id: true, follower_id: true },
+        order: { id: 'ASC' },
+        take: LO_NGUOI_THEO_DOI,
+      });
+      if (lo.length === 0) break;
+      sau = lo[lo.length - 1].id;
+
+      let ke = 0;
+      const mot = async (): Promise<void> => {
+        while (ke < lo.length) {
+          const f = lo[ke++];
+          try {
+            await this.notificationsService.create({
+              user_id: f.follower_id,
+              type: 'new_product' as any,
+              title: `${d.seller_name || 'Shop'} vừa đăng sản phẩm mới`,
+              // Không ghép cứng chữ "đ": một món niêm yết bằng USD mà báo cho
+              // người theo dõi là "2.400đ" thì sai lệch hơn hai mươi lần.
+              content: `${d.product_name}: ${formatMoney(d.price, d.currency)}`,
+              data: { product_id: d.product_id, seller_id: d.seller_id },
+            });
+            daBao++;
+          } catch {
+            hong++;
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(SONG_SONG_THONG_BAO, lo.length) }, mot),
+      );
+      if (lo.length < LO_NGUOI_THEO_DOI) break;
+    }
+    if (hong > 0) {
+      this.logger.warn(
+        `Báo hàng mới #${d.product_id}: ${daBao} người nhận, ${hong} lượt hỏng.`,
+      );
+    }
+    return { da_bao: daBao, hong };
   }
 
   async findAll(currentPage: string, limit: string, qs: any) {

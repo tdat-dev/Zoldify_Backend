@@ -1,8 +1,10 @@
 import {
+  JOB_BAO_HANG_MOI,
   JOB_CHOT_VAN_DON,
   JOB_HUY_DON_QUA_HAN,
   JOB_FLUSH_VIEW_COUNT,
 } from './jobs.constants';
+import type { DuLieuBaoHangMoi } from '@common/hang-doi';
 
 /**
  * Phần của `TasksService` mà bộ xử lý thật sự cần.
@@ -15,6 +17,8 @@ export interface CongViecNen {
   autoCancelOrders(): Promise<unknown>;
   settleDeliveredShipments(): Promise<unknown>;
   flushViewCount(): Promise<unknown>;
+  /** Job một lần, mang dữ liệu (khác ba job lịch lặp ở trên). */
+  phatThongBaoHangMoi(d: DuLieuBaoHangMoi): Promise<unknown>;
 }
 
 /**
@@ -30,7 +34,7 @@ export interface CongViecNen {
  * thấy được, đếm được.
  */
 export function taoBoXuLy(tasks: CongViecNen) {
-  return async (job: { name: string }): Promise<void> => {
+  return async (job: { name: string; data?: unknown }): Promise<void> => {
     switch (job.name) {
       case JOB_HUY_DON_QUA_HAN:
         await tasks.autoCancelOrders();
@@ -40,6 +44,9 @@ export function taoBoXuLy(tasks: CongViecNen) {
         return;
       case JOB_FLUSH_VIEW_COUNT:
         await tasks.flushViewCount();
+        return;
+      case JOB_BAO_HANG_MOI:
+        await tasks.phatThongBaoHangMoi(job.data as DuLieuBaoHangMoi);
         return;
       default:
         throw new Error(

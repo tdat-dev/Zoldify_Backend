@@ -336,6 +336,11 @@ async function phanDong() {
       // Mock implementation for self-check
       await doi(10);
     },
+    // Job một lần "báo hàng mới" (rà soát 26/10 mục 6). Bài này không xếp
+    // job đó; chỉ cần có để khớp kiểu CongViecNen.
+    phatThongBaoHangMoi: async () => {
+      await doi(1);
+    },
   };
 
   const xuLy = taoBoXuLy(tasksGia);
