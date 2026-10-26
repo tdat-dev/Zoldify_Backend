@@ -77,8 +77,10 @@ function fakeEm() {
       // OrdersService doc lai gia DUOI KHOA va tu choi neu lech. Thieu cot nay thi
       // Number(undefined) = NaN, va don bi tu choi voi "gia vua thay doi -> NaN d".
       // Hai so duoi day khop voi fixture san pham o cuoi file.
-      { id: 5, stock: 10, price: 100000 },
-      { id: 6, stock: 10, price: 150000 },
+      // `status` bat buoc tu review 26/10: trang thai cung doc lai DUOI KHOA,
+      // hang khong `active` (nguoi ban vua bi khoa) thi don bi tu choi.
+      { id: 5, stock: 10, price: 100000, status: 'active' },
+      { id: 6, stock: 10, price: 150000, status: 'active' },
     ]);
   qb.execute = () => Promise.resolve({ affected: 1 });
   return {
