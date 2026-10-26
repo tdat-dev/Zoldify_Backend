@@ -12,6 +12,28 @@ import { Product } from '@catalog/products/entities/product.entity';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { IUser } from '@identity/users/users.interface';
+import { User } from '@identity/users/entities/user.entity';
+
+/**
+ * Người kia trong khung chat, chỉ phần client cần: tên, ảnh, lần cuối online.
+ *
+ * Bản trước trả nguyên dòng users qua relations buyer/seller/sender: email, số
+ * điện thoại, vai trò, token_version, is_locked. Nhắn hỏi giá một món là đọc
+ * được email và số điện thoại tài khoản của người bán, trong khi sàn cố ý giữ
+ * liên lạc trong khung chat. Cột giữ lại theo đúng thứ web và app đọc (kiểm
+ * 26/10: partner_name, partner_avatar, partner_last_seen, sender.id). Lọc ở đây
+ * chứ không SELECT, vì getMyConversations đếm số câu truy vấn
+ * (chat.service.spec.ts) và đổi cách nạp quan hệ là đổi con số đó.
+ */
+function nguoiTrongChat(u: User | null | undefined): User {
+  if (!u) return u as unknown as User;
+  return {
+    id: u.id,
+    full_name: u.full_name,
+    avatar: u.avatar,
+    last_seen: u.last_seen,
+  } as User;
+}
 
 @Injectable()
 export class ChatService {
@@ -139,8 +161,8 @@ export class ChatService {
         id: conv.id,
         created_at: conv.created_at,
         updated_at: conv.updated_at,
-        buyer: conv.buyer,
-        seller: conv.seller,
+        buyer: nguoiTrongChat(conv.buyer),
+        seller: nguoiTrongChat(conv.seller),
         product: conv.product,
         partner_name: partner?.full_name,
         partner_id: partner?.id,
@@ -279,7 +301,10 @@ export class ChatService {
         pages: Math.ceil(totalItems / numLimit),
         total: totalItems,
       },
-      result: result.reverse(), // Đảo ngược để tin nhắn cũ lên đầu
+      // Đảo ngược để tin nhắn cũ lên đầu; sender chỉ còn phần công khai.
+      result: result
+        .reverse()
+        .map((m) => ({ ...m, sender: nguoiTrongChat(m.sender) })),
     };
   }
 
