@@ -7350,12 +7350,12 @@
       "CreateUserDto": {
         "type": "object",
         "properties": {
-          "full_name": {
-            "type": "string"
-          },
           "email": {
             "type": "string",
             "format": "email"
+          },
+          "full_name": {
+            "type": "string"
           },
           "password": {
             "type": "string",
@@ -7381,8 +7381,8 @@
           }
         },
         "required": [
-          "full_name",
           "email",
+          "full_name",
           "password"
         ]
       },
