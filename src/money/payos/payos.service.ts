@@ -44,6 +44,26 @@ export const KHONG_NHAN_TIEN_DON: OrderStatus[] = [
   OrderStatus.DELIVERED,
 ];
 
+/**
+ * Gốc của orderCode PayOS: orderCode = PAYOS_MA_GOC + payments.id.
+ *
+ * VÌ SAO CẦN MỘT DÃY SỐ RIÊNG. PayOS bắt orderCode duy nhất trên TOÀN tài
+ * khoản merchant, kể cả link đã hết hạn hay đã huỷ. Trước 26/10:
+ *   · đơn hàng dùng `orderCode = order.id`: link đầu hết hạn sau 15 phút là
+ *     đơn đó KHÔNG BAO GIỜ tạo được link mới (PayOS báo "đã tồn tại");
+ *   · nạp ví dùng `Number(7 số cuối Date.now + userId)`: lặp lại sau 10^7 ms
+ *     (2 giờ 47 phút), và đồng hồ kết thúc bằng 0000000 thì ra đúng userId,
+ *     tức đúng mã của đơn có id bằng userId.
+ * `payments.id` là auto-increment, mỗi lần tạo link một dòng mới, đơn và nạp
+ * ví chung một bảng: duy nhất theo cấu tạo, không cần đếm số lần thử.
+ *
+ * VÌ SAO CỘNG 10^13. Tránh mọi mã PayOS đã giữ theo hai công thức cũ: mã đơn
+ * cũ là order.id (cột int, < 2,2 tỉ), mã nạp ví cũ là 7 chữ số ghép userId,
+ * nhỏ hơn 10^13 khi userId dưới 1 triệu. Trần của PayOS là
+ * Number.MAX_SAFE_INTEGER (~9·10^15), còn chỗ cho gần 9·10^15 lần tạo link.
+ */
+export const PAYOS_MA_GOC = 10_000_000_000_000;
+
 @Injectable()
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
@@ -147,9 +167,23 @@ export class PayosService {
       this.configService.get<string>('SITE_URL'),
     );
 
+    // Lưu dòng payment TRƯỚC để lấy id làm orderCode (xem PAYOS_MA_GOC). Dòng
+    // này tồn tại trước khi link tới tay người mua, nên webhook nào tới cũng
+    // tìm thấy nó theo `payos_order_code`.
+    const payment = await this.paymentRepository.save(
+      this.paymentRepository.create({
+        order: { id: order.id },
+        user: { id: userId },
+        amount: order.final_amount,
+        payment_method: PaymentMethod.PAYOS,
+        status: PaymentStatus.PENDING,
+        type: PaymentType.ORDER_PAYMENT,
+      }),
+    );
+
     // Tạo payment link qua PayOS
-    const link = await this.payos.paymentRequests.create({
-      orderCode: order.id,
+    const link = await this.taoLinkHoacDanhDauHong(payment, {
+      orderCode: PAYOS_MA_GOC + payment.id,
       amount: Math.round(Number(order.final_amount)),
       description: `DH${order.id}`.slice(0, 9),
       returnUrl: `${frontendUrl}/payment/return?orderId=${order.id}`,
@@ -166,22 +200,6 @@ export class PayosService {
         },
       ],
     });
-
-    // Tạo Payment record với status = PENDING
-    const payment = this.paymentRepository.create({
-      order: { id: order.id },
-      user: { id: userId },
-      amount: order.final_amount,
-      payment_method: PaymentMethod.PAYOS,
-      status: PaymentStatus.PENDING,
-      type: PaymentType.ORDER_PAYMENT,
-      payos_order_code: String(link.orderCode),
-      payos_payment_link_id: link.paymentLinkId,
-      payos_checkout_url: link.checkoutUrl,
-      payos_qr_code: link.qrCode,
-      transaction_code: link.paymentLinkId,
-    });
-    await this.paymentRepository.save(payment);
 
     return {
       checkoutUrl: link.checkoutUrl,
@@ -211,11 +229,22 @@ export class PayosService {
     const frontendUrl = siteUrlChinh(
       this.configService.get<string>('SITE_URL'),
     );
-    // orderCode phải unique → dùng timestamp + userId
-    const orderCode = Number(`${Date.now().toString().slice(-7)}${userId}`);
 
-    const link = await this.payos.paymentRequests.create({
-      orderCode,
+    // orderCode lấy từ id của dòng payment, cùng dãy với link đơn hàng: hai
+    // loại không thể trùng nhau, và không lặp theo đồng hồ như công thức cũ
+    // (xem PAYOS_MA_GOC).
+    const payment = await this.paymentRepository.save(
+      this.paymentRepository.create({
+        user: { id: userId },
+        amount,
+        payment_method: PaymentMethod.PAYOS,
+        status: PaymentStatus.PENDING,
+        type: PaymentType.WALLET_TOPUP,
+      }),
+    );
+
+    const link = await this.taoLinkHoacDanhDauHong(payment, {
+      orderCode: PAYOS_MA_GOC + payment.id,
       amount: Math.round(amount),
       description: `NAP${userId}`.slice(0, 9),
       returnUrl: `${frontendUrl}/payment/return?topup=1`,
@@ -225,20 +254,6 @@ export class PayosService {
       expiredAt: Math.floor(Date.now() / 1000) + 15 * 60,
     });
 
-    const payment = this.paymentRepository.create({
-      user: { id: userId },
-      amount,
-      payment_method: PaymentMethod.PAYOS,
-      status: PaymentStatus.PENDING,
-      type: PaymentType.WALLET_TOPUP,
-      payos_order_code: String(link.orderCode),
-      payos_payment_link_id: link.paymentLinkId,
-      payos_checkout_url: link.checkoutUrl,
-      payos_qr_code: link.qrCode,
-      transaction_code: link.paymentLinkId,
-    });
-    await this.paymentRepository.save(payment);
-
     return {
       checkoutUrl: link.checkoutUrl,
       qrCode: link.qrCode,
@@ -247,6 +262,35 @@ export class PayosService {
       amount: link.amount,
       expiresAt: link.expiredAt,
     };
+  }
+
+  /**
+   * Gọi PayOS tạo link cho một dòng payment ĐÃ LƯU, rồi ghi thông tin link
+   * vào chính dòng đó. PayOS từ chối (mạng, khoá sai, trùng mã) thì dòng
+   * chuyển `failed` kèm lý do, không để lại payment `pending` không có link.
+   */
+  private async taoLinkHoacDanhDauHong(
+    payment: Payment,
+    yeuCau: Parameters<PayOS['paymentRequests']['create']>[0],
+  ) {
+    let link: Awaited<ReturnType<PayOS['paymentRequests']['create']>>;
+    try {
+      link = await this.payos.paymentRequests.create(yeuCau);
+    } catch (err) {
+      await this.paymentRepository.update(payment.id, {
+        status: PaymentStatus.FAILED,
+        note: `Tạo link PayOS hỏng: ${(err as Error).message}`,
+      });
+      throw err;
+    }
+    await this.paymentRepository.update(payment.id, {
+      payos_order_code: String(link.orderCode),
+      payos_payment_link_id: link.paymentLinkId,
+      payos_checkout_url: link.checkoutUrl,
+      payos_qr_code: link.qrCode,
+      transaction_code: link.paymentLinkId,
+    });
+    return link;
   }
 
   // ============ QUERY ============
@@ -266,9 +310,12 @@ export class PayosService {
     if (!order || (!laAdmin && order.user?.id !== user.id)) {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
+    // Một đơn nay có thể có nhiều link (mỗi lần tạo một orderCode). Lấy dòng
+    // MỚI NHẤT; `id` để phân xử khi hai dòng cùng giây (`created_at` chỉ tới
+    // giây), nếu không MySQL trả dòng nào cũng được.
     const payment = await this.paymentRepository.findOne({
       where: { order: { id: orderId }, payment_method: PaymentMethod.PAYOS },
-      order: { created_at: 'DESC' },
+      order: { created_at: 'DESC', id: 'DESC' },
     });
     return {
       orderId: order.id,
@@ -346,10 +393,10 @@ export class PayosService {
       throw new BadRequestException('Bạn không có quyền truy cập đơn hàng này');
     }
 
-    // Tìm payment PayOS của đơn
+    // Tìm payment PayOS MỚI NHẤT của đơn (cùng lý do với getOrderStatus).
     const payment = await this.paymentRepository.findOne({
       where: { order: { id: orderId }, payment_method: PaymentMethod.PAYOS },
-      order: { created_at: 'DESC' },
+      order: { created_at: 'DESC', id: 'DESC' },
     });
     if (!payment?.payos_order_code) {
       throw new NotFoundException(
