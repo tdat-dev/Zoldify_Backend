@@ -54,7 +54,7 @@ const TEST_DB = {
 jest.setTimeout(120_000);
 
 async function loiCua(
-  cls: typeof CreateProductDto | typeof UpdateProductDto,
+  cls: new () => object,
   obj: Record<string, unknown>,
 ): Promise<string[]> {
   const loi = await validate(plainToInstance(cls, obj));
@@ -315,7 +315,7 @@ describe('Sửa tồn kho qua PATCH /products/:id và đơn 0đ', () => {
     await expect(
       products.update(
         productId,
-        { stock: 60, expected_stock: 40 } as UpdateProductDto,
+        { stock: 60, expected_stock: 40 },
         nguoiBan(),
       ),
     ).rejects.toThrow(/Tồn kho vừa thay đổi/);
@@ -325,7 +325,7 @@ describe('Sửa tồn kho qua PATCH /products/:id và đơn 0đ', () => {
   it('PATCH /products/:id kèm expected_stock khớp thì đổi được kho', async () => {
     const moi = await products.update(
       productId,
-      { stock: 60, expected_stock: KHO } as UpdateProductDto,
+      { stock: 60, expected_stock: KHO },
       nguoiBan(),
     );
     expect(Number(moi.stock)).toBe(60);
