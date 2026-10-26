@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -10,6 +10,8 @@ import { IUser } from '@identity/users/users.interface';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @InjectRepository(Notification)
     private readonly notiRepository: Repository<Notification>,
@@ -32,7 +34,19 @@ export class NotificationsService {
     const saved = await this.notiRepository.save(notification);
 
     // Đẩy push tới mọi thiết bị của user (không chặn/không làm hỏng nếu lỗi).
-    void this.pushToUser(user_id, saved);
+    //
+    // `.catch` BẮT BUỘC, không phải trang trí. `void` chỉ nói "không chờ", nó
+    // không bắt lỗi: đọc token hỏng (database chập) hay FCM từ chối là một lời
+    // hứa bị từ chối không ai giữ, và Node 15+ mặc định TẮT CẢ TIẾN TRÌNH api
+    // vì nó, kéo theo mọi request đang chạy. Đo bằng
+    // `day-push-khong-nuot-loi.spec.ts`. Thông báo đã lưu xong rồi, nên hỏng ở
+    // đây chỉ là mất một lần đẩy.
+    void this.pushToUser(user_id, saved).catch((e: unknown) =>
+      this.logger.warn(
+        `Không đẩy được push cho user ${user_id} (thông báo #${saved.id} ` +
+          `vẫn đã lưu): ${(e as Error)?.message ?? String(e)}`,
+      ),
+    );
 
     return saved;
   }
