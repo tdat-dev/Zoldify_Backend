@@ -70,9 +70,9 @@ describe('Báo hàng mới cho người theo dõi', () => {
     );
     sellerId = s.id;
     await ds.query(
-      `INSERT INTO shops (name, user_id, pickup_name, pickup_phone, pickup_address,
+      `INSERT INTO shops (name, slug, user_id, pickup_name, pickup_phone, pickup_address,
          pickup_ward_name, pickup_district_name, pickup_province_name)
-       VALUES ('Shop A', ?, 'A', '0900000000', '1 duong', 'P1', 'Q1', 'HCM')`,
+       VALUES ('Shop A', 'shop-a-tb', ?, 'A', '0900000000', '1 duong', 'P1', 'Q1', 'HCM')`,
       [sellerId],
     );
     await ds.query(`INSERT INTO categories (name, slug) VALUES ('c', 'c-tb')`);
