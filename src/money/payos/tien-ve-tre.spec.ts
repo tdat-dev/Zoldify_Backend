@@ -418,4 +418,42 @@ describe('PayosService: tiền về trễ', () => {
 
     expect(dem()).toBe(1);
   });
+
+  /**
+   * Review 8: PayOS gửi trùng cùng một webhook, cùng lúc. Lượt sau chờ khoá
+   * dòng đơn, tới lượt thì thấy đơn đã trả, nhưng payment nó đọc là ảnh chụp
+   * cũ (\`pending\`) nên đi tiếp, ghi bút toán với ĐÚNG khoá chống trùng của
+   * lượt trước và nổ 1062: PayOS nhận lỗi thay vì "Already paid".
+   */
+  it('review 8: webhook trùng tới cùng lúc thì lượt sau trả "Already paid"', async () => {
+    const { orderId, paymentId } = await makeUnpaidOrder(
+      OrderStatus.PENDING,
+      100_000,
+    );
+    const webhook = () =>
+      payos.handleWebhook({
+        success: true,
+        data: {
+          orderCode: orderId,
+          paymentLinkId: `link-${orderId}`,
+          code: '00',
+          reference: 'REF-R8',
+        },
+      });
+
+    const kq = await Promise.allSettled([1, 2, 3, 4, 5].map(() => webhook()));
+
+    expect(kq.filter((r) => r.status === 'rejected')).toEqual([]);
+    const [{ n }] = await ds.query<Array<{ n: number }>>(
+      `SELECT COUNT(*) AS n FROM ledger_transactions
+       WHERE reference_type = 'order' AND reference_id = ?`,
+      [String(orderId)],
+    );
+    expect(Number(n)).toBe(1);
+    const [p] = await ds.query<Dong[]>(
+      'SELECT status FROM payments WHERE id = ?',
+      [paymentId],
+    );
+    expect(p.status).toBe(PaymentStatus.SUCCESS);
+  });
 });
