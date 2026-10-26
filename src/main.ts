@@ -18,6 +18,11 @@ import compression from 'compression';
 import { RedisIoAdapter } from './common/redis-io.adapter';
 import { JsonLogger } from './common/json-logger';
 import { chanTaiLieu, taiKhoanTuMoiTruong } from './core/swagger-guard';
+import { ganBatLoiTienTrinh } from './common/loi-tien-trinh';
+
+// Gắn TRƯỚC khi dựng app: lời hứa mồ côi trong lúc khởi động cũng phải ra log
+// thay vì tắt tiến trình (xem loi-tien-trinh.ts).
+ganBatLoiTienTrinh('api');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });

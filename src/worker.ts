@@ -1,6 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { WorkerModule } from './worker.module';
+import { ganBatLoiTienTrinh } from './common/loi-tien-trinh';
+
+// Cùng bộ bắt với api. Worker còn cần nó hơn: job chạy nền là nơi dễ có lời
+// hứa không ai chờ nhất, và tiến trình chết câm thì cron tiền đứng theo.
+ganBatLoiTienTrinh('worker');
 
 /**
  * Điểm vào của TIẾN TRÌNH WORKER (task #14).
