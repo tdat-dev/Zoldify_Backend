@@ -1,4 +1,11 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { RecommendationsService } from './recommendations.service';
 import { Public } from '@common/decorators/public.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
@@ -38,8 +45,13 @@ export class RecommendationsController {
   @Public()
   @Get(':id/related')
   @ResponseMessage('Lấy sản phẩm liên quan thành công')
-  related(@Param('id') id: string, @Query('limit') limit: string) {
-    return this.service.relatedToProduct(+id, +limit || 12);
+  related(
+    // `+'abc'` là NaN và đi thẳng vào SQL gợi ý: 500 thay vì 400 (rà soát
+    // 26/10 mục 9).
+    @Param('id', ParseIntPipe) id: number,
+    @Query('limit') limit: string,
+  ) {
+    return this.service.relatedToProduct(id, +limit || 12);
   }
 }
 

@@ -8,7 +8,9 @@ import {
   Delete,
   UseGuards,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
+import { SoTuyChonPipe } from '@common/pipes/so-tuy-chon.pipe';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -40,10 +42,16 @@ export class ProductsController {
     @Query('current') currentPage: string,
     @Query('pageSize') limit: string,
     @Query('q') q: string,
-    @Query('category_id') category_id: string,
-    @Query('seller_id') seller_id: string,
-    @Query('price_min') price_min: string,
-    @Query('price_max') price_max: string,
+    // Bốn bộ lọc số đi qua pipe: chữ thì 400 thay vì NaN lọt vào SQL và ra
+    // 500 (rà soát 26/10 mục 9). Ô trống vẫn là "không lọc" như cũ.
+    @Query('category_id', new SoTuyChonPipe('category_id', true))
+    category_id: number | undefined,
+    @Query('seller_id', new SoTuyChonPipe('seller_id', true))
+    seller_id: number | undefined,
+    @Query('price_min', new SoTuyChonPipe('price_min'))
+    price_min: number | undefined,
+    @Query('price_max', new SoTuyChonPipe('price_max'))
+    price_max: number | undefined,
     @Query('condition') condition: string,
     @Query('sort') sort: string,
     @Query() qs: any,
@@ -85,41 +93,42 @@ export class ProductsController {
     );
   }
 
+  // ParseIntPipe ở mọi `:id`: `+'abc'` là NaN, `WHERE id = NaN` ra 500.
   @ResponseMessage('Lấy thông tin sản phẩm thành công!')
   @Public()
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(+id);
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.productsService.findOne(id);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật sản phẩm thành công!')
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateProductDto: UpdateProductDto,
     @User() user: IUser,
   ) {
-    return this.productsService.update(+id, updateProductDto, user);
+    return this.productsService.update(id, updateProductDto, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa sản phẩm thành công!')
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.productsService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.productsService.remove(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id/stock')
   @ResponseMessage('Cập nhật số lượng thành công')
   updateStock(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateStockDto,
     @User() user: IUser,
   ) {
     return this.productsService.updateStock(
-      +id,
+      id,
       dto.stock,
       user.id,
       user.role === 'admin',
