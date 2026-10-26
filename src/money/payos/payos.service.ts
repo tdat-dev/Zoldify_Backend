@@ -429,9 +429,15 @@ export class PayosService {
       payment.status !== PaymentStatus.SUCCESS &&
       !this.soTienKhop(payment, soTienPayos)
     ) {
-      const lech = await this.dataSource.transaction((em) =>
-        this.danhDauLechTien(em, payment, soTienPayos, 'refresh'),
-      );
+      // Đã đánh dấu từ trước (không còn pending) thì không đánh dấu, không
+      // báo lại: mỗi lần người mua bấm "kiểm tra lại" từng nối thêm một ghi
+      // chú và báo mọi admin thêm một lần (review 26/10).
+      const lech =
+        payment.status === PaymentStatus.PENDING
+          ? await this.dataSource.transaction((em) =>
+              this.danhDauLechTien(em, payment, soTienPayos, 'refresh'),
+            )
+          : null;
       if (lech) await this.baoLechTien(lech);
       return {
         orderId: order.id,
@@ -917,20 +923,25 @@ export class PayosService {
     payosBao: number;
     orderCode: string;
     nguon: string;
-  }> {
+  } | null> {
     const canThu = Number(payment.amount);
     const ghiChu =
       `[CAN_DOI_SOAT] ${new Date().toISOString()} ${nguon}: PayOS báo ` +
       `${soTienPayos}, payment cần ${canThu} (orderCode=${payment.payos_order_code}). ` +
       'Chưa ghi sổ, cần đối soát tay với sao kê.';
-    await em.update(
+    // CHỈ ĐÁNH DẤU MỘT LẦN: điều kiện `status = pending` nằm trong WHERE.
+    // PayOS gửi lại webhook lệch, hay người mua bấm "kiểm tra lại", thì dòng đã
+    // `failed` không bị nối thêm ghi chú và không ai bị báo lại (review 26/10:
+    // 2 webhook + 2 lần kiểm tra lại từng ra 4 ghi chú, 4 lần báo admin).
+    const kq = await em.update(
       Payment,
-      { id: payment.id },
+      { id: payment.id, status: PaymentStatus.PENDING },
       {
         status: PaymentStatus.FAILED,
         note: payment.note ? `${payment.note}\n${ghiChu}` : ghiChu,
       },
     );
+    if (kq.affected !== 1) return null;
     return {
       paymentId: payment.id,
       orderId: payment.order?.id,
