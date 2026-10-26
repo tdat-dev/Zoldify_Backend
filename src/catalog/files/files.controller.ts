@@ -126,21 +126,23 @@ export class FilesController {
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('folder') folder: string,
+    @User() user: IUser,
   ) {
-    return this.filesService.findAll(+page || 1, +limit || 20, folder);
+    // Chủ file hoặc admin: kiểm trong FilesService.
+    return this.filesService.findAll(+page || 1, +limit || 20, folder, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   @ResponseMessage('Lấy chi tiết file thành công')
-  findOne(@Param('id') id: string) {
-    return this.filesService.findOne(+id);
+  findOne(@Param('id') id: string, @User() user: IUser) {
+    return this.filesService.findOne(+id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @ResponseMessage('Xóa file thành công')
-  remove(@Param('id') id: string) {
-    return this.filesService.remove(+id);
+  remove(@Param('id') id: string, @User() user: IUser) {
+    return this.filesService.remove(+id, user);
   }
 }
