@@ -225,6 +225,45 @@ export class GhnService {
   }
 
   /**
+   * Huỷ vận đơn trên GHN. Trả kết quả THEO TỪNG MÃ: GHN có thể nhận huỷ mã này
+   * mà từ chối mã kia (vd kiện đã được tài xế lấy).
+   *
+   * API v2 của GHN: `POST {GHN_HOST}/switch-status/cancel`, body
+   * `{ order_codes: [...] }`, cùng hai header Token + ShopId như mọi lời gọi
+   * khác trong file này; GHN trả `data: [{ order_code, result, message }]`.
+   * Hình dạng này lấy theo tài liệu API v2 của GHN, CHƯA đo trên sandbox như
+   * `createOrder` (05/10). Ai có token sandbox thì đo lại một lần.
+   *
+   * Lỗi mạng hay GHN trả lỗi HTTP thì ném nguyên: người gọi quyết định, vì
+   * "không rõ đã huỷ chưa" không được coi là "đã huỷ".
+   */
+  async cancelOrders(
+    orderCodes: string[],
+  ): Promise<Array<{ order_code: string; result: boolean; message: string }>> {
+    const res = await firstValueFrom(
+      this.httpService.post<{
+        data?: Array<{
+          order_code?: string;
+          result?: boolean;
+          message?: string;
+        }>;
+      }>(
+        `${this.baseUrl}/switch-status/cancel`,
+        { order_codes: orderCodes },
+        { headers: this.getHeaders() },
+      ),
+    );
+    const data = res.data?.data;
+    return Array.isArray(data)
+      ? data.map((d) => ({
+          order_code: String(d.order_code ?? ''),
+          result: d.result === true,
+          message: String(d.message ?? ''),
+        }))
+      : [];
+  }
+
+  /**
    * Trạng thái hiện tại của một vận đơn GHN theo mã (order_code).
    *
    * Dùng cho đồng bộ tự động: job đọc trạng thái để biết lô hàng đã 'delivered'

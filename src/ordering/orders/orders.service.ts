@@ -2054,6 +2054,83 @@ export class OrdersService {
   }
 
   /**
+   * Huỷ vận đơn GHN còn sống của đơn, TRƯỚC khi huỷ đơn.
+   *
+   * VÌ SAO. Bản vá E chặn huỷ đơn có vận đơn GHN đang đi, nhưng vận đơn được
+   * tạo ngay lúc người bán xác nhận: chặn mà không huỷ vận đơn thì không còn
+   * ai huỷ được một đơn GHN đã xác nhận (review 6), trong khi web và mobile
+   * vẫn hiện nút huỷ. Nên: hỏi GHN huỷ trước, GHN nhận thì huỷ đơn như thường.
+   *
+   * NGOÀI transaction và ngoài mọi khoá: đây là lời gọi mạng.
+   *
+   *  · Lô đã DELIVERED/RECEIVED (hàng tới tay người mua): từ chối luôn, không
+   *    hỏi GHN. Lớp chặn trong `applyCancellation` vẫn giữ nguyên.
+   *  · GHN từ chối mã nào (thường vì tài xế đã lấy hàng): từ chối huỷ đơn.
+   *  · GHN lỗi mạng: từ chối, vì "không rõ đã huỷ chưa" không phải "đã huỷ".
+   *  · GHN nhận huỷ: lô chuyển FAILED kèm lý do. Dùng lại FAILED chứ không
+   *    thêm trạng thái mới (đổi enum là thêm migration): lô FAILED không còn
+   *    tính là "đang đi", và đơn đã huỷ thì `retryGhnShipments` không tạo lại.
+   *
+   * Nợ kỹ thuật, nói thẳng: đơn nhiều người bán mà GHN nhận huỷ lô này, từ
+   * chối lô kia thì lô đã huỷ ở lại FAILED trên một đơn chưa huỷ; người bán
+   * của lô đó phải bấm tạo lại vận đơn. Gỡ khi có huỷ theo từng người bán.
+   */
+  private async huyVanDonGhnTruoc(orderId: number): Promise<void> {
+    const lo = (
+      await this.shipmentRepository.find({
+        where: { order: { id: orderId }, tracking_code: Not(IsNull()) },
+      })
+    ).filter((s) => s.status !== ShipmentStatus.FAILED);
+    if (!lo.length) return;
+
+    if (lo.some((s) => s.status !== ShipmentStatus.CREATED)) {
+      throw new BadRequestException(
+        'Kiện hàng đã được GHN giao tới người nhận nên không huỷ được đơn nữa. ' +
+          'Liên hệ người bán hoặc quản trị viên để xử lý hoàn hàng.',
+      );
+    }
+
+    let ketQua: Array<{ order_code: string; result: boolean; message: string }>;
+    try {
+      ketQua = await this.ghnService.cancelOrders(
+        lo.map((s) => s.tracking_code),
+      );
+    } catch (err) {
+      throw new BadRequestException(
+        `Chưa huỷ được vận đơn trên GHN (${ghnErrorMessage(err)}) nên chưa huỷ ` +
+          'đơn. Thử lại sau ít phút.',
+      );
+    }
+
+    const ghnNhan = new Set(
+      ketQua.filter((k) => k.result).map((k) => k.order_code),
+    );
+    const daHuy = lo.filter((s) => ghnNhan.has(s.tracking_code));
+    if (daHuy.length) {
+      await this.shipmentRepository.update(
+        { id: In(daHuy.map((s) => s.id)), status: ShipmentStatus.CREATED },
+        {
+          status: ShipmentStatus.FAILED,
+          error: 'Đã huỷ vận đơn trên GHN vì đơn hàng bị huỷ.',
+        },
+      );
+    }
+
+    const biTuChoi = lo.filter((s) => !ghnNhan.has(s.tracking_code));
+    if (biTuChoi.length) {
+      const lyDo = ketQua.find(
+        (k) =>
+          !k.result && k.message && k.order_code === biTuChoi[0].tracking_code,
+      )?.message;
+      throw new BadRequestException(
+        'GHN đã lấy hàng, không huỷ được nữa' +
+          (lyDo ? ` (${lyDo})` : '') +
+          '. Liên hệ người bán hoặc quản trị viên để xử lý hoàn hàng.',
+      );
+    }
+  }
+
+  /**
    * Đóng link thanh toán còn treo, SAU khi transaction đã commit.
    *
    * Không gọi trong transaction: đây là lời gọi mạng ra PayOS, giữ khoá
@@ -2099,6 +2176,7 @@ export class OrdersService {
     const order = await this.findOneAsBuyerOrAdmin(id, user);
     this.assertCancellable(order, 'hủy đơn hàng');
 
+    await this.huyVanDonGhnTruoc(order.id);
     await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
 
@@ -2127,6 +2205,7 @@ export class OrdersService {
     if (!order) return;
 
     this.assertCancellable(order, 'hủy đơn quá hạn');
+    await this.huyVanDonGhnTruoc(order.id);
     await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
   }
@@ -2266,6 +2345,7 @@ export class OrdersService {
     // Dùng chung đúng một đường huỷ với `cancel()`. Trước đây hai hàm này là
     // hai bản chép tay của cùng một việc, thứ tự các bước còn khác nhau — nên
     // sửa một chỗ là bỏ sót chỗ kia.
+    await this.huyVanDonGhnTruoc(order.id);
     await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
 
