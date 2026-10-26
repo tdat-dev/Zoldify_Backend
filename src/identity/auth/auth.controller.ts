@@ -28,6 +28,7 @@ import {
   VerifyRegisterOtpDto,
 } from './dto/auth.entity';
 import { FirebaseService } from '@messaging/firebase/firebase.service';
+import { chuanHoaEmail, emailChuanHoaHoacLoi } from '@common/email';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User as UserEntity } from '@identity/users/entities/user.entity';
@@ -108,10 +109,23 @@ export class AuthController {
     // verifyIdToken đã từ chối token không phải Google, không có email, hoặc
     // email chưa xác minh. Tới đây email là thứ Google đã chứng minh.
     const fbUser = await this.firebaseService.verifyIdToken(dto.idToken);
+    // Cùng bộ chuẩn hoá với mọi cửa vào khác (common/email.ts).
+    const email = emailChuanHoaHoacLoi(fbUser.email);
 
     let user = await this.userRepository.findOne({
-      where: { email: fbUser.email },
+      where: { email },
     });
+
+    // So BẰNG NHAU sau khi chuẩn hoá, không tin phép tra ở trên. users.email
+    // dùng collation bỏ dấu, bỏ hoa thường, nên dòng tìm được có thể mang một
+    // email KHÁC email Google vừa chứng minh (nan-nhan@gmaïl.com khớp
+    // nan-nhan@gmail.com). Nối vào đó là trao tài khoản của địa chỉ này cho
+    // chủ của địa chỉ kia.
+    if (user && chuanHoaEmail(user.email) !== email) {
+      throw new UnauthorizedException(
+        'Email Google không khớp với email của tài khoản',
+      );
+    }
 
     // KHÔNG tự nối vào tài khoản có sẵn mà email chưa xác minh (B-05).
     //
@@ -129,7 +143,7 @@ export class AuthController {
 
     if (!user) {
       user = this.userRepository.create({
-        email: fbUser.email,
+        email,
         full_name: fbUser.name || 'User',
         password: '',
         avatar: fbUser.avatar,
