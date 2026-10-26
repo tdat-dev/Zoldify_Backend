@@ -7,6 +7,7 @@ import {
   Body,
   Patch,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -112,9 +113,17 @@ export class AuthController {
     // Cùng bộ chuẩn hoá với mọi cửa vào khác (common/email.ts).
     const email = emailChuanHoaHoacLoi(fbUser.email);
 
+    // withDeleted: dòng đã xoá mềm vẫn giữ khoá UNIQUE(email). Bỏ qua nó thì
+    // nhánh "chưa có ai" bên dưới INSERT trùng và người dùng nhận 500.
     let user = await this.userRepository.findOne({
       where: { email },
+      withDeleted: true,
     });
+    if (user?.deleted_at) {
+      throw new ForbiddenException(
+        'Tài khoản dùng email này đã bị xoá. Vui lòng liên hệ hỗ trợ để khôi phục.',
+      );
+    }
 
     // So BẰNG NHAU sau khi chuẩn hoá, không tin phép tra ở trên. users.email
     // dùng collation bỏ dấu, bỏ hoa thường, nên dòng tìm được có thể mang một
