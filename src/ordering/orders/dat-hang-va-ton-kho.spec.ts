@@ -1,4 +1,6 @@
 import { DataSource, FindManyOptions, FindOneOptions } from 'typeorm';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { Order, OrderStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -563,5 +565,49 @@ describe('Đặt hàng và tồn kho', () => {
     await orders.updateStatus(don.id, { status: OrderStatus.REFUNDED }, admin);
 
     expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
+  });
+
+  /**
+   * Rà soát 26/10 mục 2 — đơn thiếu địa chỉ GHN.
+   *
+   * `ghn_district_id` và `ghn_ward_code` đều `@IsOptional`. Thiếu một trong hai
+   * thì khối tính phí ship không chạy, phí ship bằng 0, đơn vẫn tạo: người mua
+   * được ship "miễn phí", người bán thì không tạo nổi vận đơn GHN lúc xác nhận
+   * (`createGhnShipmentsPerSeller` cần đúng hai trường đó). Web và mobile đã
+   * bắt buộc chọn phường/xã; server phải chặn theo, không tin client.
+   */
+  it('Mục 2 — thiếu địa chỉ GHN thì từ chối, không tạo đơn phí ship 0', async () => {
+    await themVaoGio(productId, 1);
+
+    const thieu: Array<Partial<CreateOrderDto>> = [
+      { ghn_district_id: undefined },
+      { ghn_ward_code: undefined },
+      { ghn_ward_code: '' },
+      { ghn_district_id: undefined, ghn_ward_code: undefined },
+    ];
+    for (const t of thieu) {
+      await expect(
+        orders.create({ ...donMacDinh(), ...t }, nguoiMua()),
+      ).rejects.toThrow(/GHN/);
+    }
+
+    const [{ n }] = await ds.query<Array<{ n: number }>>(
+      'SELECT COUNT(*) AS n FROM orders WHERE user_id = ?',
+      [buyerId],
+    );
+    expect(Number(n)).toBe(0);
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
+  });
+
+  it('Mục 2 — DTO đặt hàng bắt buộc hai trường địa chỉ GHN', async () => {
+    const khongGhn: Partial<CreateOrderDto> = donMacDinh();
+    delete khongGhn.ghn_district_id;
+    delete khongGhn.ghn_ward_code;
+    const loi = (await validate(plainToInstance(CreateOrderDto, khongGhn))).map(
+      (e) => e.property,
+    );
+    expect(loi).toEqual(
+      expect.arrayContaining(['ghn_district_id', 'ghn_ward_code']),
+    );
   });
 });
