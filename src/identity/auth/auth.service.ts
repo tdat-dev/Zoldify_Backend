@@ -16,6 +16,20 @@ import { User } from '@identity/users/entities/user.entity';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { MailerService } from '@nestjs-modules/mailer';
+import { createHash, randomUUID } from 'crypto';
+
+/**
+ * Băm refresh token trước khi lưu vào users.refresh_token.
+ *
+ * Bản trước lưu nguyên token: ai đọc được bảng users (bản sao lưu, một câu
+ * SELECT lọt ra ngoài; cột này từng lộ qua GET /products, xem user.entity.ts)
+ * là cầm được phiên còn hạn một tuần của mọi người. SHA-256 không muối là đủ:
+ * token là JWT ngẫu nhiên dài, không có từ điển nào để dò ngược như mật khẩu,
+ * và phải so được bằng một câu UPDATE ... WHERE refresh_token = ? (bcrypt thì
+ * không). 64 ký tự hex vừa cột VARCHAR(500) sẵn có, không cần migration.
+ */
+const bamRefresh = (token: string) =>
+  createHash('sha256').update(token).digest('hex');
 
 @Injectable()
 export class AuthService {
@@ -93,7 +107,10 @@ export class AuthService {
       token_version: tokenVersion,
     };
     const refreshToken = this.createRefreshToken(payload);
-    await this.usersService.updateUserToken(refreshToken, id.toString());
+    await this.usersService.updateUserToken(
+      bamRefresh(refreshToken),
+      id.toString(),
+    );
     return {
       access_token: this.jwtService.sign(payload),
       refresh_token: refreshToken,
@@ -105,6 +122,12 @@ export class AuthService {
     return this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_REFRESH_TOKEN_SECRET') || '',
       expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRE') as any,
+      // jti ngẫu nhiên: thiếu nó thì hai token phát trong cùng một giây cho
+      // cùng một người là HAI CHUỖI GIỐNG HỆT (cùng payload, cùng iat), và
+      // "token cũ chết khi token mới ra đời" không còn nghĩa gì. Đo được trong
+      // refresh-dung-mot-lan.spec.ts: login rồi làm mới hai lần liền ra một
+      // token duy nhất.
+      jwtid: randomUUID(),
     });
   }
 
@@ -424,10 +447,50 @@ export class AuthService {
     };
 
     const newRefreshToken = this.createRefreshToken(newPayload);
-    await this.usersService.updateUserToken(
-      newRefreshToken,
-      user.id.toString(),
-    );
+
+    // DÙNG MỘT LẦN, XOAY VÒNG, VÀ PHÁT HIỆN DÙNG LẠI.
+    //
+    // Bản trước chỉ kiểm chữ ký và token_version, nên một refresh token bị lộ
+    // dùng được song song với chủ thật tới hết hạn, không cách nào phát hiện.
+    //
+    // Đổi token bằng MỘT câu UPDATE có điều kiện "cột đang giữ đúng token này":
+    // hai request cùng một token chạy song song thì chỉ một câu trúng dòng
+    // (affected = 1); đọc-rồi-ghi hai bước thì cả hai cùng thấy khớp và cùng
+    // được token mới. Vế so nguyên văn (refreshToken chưa băm) là cho các
+    // phiên phát TRƯỚC bản vá, lúc cột còn lưu nguyên token: không có nó thì
+    // mọi người đang đăng nhập bị coi là dùng lại và bị đá ra ngay sau deploy.
+    // Gỡ vế đó khi đã qua một JWT_REFRESH_EXPIRE (7 ngày) kể từ ngày deploy.
+    //
+    // Không trúng dòng nghĩa là token này đã được đổi rồi (hoặc đã đăng xuất):
+    // hoặc kẻ gian đang dùng token cũ, hoặc chủ thật đang dùng token cũ sau
+    // khi kẻ gian đổi mất. Không phân biệt được hai ca, nên thu hồi tất cả:
+    // tăng token_version (mọi access/refresh token cũ chết) và xoá cột.
+    //
+    // Đánh đổi phải biết: cột chỉ giữ MỘT refresh token mỗi người, nên đăng
+    // nhập trên máy thứ hai làm token của máy thứ nhất thành "cũ"; máy thứ nhất
+    // làm mới là đá cả hai máy. Client gọi /auth/refresh phải gom các lần làm
+    // mới đồng thời thành một (single-flight). Hôm nay chưa client nào gọi
+    // route này (kiểm 25/10). Muốn nhiều phiên song song thì cần bảng phiên
+    // riêng, mỗi thiết bị một dòng.
+    const doi = await this.userRepository
+      .createQueryBuilder()
+      .update(User)
+      .set({ refresh_token: bamRefresh(newRefreshToken) })
+      .where('id = :id', { id: user.id })
+      .andWhere('refresh_token IN (:...cu)', {
+        cu: [bamRefresh(refreshToken), refreshToken],
+      })
+      .execute();
+    if (!doi.affected) {
+      await this.userRepository.increment({ id: user.id }, 'token_version', 1);
+      await this.userRepository.update(user.id, { refresh_token: null });
+      this.logger.warn(
+        `Refresh token đã dùng rồi bị gửi lại cho user ${user.id}: thu hồi mọi phiên`,
+      );
+      throw new BadRequestException(
+        'Refresh token đã được dùng hoặc đã bị thu hồi, vui lòng đăng nhập lại',
+      );
+    }
 
     return {
       access_token: this.jwtService.sign({
