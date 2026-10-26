@@ -1382,38 +1382,6 @@
             }
           },
           {
-            "name": "category_id",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "seller_id",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "price_min",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "price_max",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "condition",
             "required": false,
             "in": "query",
@@ -1427,6 +1395,38 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "price_max",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "price_min",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "seller_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "category_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
             }
           }
         ],
@@ -1557,7 +1557,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "number"
             }
           }
         ],
@@ -1601,7 +1601,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "number"
             }
           }
         ],
@@ -1655,7 +1655,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "number"
             }
           }
         ],
@@ -1699,7 +1699,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "number"
             }
           }
         ],
@@ -2464,7 +2464,18 @@
     "/api/v1/orders": {
       "post": {
         "operationId": "OrdersController_create_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "required": false,
+            "in": "header",
+            "description": "Khoá chống trùng do client sinh cho MỘT lần đặt hàng (1-100 ký tự ASCII in được, ví dụ UUID). Gửi lại POST /orders với cùng khoá sau khi đơn đã tạo thì nhận lại chính đơn đó thay vì lỗi \"Giỏ hàng trống\". Khoá tính riêng theo từng người dùng.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -6441,6 +6452,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KhoaNguoiDungDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -6467,6 +6488,96 @@
             }
           }
         },
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/lock": {
+      "patch": {
+        "operationId": "AdminController_lockUser_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Khoá TƯỜNG MINH: gọi lại bao nhiêu lần cũng vẫn là khoá.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/unlock": {
+      "patch": {
+        "operationId": "AdminController_unlockUser_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Mở khoá TƯỜNG MINH.",
         "tags": [
           "Admin"
         ]
@@ -7226,7 +7337,7 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "number"
             }
           },
           {
@@ -7915,7 +8026,9 @@
             "type": "string"
           },
           "price": {
-            "type": "number"
+            "type": "number",
+            "description": "Giá tối thiểu 1. Trước 26/10 chỉ có `@IsNumber`: đăng được món -1000đ hay\n0đ, và món 0đ cộng phí ship 0 thì ra đơn tổng 0đ mà PayOS từ chối tạo link\n(amount phải > 0), đơn kẹt ở pending tới khi cron huỷ. Web và mobile đều\nđã chặn `price > 0` ở form (edit/page.tsx, sell-screen.tsx), nên chặn ở\nđây không làm hỏng client nào, chỉ đóng đường gọi thẳng API.",
+            "minimum": 1
           },
           "currency": {
             "type": "string",
@@ -7941,7 +8054,9 @@
             "type": "string"
           },
           "stock": {
-            "type": "number"
+            "type": "number",
+            "description": "Số nguyên không âm, cùng luật với `UpdateStockDto`. `@IsNumber` cũ nhận\n1.5: cột `stock` là int nên MySQL lặng lẽ làm tròn thành 2, người bán\nthấy kho khác với số mình gõ mà không có lỗi nào báo.",
+            "minimum": 0
           },
           "images": {
             "type": "array",
@@ -7964,13 +8079,24 @@
       },
       "UpdateProductDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "expected_stock": {
+            "type": "number",
+            "description": "Số tồn kho client ĐANG HIỂN THỊ lúc người bán mở form sửa.\n\nCó trường này thì đổi `stock` chỉ thành công khi kho thật vẫn bằng nó, tức\nkhoá lạc quan phủ trọn từ lúc tải trang tới lúc bấm lưu. Không gửi thì\nserver lấy số vừa đọc trong chính request, chỉ phủ được khe vài mili giây\ngiữa lúc đọc và lúc ghi. Xem `ProductsService.update`.",
+            "minimum": 0
+          }
+        }
       },
       "UpdateStockDto": {
         "type": "object",
         "properties": {
           "stock": {
             "type": "number",
+            "minimum": 0
+          },
+          "expected_stock": {
+            "type": "number",
+            "description": "Số tồn kho client đang hiển thị. `ProductsService.updateStock` đã nhận\ntham số này từ lâu nhưng controller chưa bao giờ truyền xuống, nên khoá\nlạc quan chỉ phủ khe trong một request. Gửi kèm thì phủ cả lúc trang mở.",
             "minimum": 0
           }
         },
@@ -8122,7 +8248,9 @@
             "minimum": 0
           },
           "ghn_district_id": {
-            "type": "number"
+            "type": "number",
+            "description": "BẮT BUỘC từ rà soát 26/10. Trước đó hai trường này `@IsOptional`: bỏ\ntrống là khối tính phí ship không chạy, đơn tạo với phí ship 0 và người\nbán không tạo nổi vận đơn GHN lúc xác nhận. Web (`checkout/page.tsx`) và\nmobile (`checkout-screen.tsx`) đều đã khoá nút đặt hàng khi thiếu chúng.",
+            "minimum": 1
           },
           "ghn_ward_code": {
             "type": "string"
@@ -8137,7 +8265,9 @@
         "required": [
           "shipping_address",
           "receiver_name",
-          "receiver_phone"
+          "receiver_phone",
+          "ghn_district_id",
+          "ghn_ward_code"
         ]
       },
       "ShippingQuoteDto": {
@@ -8174,6 +8304,11 @@
             "type": "string",
             "nullable": true,
             "description": "Khoá chống trùng — một giỏ hàng chỉ đặt được đúng một đơn.\n\nSinh từ `sha256(userId + ':' + các id dòng giỏ hàng đã sắp xếp)`. Người mua\nbấm \"Đặt hàng\" hai lần cùng lúc thì cả hai cùng sinh ra chuỗi này, và khoá\nUNIQUE dưới database để đúng một lượt đi qua. Lượt kia nhận lại chính đơn\nvừa tạo, không phải một thông báo lỗi.\n\nĐo được trước khi có nó, bằng `npm run check:race` R5: 20 lượt bấm đồng\nthời → 20 đơn, kho trừ 20 lần.\n\nNULL cho đơn có trước migration `1787900000000`. MySQL cho phép nhiều NULL\ntrong một khoá UNIQUE nên chúng không đụng nhau."
+          },
+          "client_idempotency_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "Khoá chống trùng do CLIENT gửi qua header `Idempotency-Key` (tối đa 100\nký tự). Gửi lại POST /orders với cùng khoá sau khi đơn đã tạo thì nhận\nlại chính đơn đó. NULL khi client không gửi header."
           },
           "user": {
             "$ref": "#/components/schemas/User"
@@ -8274,6 +8409,7 @@
           "id",
           "order_code",
           "idempotency_key",
+          "client_idempotency_key",
           "user",
           "total_amount",
           "shipping_fee",
@@ -9474,6 +9610,14 @@
           },
           "pickup_ward_name": {
             "type": "string"
+          }
+        }
+      },
+      "KhoaNguoiDungDto": {
+        "type": "object",
+        "properties": {
+          "is_locked": {
+            "type": "boolean"
           }
         }
       },
