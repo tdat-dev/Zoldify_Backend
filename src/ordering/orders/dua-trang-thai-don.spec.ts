@@ -772,4 +772,52 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
 
     expect(biKhoa).toEqual([]);
   });
+
+  /** Đơn đã xác nhận, lần tạo vận đơn trước bị GHN từ chối (lô FAILED). */
+  async function taoDonCanTaoLaiVanDon(): Promise<number> {
+    const orderId = await taoDonChoGhn(1);
+    await ds.query(`UPDATE orders SET status = 'confirmed' WHERE id = ?`, [
+      orderId,
+    ]);
+    const repo = ds.getRepository(OrderShipment);
+    await repo.save(
+      repo.create({
+        order: { id: orderId } as Order,
+        seller: { id: sellerId } as User,
+        cod_amount: GIA,
+        status: ShipmentStatus.FAILED,
+        error: 'GHN 400: quận ngừng phục vụ',
+      }),
+    );
+    return orderId;
+  }
+
+  /**
+   * Review 2: \`retryGhnShipments\` có đúng cái lỗi mà bản vá B đã sửa ở
+   * \`updateStatus\`: đọc đơn, gọi GHN qua mạng, rồi \`save(order)\` NGUYÊN entity
+   * cũ. Tiền về trong lúc chờ GHN thì \`is_paid\` bị kéo về 0.
+   */
+  it('review 2: tạo lại vận đơn không ghi đè is_paid vừa được đặt', async () => {
+    const orderId = await taoDonCanTaoLaiVanDon();
+    giuaGhn = () =>
+      ds.query(`UPDATE orders SET is_paid = 1, paid_at = NOW() WHERE id = ?`, [
+        orderId,
+      ]);
+
+    await orders.retryGhnShipments(orderId, nguoiBan());
+
+    expect((await donLuc(orderId)).is_paid).toBe(1);
+  });
+
+  it('review 2: tạo lại vận đơn không hồi sinh đơn vừa bị huỷ', async () => {
+    const orderId = await taoDonCanTaoLaiVanDon();
+    giuaGhn = () =>
+      ds.query(`UPDATE orders SET status = 'cancelled' WHERE id = ?`, [
+        orderId,
+      ]);
+
+    await orders.retryGhnShipments(orderId, nguoiBan()).catch(() => undefined);
+
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.CANCELLED);
+  });
 });
