@@ -23,6 +23,7 @@ import { LedgerDoiSoatService } from './ledger-doi-soat.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 import { ChangeRoleDto } from './dto/change-role.dto';
 import { KhoaNguoiDungDto } from './dto/khoa-nguoi-dung.dto';
+import { ApiBody } from '@nestjs/swagger';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -58,6 +59,8 @@ export class AdminController {
     return this.adminService.getUserDetail(+id);
   }
 
+  // Body KHÔNG bắt buộc: web admin gọi route này không có body (lật như cũ).
+  @ApiBody({ type: KhoaNguoiDungDto, required: false })
   @Patch('users/:id/toggle-lock')
   @ResponseMessage('Khóa/mở tài khoản thành công')
   toggleUserLock(@Param('id') id: string, @Body() dto: KhoaNguoiDungDto) {

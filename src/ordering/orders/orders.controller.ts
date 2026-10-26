@@ -52,7 +52,9 @@ export class OrdersController {
   create(
     @Body() createOrderDto: CreateOrderDto,
     @User() user: IUser,
-    @Headers('idempotency-key') idempotencyKey?: string,
+    // Cùng tên với @ApiHeader để OpenAPI gộp làm một tham số (không bắt
+    // buộc); Nest tự hạ chữ thường khi đọc header.
+    @Headers('Idempotency-Key') idempotencyKey?: string,
   ) {
     return this.ordersService.create(createOrderDto, user, idempotencyKey);
   }

@@ -10,6 +10,7 @@ import {
   Query,
   ParseIntPipe,
 } from '@nestjs/common';
+import { ApiQuery } from '@nestjs/swagger';
 import { SoTuyChonPipe } from '@common/pipes/so-tuy-chon.pipe';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -37,6 +38,12 @@ export class ProductsController {
   @ResponseMessage('Lấy danh sách tất cả sản phẩm thành công!')
   @Public()
   @ApiPaginated(Product)
+  // Khai kiểu số tường minh: tham số `number | undefined` làm plugin Swagger
+  // ra `schema: {}`, ba client mất kiểu của bốn bộ lọc này.
+  @ApiQuery({ name: 'category_id', required: false, type: Number })
+  @ApiQuery({ name: 'seller_id', required: false, type: Number })
+  @ApiQuery({ name: 'price_min', required: false, type: Number })
+  @ApiQuery({ name: 'price_max', required: false, type: Number })
   @Get()
   findAll(
     @Query('current') currentPage: string,
