@@ -51,6 +51,10 @@ const MA = {
   OUT_OF_RANGE: 1264,
   /** Vi phạm ràng buộc CHECK (MySQL 8.0.16+). */
   CHECK_VIOLATED: 3819,
+  /** InnoDB phát hiện vòng chờ khoá, quay lui một giao dịch. */
+  DEADLOCK: 1213,
+  /** Chờ khoá quá `innodb_lock_wait_timeout` (mặc định 50 giây). */
+  LOCK_WAIT_TIMEOUT: 1205,
 } as const;
 
 interface KetQua {
@@ -101,6 +105,24 @@ function anhXa(errno: number | undefined): KetQua {
           'Giá trị gửi lên không hợp lệ — ví dụ số lượng âm, tiền âm, hoặc số ' +
           'lượng bằng 0. Kiểm tra lại rồi gửi lại.',
         error: 'Bad Request',
+      };
+
+    // TRANH KHOÁ: HAI THAO TÁC CHẠM NHAU CÙNG LÚC.
+    //
+    // Không phải lỗi dữ liệu, cũng không phải lỗi máy chủ theo nghĩa "hỏng":
+    // MySQL đã quay lui trọn transaction, không có gì ghi dở, và gửi lại là
+    // đúng cách xử lý. Bản cũ rơi xuống nhánh mặc định, trả 500 "không ghi được
+    // dữ liệu" (review 11). Thứ tự khoá đơn -> ký quỹ -> sổ cái đã làm deadlock
+    // hiếm đi, nhưng không thể chứng minh là không bao giờ xảy ra; chỗ này là
+    // lưới cho phần còn lại.
+    case MA.DEADLOCK:
+    case MA.LOCK_WAIT_TIMEOUT:
+      return {
+        status: 409,
+        message:
+          'Có thao tác khác đang xử lý cùng dữ liệu này nên lần này chưa ghi ' +
+          'được, chưa có gì thay đổi. Vui lòng thử lại sau giây lát.',
+        error: 'Conflict',
       };
 
     case MA.DATA_TOO_LONG:
