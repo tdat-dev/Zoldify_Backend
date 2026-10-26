@@ -960,8 +960,13 @@ export class OrdersService {
       const daTra = updateOrderDto.is_paid === true && !chot.is_paid;
       // Đơn đã huỷ/hoàn tiền: hàng đã về kho, ký quỹ sinh ra lúc này nằm
       // `holding` mãi mãi vì đơn đóng rồi, không đường nào giải ngân hay hoàn
-      // được nữa (bài kiểm H).
-      if (daTra && DA_DONG_KHONG_GIAO.includes(chot.status)) {
+      // được nữa (bài kiểm H). Đơn đã giao cũng vậy: giải ngân chạy lúc chuyển
+      // sang `delivered`, đơn đã qua bước đó, và PayOS cũng coi nó là đã đóng
+      // (bài kiểm "review 10").
+      if (
+        daTra &&
+        [...DA_DONG_KHONG_GIAO, OrderStatus.DELIVERED].includes(chot.status)
+      ) {
         throw new BadRequestException(
           `Đơn hàng đang ở trạng thái "${chot.status}" nên không ghi nhận đã ` +
             'thu tiền được. Nếu tiền thật đã về, cần hoàn tay cho người mua.',
