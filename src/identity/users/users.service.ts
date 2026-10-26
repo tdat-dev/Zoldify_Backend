@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { COT_SUA_DUOC, UpdateUserDto } from './dto/update-user.dto';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -67,7 +67,16 @@ export class UsersService {
     if (!foundUser) {
       throw new NotFoundException('Tài khoản không tồn tại');
     }
-    await this.userRepository.update(id, updateUserDto);
+    // Lọc lại theo danh sách trắng dù DTO đã chặn: hàm này còn được gọi thẳng
+    // (script, test), và một object lọt password/role vào đây là ghi mật khẩu
+    // chưa băm hoặc đổi vai trò không thu hồi phiên (xem update-user.dto.ts).
+    const patch: UpdateUserDto = {};
+    for (const k of COT_SUA_DUOC) {
+      if (updateUserDto[k] !== undefined) patch[k] = updateUserDto[k];
+    }
+    if (Object.keys(patch).length) {
+      await this.userRepository.update(id, patch);
+    }
     return this.findOne(id);
   }
 
