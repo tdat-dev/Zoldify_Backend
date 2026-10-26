@@ -11,7 +11,6 @@ import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import {
   DataSource,
   EntityManager,
-  FindOptionsWhere,
   In,
   Repository,
 } from 'typeorm';
@@ -259,15 +258,13 @@ export class EscrowsService {
    */
   async release(orderId: number, sellerId?: number) {
     return this.dataSource.transaction(async (em) => {
-      const where: any = {
-        order: { id: orderId },
-        status: EscrowStatus.HOLDING,
-      };
       // Giải ngân theo TỪNG người bán (sàn C2C nhiều người bán): người mua xác
       // nhận nhận hàng của một người bán thì chỉ khoản của người đó được chuyển.
-      if (sellerId !== undefined) where.seller = { id: sellerId };
-
-      const escrows = await this.napVaKhoa(em, where, ['seller']);
+      const escrows = await this.napVaKhoa(
+        em,
+        { orderId, sellerId, chiHolding: true },
+        ['seller'],
+      );
 
       if (!escrows.length) {
         // Giải ngân theo người bán mà không còn khoản HOLDING nào = đã giải ngân
@@ -394,10 +391,7 @@ export class EscrowsService {
     doiLaiTuNguoiBan = false,
   ) {
     const run = async (em: EntityManager) => {
-      const tatCa = await this.napVaKhoa(em, { order: { id: orderId } }, [
-        'buyer',
-        'seller',
-      ]);
+      const tatCa = await this.napVaKhoa(em, { orderId }, ['buyer', 'seller']);
 
       if (!tatCa.length) {
         throw new NotFoundException('Không tìm thấy escrow nào để hoàn tiền');
@@ -555,16 +549,32 @@ export class EscrowsService {
    * bảng escrows, rồi mới nạp quan hệ bằng câu đọc thường. Đọc thường ở câu thứ
    * hai là an toàn vì chỉ lấy `buyer`/`seller`, hai cột không bao giờ đổi;
    * `status` vẫn lấy từ câu có khoá.
+   *
+   * CÂU CÓ KHOÁ CHỈ ĐƯỢC NHẮC TỚI CỘT CỦA CHÍNH BẢNG ESCROWS. Bản đầu dùng
+   * `em.find({ where: { order: { id }, seller: { id } } })`: lọc theo quan hệ
+   * là TypeORM sinh LEFT JOIN orders/users, và `FOR UPDATE` khoá luôn dòng đơn
+   * lẫn dòng người bán (bài kiểm "review 1" đo thấy cả hai bị giữ). Giữ dòng
+   * người bán S rồi chờ khoá két giữ hộ là đủ cho một vòng chờ với webhook
+   * đang giữ két và chèn ký quỹ cho đơn khác của S (kiểm khoá ngoại cần khoá
+   * chia sẻ trên dòng S): MySQL ném 1213, API trả 500. Nên viết thẳng
+   * `e.order_id`, `e.seller_id` bằng QueryBuilder, không JOIN nào cả.
    */
   private async napVaKhoa(
     em: EntityManager,
-    where: FindOptionsWhere<Escrow>,
+    loc: { orderId: number; sellerId?: number; chiHolding?: boolean },
     relations: Array<'buyer' | 'seller'>,
   ): Promise<Escrow[]> {
-    const daKhoa = await em.find(Escrow, {
-      where,
-      lock: { mode: 'pessimistic_write' },
-    });
+    const cau = em
+      .createQueryBuilder(Escrow, 'e')
+      .setLock('pessimistic_write')
+      .where('e.order_id = :orderId', { orderId: loc.orderId });
+    if (loc.sellerId !== undefined) {
+      cau.andWhere('e.seller_id = :sellerId', { sellerId: loc.sellerId });
+    }
+    if (loc.chiHolding) {
+      cau.andWhere('e.status = :status', { status: EscrowStatus.HOLDING });
+    }
+    const daKhoa = await cau.getMany();
     if (!daKhoa.length) return [];
 
     const quanHe = new Map(
