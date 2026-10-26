@@ -121,6 +121,17 @@ describe('AdminAuditInterceptor — nhật ký hành động admin', () => {
   });
 
   const dem = () => dataSource.getRepository(AdminActionLog).count();
+  // Interceptor ghi log kiểu bắn rồi quên (void this.ghi), nên 50ms sau
+  // complete chỉ là một lần đoán. Đo 26/10 khi MySQL test nằm sau IP của WSL:
+  // ca 1 đỏ 3 trên 4 lần chạy liên tiếp vì dòng chưa kịp ghi. Ca cần có dòng
+  // thì chờ tới khi đủ dòng (tối đa 2 giây); ca cần KHÔNG có dòng vẫn đo sau
+  // 50ms như cũ.
+  const choDuDong = async (n: number) => {
+    for (let i = 0; i < 40; i++) {
+      if ((await dem()) >= n) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  };
   const chay = (ctx: ExecutionContext) =>
     new Promise<void>((resolve, reject) => {
       interceptor.intercept(ctx, kePhia).subscribe({
@@ -143,6 +154,7 @@ describe('AdminAuditInterceptor — nhật ký hành động admin', () => {
       }),
     );
 
+    await choDuDong(1);
     const rows = await dataSource.getRepository(AdminActionLog).find();
     expect(rows).toHaveLength(1);
     expect(rows[0].admin_id).toBe(7);
@@ -196,6 +208,7 @@ describe('AdminAuditInterceptor — nhật ký hành động admin', () => {
       }),
     );
 
+    await choDuDong(1);
     const [row] = await dataSource.getRepository(AdminActionLog).find();
     const payload = JSON.stringify(row.payload ?? {});
     expect(payload).toContain('Nguyen Van A');
