@@ -342,6 +342,24 @@ describe('Khoá / xoá người bán', () => {
     );
   });
 
+  /**
+   * Review 26/10 mục 4. Mở khoá bày lại MỌI tin `draft` của người bán, kể cả
+   * tin vốn là nháp từ trước khi bị khoá (seed, sửa tay, hay luồng soạn nháp
+   * sau này): người bán chưa muốn đăng mà hàng đã lên trang chủ.
+   */
+  it('mở khoá chỉ bày lại đúng tin bị ẩn lúc khoá, tin vốn là nháp giữ nguyên', async () => {
+    const dangBan = await taoSanPham(sellerId);
+    const nhap = await taoSanPham(sellerId);
+    await ds.query(`UPDATE products SET status = 'draft' WHERE id = ?`, [nhap]);
+
+    await khoa(sellerId, true);
+    await khoa(sellerId, true);
+    await khoa(sellerId, false);
+
+    expect(await trangThaiSp(dangBan)).toBe(ProductStatus.ACTIVE);
+    expect(await trangThaiSp(nhap)).toBe(ProductStatus.DRAFT);
+  });
+
   it('mở khoá: hàng bị ẩn vì khoá được bày bán lại', async () => {
     const sp = await taoSanPham(sellerId);
     await khoa(sellerId, true);
