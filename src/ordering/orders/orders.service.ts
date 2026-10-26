@@ -160,7 +160,68 @@ export class OrdersService {
     return { total_users, total_products, total_orders, total_revenue };
   }
 
-  async create(createOrderDto: CreateOrderDto, user: IUser) {
+  /**
+   * Chuẩn hoá header Idempotency-Key: bỏ khoảng trắng hai đầu, trống thì coi
+   * như không gửi, dài quá 100 hay có ký tự điều khiển/không phải ASCII in
+   * được thì 400 (cột chỉ 100 ký tự, và chuỗi này đi vào log).
+   */
+  private chuanHoaKhoaKhach(khoa?: string): string | null {
+    if (khoa === undefined || khoa === null) return null;
+    const k = String(khoa).trim();
+    if (k === '') return null;
+    if (k.length > 100 || !/^[\x21-\x7E]+$/.test(k)) {
+      throw new BadRequestException(
+        'Idempotency-Key phải dài 1-100 ký tự ASCII in được, không khoảng trắng.',
+      );
+    }
+    return k;
+  }
+
+  /** Trả lại một đơn đã tạo, cùng hình dạng với phản hồi đặt hàng mới. */
+  private async traLaiDonDaTao(
+    id: number,
+    user: IUser,
+    paymentMethod?: PaymentMethod,
+  ) {
+    const cu = (await this.findOne(id, user)) as Order & {
+      needs_payOS?: boolean;
+    };
+    cu.needs_payOS =
+      (paymentMethod ?? cu.payment_method) === PaymentMethod.PAYOS;
+    return cu;
+  }
+
+  async create(
+    createOrderDto: CreateOrderDto,
+    user: IUser,
+    idempotencyKey?: string,
+  ) {
+    // GỬI LẠI CÙNG Idempotency-Key THÌ NHẬN LẠI ĐƠN ĐẦU.
+    //
+    // Khoá giỏ hàng bên dưới chỉ chặn hai lượt bấm CÙNG LÚC. Lượt gửi lại SAU
+    // KHI lượt đầu đã commit thì giỏ đã bị xoá, và tới 26/10 nó nhận "Giỏ hàng
+    // trống": đơn đã có mà app báo lỗi. Tra theo khoá của client TRƯỚC mọi
+    // bước khác (kể cả kiểm địa chỉ, đọc giỏ). Khoá thuộc về từng người dùng:
+    // trùng chuỗi với người khác không bao giờ trả đơn của họ.
+    const khoaKhach = this.chuanHoaKhoaKhach(idempotencyKey);
+    if (khoaKhach) {
+      const daCo = await this.orderRepository.findOne({
+        where: { user: { id: user.id }, client_idempotency_key: khoaKhach },
+        select: { id: true },
+      });
+      if (daCo) {
+        this.logger.log(
+          `Gửi lại POST /orders cùng Idempotency-Key của user ${user.id}: ` +
+            `trả lại đơn #${daCo.id}.`,
+        );
+        return this.traLaiDonDaTao(
+          daCo.id,
+          user,
+          createOrderDto.payment_method,
+        );
+      }
+    }
+
     const {
       shipping_address,
       receiver_name,
@@ -446,6 +507,7 @@ export class OrdersService {
       note,
       ghn_district_id: createOrderDto.ghn_district_id,
       ghn_ward_code: createOrderDto.ghn_ward_code,
+      client_idempotency_key: khoaKhach,
     });
 
     // ── TỪ ĐÂY TRỞ XUỐNG LÀ MỘT TRANSACTION ──────────────────────────────────
@@ -609,21 +671,31 @@ export class OrdersService {
     } catch (err) {
       if (!laLoiTrungKhoa(err)) throw err;
 
-      const daTao = await this.orderRepository.findOne({
-        where: { idempotency_key: khoaChongTrung },
-      });
+      // Đụng khoá giỏ hàng HOẶC khoá của client (hai lượt cùng Idempotency-Key
+      // chạy song song mà giỏ khác nhau): tra cả hai, theo thứ tự đó.
+      const daTao =
+        (await this.orderRepository.findOne({
+          where: { idempotency_key: khoaChongTrung },
+        })) ??
+        (khoaKhach
+          ? await this.orderRepository.findOne({
+              where: {
+                user: { id: user.id },
+                client_idempotency_key: khoaKhach,
+              },
+            })
+          : null);
       if (!daTao) throw err;
 
       this.logger.log(
-        `Đơn trùng lượt bấm của user ${user.id} — trả lại đơn #${daTao.id} ` +
+        `Đơn trùng lượt bấm của user ${user.id}: trả lại đơn #${daTao.id} ` +
           'thay vì tạo đơn mới.',
       );
-      const cu = (await this.findOne(daTao.id, user)) as Order & {
-        needs_payOS?: boolean;
-      };
-      cu.needs_payOS =
-        (payment_method ?? order.payment_method) === PaymentMethod.PAYOS;
-      return cu;
+      return this.traLaiDonDaTao(
+        daTao.id,
+        user,
+        payment_method ?? order.payment_method,
+      );
     }
 
     // Kho vừa trừ đã commit: trang sản phẩm phải thấy ngay (xem

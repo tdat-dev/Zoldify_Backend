@@ -11,7 +11,9 @@ import {
   ForbiddenException,
   HttpCode,
   HttpStatus,
+  Headers,
 } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { ShipmentTrackingService } from './shipment-tracking.service';
 import { Public } from '@common/decorators/public.decorator';
@@ -36,9 +38,23 @@ export class OrdersController {
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Tạo đơn hàng thành công')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Khoá chống trùng do client sinh cho MỘT lần đặt hàng (1-100 ký tự ASCII ' +
+      'in được, ví dụ UUID). Gửi lại POST /orders với cùng khoá sau khi đơn đã ' +
+      'tạo thì nhận lại chính đơn đó thay vì lỗi "Giỏ hàng trống". Khoá tính ' +
+      'riêng theo từng người dùng.',
+    schema: { type: 'string', maxLength: 100 },
+  })
   @Post()
-  create(@Body() createOrderDto: CreateOrderDto, @User() user: IUser) {
-    return this.ordersService.create(createOrderDto, user);
+  create(
+    @Body() createOrderDto: CreateOrderDto,
+    @User() user: IUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.ordersService.create(createOrderDto, user, idempotencyKey);
   }
 
   @UseGuards(JwtAuthGuard)
