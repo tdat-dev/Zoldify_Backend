@@ -9,3 +9,9 @@
 # commit. scripts/selfcheck-backup.ts kiểm lại điều này bằng cách đọc thẳng
 # blob trong git chứ không đọc bản trên đĩa.
 *.sh text eol=lf
+
+# openapi.json do `npm run openapi:gen` sinh lại ở dạng LF trên mọi máy. Máy Windows
+# đặt core.autocrlf=true thì git coi file vừa sinh (LF) là "đã sửa" dù nội dung
+# y hệt, và cổng "cây làm việc sạch" của nghiem-thu hỏng ngay sau openapi:check.
+# Đo 26/10: git diff --quiet trả 0 mà git status vẫn báo M. Ghim LF cho file này.
+openapi.json text eol=lf
