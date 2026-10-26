@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { OrdersService } from './orders.service';
 import { Order, OrderStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -853,5 +853,81 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     await orders.updateStatus(orderId, { is_paid: true }, quanTri());
 
     expect(dem()).toBe(1);
+  });
+
+  /**
+   * Đơn hai món mà dòng hàng lưu theo thứ tự id sản phẩm GIẢM dần (món mới
+   * hơn đứng trước), đúng như khi người mua thêm vào giỏ món mới trước.
+   */
+  async function taoDonHaiMonNguoc(status: OrderStatus): Promise<{
+    orderId: number;
+    ids: number[];
+  }> {
+    const moi = await taoSanPham('Mon moi hon', KHO_BAN_DAU);
+    const code = `R5-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    await ds.query(
+      `INSERT INTO orders (order_code, user_id, total_amount, final_amount, status,
+         payment_method, is_paid, receiver_name, receiver_phone, shipping_address)
+       VALUES (?, ?, ?, ?, ?, 'cod', 0, 'T', '0900000000', 'addr')`,
+      [code, buyerId, GIA * 2, GIA * 2, status],
+    );
+    const [o] = await ds.query<Array<{ id: number }>>(
+      'SELECT id FROM orders WHERE order_code = ?',
+      [code],
+    );
+    for (const pid of [moi, productId]) {
+      await ds.query(
+        `INSERT INTO order_items (order_id, product_id, product_name, price, quantity, subtotal)
+         VALUES (?, ?, 'mon', ?, 1, ?)`,
+        [o.id, pid, GIA, GIA],
+      );
+    }
+    return { orderId: o.id, ids: [productId, moi].sort((a, b) => a - b) };
+  }
+
+  /** Ghi lại thứ tự id sản phẩm mà các lần cộng kho chạm tới. */
+  function ghiThuTuCongKho(): number[] {
+    const thuTu: number[] = [];
+    const goc = EntityManager.prototype.increment;
+    jest
+      .spyOn(EntityManager.prototype, 'increment')
+      .mockImplementation(function (
+        this: EntityManager,
+        ...a: Parameters<EntityManager['increment']>
+      ) {
+        const dieuKien = a[1] as { id?: number };
+        if (a[0] === Product && dieuKien.id !== undefined) {
+          thuTu.push(dieuKien.id);
+        }
+        return goc.apply(this, a);
+      });
+    return thuTu;
+  }
+
+  /**
+   * Review 5: \`orders.create\` khoá sản phẩm theo id TĂNG dần, còn huỷ đơn và
+   * hoàn tiền cộng kho theo thứ tự dòng hàng của đơn. Hai giao dịch cùng chạm
+   * hai sản phẩm theo hai chiều ngược nhau: deadlock 1213.
+   */
+  it('review 5: huỷ đơn cộng kho theo id sản phẩm tăng dần', async () => {
+    const { orderId, ids } = await taoDonHaiMonNguoc(OrderStatus.PENDING);
+    const thuTu = ghiThuTuCongKho();
+
+    await orders.cancel(orderId, nguoiMua());
+
+    expect(thuTu).toEqual(ids);
+  });
+
+  it('review 5: hoàn tiền đơn đã giao cộng kho theo id sản phẩm tăng dần', async () => {
+    const { orderId, ids } = await taoDonHaiMonNguoc(OrderStatus.DELIVERED);
+    const thuTu = ghiThuTuCongKho();
+
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.REFUNDED },
+      quanTri(),
+    );
+
+    expect(thuTu).toEqual(ids);
   });
 });
