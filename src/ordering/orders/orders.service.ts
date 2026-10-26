@@ -1303,9 +1303,43 @@ export class OrdersService {
         'Đơn này không dùng địa chỉ GHN nên không tạo được vận đơn',
       );
     }
+    const maTruoc = order.tracking_code;
     await this.createGhnShipmentsPerSeller(order);
-    // createGhnShipmentsPerSeller có thể điền order.tracking_code (UI cũ đọc).
-    await this.orderRepository.save(order);
+
+    // GHI ĐÚNG MỘT CỘT, DƯỚI KHOÁ DÒNG ĐƠN.
+    //
+    // `createGhnShipmentsPerSeller` có thể điền `order.tracking_code` (UI cũ
+    // đọc). Bản cũ `save(order)` NGUYÊN entity đọc từ trước lời gọi GHN: tiền
+    // về trong quãng đó thì `is_paid` bị kéo về 0, đơn bị huỷ trong quãng đó
+    // thì sống lại thành `confirmed` (bài kiểm "review 2"). Cùng lỗi mà bản vá
+    // B đã sửa ở `updateStatus`, ở đây chỉ sót lại.
+    const maMoi =
+      order.tracking_code !== maTruoc ? order.tracking_code : undefined;
+    const trangThai = await this.dataSource.transaction(async (em) => {
+      const chot = await em.findOne(Order, {
+        where: { id: orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!chot) throw new NotFoundException('Không tìm thấy đơn hàng');
+      // Chỉ điền khi còn trống: một lần tạo lại khác chạy song song có thể đã
+      // điền mã của nó rồi, ghi đè là đổi mã đại diện mà không ai yêu cầu.
+      if (
+        maMoi &&
+        !chot.tracking_code &&
+        !DA_DONG_KHONG_GIAO.includes(chot.status)
+      ) {
+        await em.update(Order, { id: orderId }, { tracking_code: maMoi });
+      }
+      return chot.status;
+    });
+    if (DA_DONG_KHONG_GIAO.includes(trangThai)) {
+      await this.baoVanDonMoCoi(orderId, trangThai);
+      throw new ConflictException(
+        `Đơn hàng vừa chuyển sang "${trangThai}" trong lúc tạo lại vận đơn. ` +
+          'Vận đơn vừa tạo cần được huỷ trên GHN.',
+      );
+    }
+
     return this.shipmentRepository.find({
       where: { order: { id: orderId } },
       relations: ['seller'],

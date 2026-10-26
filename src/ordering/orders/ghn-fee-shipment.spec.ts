@@ -122,6 +122,25 @@ function makeService(ghn: Partial<Record<keyof GhnService, jest.Mock>>) {
   return { svc, orderRepo, shipmentRepo, dataSource };
 }
 
+/**
+ * `retryGhnShipments` ghi mã vận đơn trong một transaction có khoá dòng đơn
+ * (bài kiểm "review 2" ở `dua-trang-thai-don.spec.ts`). Mock mặc định của
+ * `dataSource.transaction` cố ý ném để bắt nhầm đường tạo đơn; các bài tạo
+ * lại vận đơn thì cho nó chạy với một manager giả trả đúng đơn đang xét.
+ */
+function choChotDon(
+  dataSource: { transaction: jest.Mock },
+  order: Record<string, unknown>,
+): void {
+  dataSource.transaction.mockImplementation(
+    (cb: (em: unknown) => Promise<unknown>) =>
+      cb({
+        findOne: jest.fn().mockResolvedValue(order),
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      }),
+  );
+}
+
 function confirmedOrder() {
   return {
     id: 7,
@@ -197,8 +216,11 @@ describe('H-07: phí ship không tính được thì KHÔNG được thành 0đ'
 describe('H-07: vận đơn lỗi phải giữ lý do của GHN và tạo lại được', () => {
   it('tạo lại vận đơn FAILED: cập nhật đúng dòng cũ, không sinh dòng trùng', async () => {
     const createOrder = jest.fn().mockResolvedValue({ order_code: 'L8NABC' });
-    const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
+    const { svc, orderRepo, shipmentRepo, dataSource } = makeService({
+      createOrder,
+    });
     orderRepo.findOne.mockResolvedValue(confirmedOrder());
+    choChotDon(dataSource, confirmedOrder());
     const failed = {
       id: 3,
       seller: SELLER,
@@ -225,8 +247,11 @@ describe('H-07: vận đơn lỗi phải giữ lý do của GHN và tạo lại 
 
   it('GHN vẫn từ chối: dòng vận đơn lưu lý do thật, không phải câu của axios', async () => {
     const createOrder = jest.fn().mockRejectedValue(ghnAxiosError(LY_DO_GHN));
-    const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
+    const { svc, orderRepo, shipmentRepo, dataSource } = makeService({
+      createOrder,
+    });
     orderRepo.findOne.mockResolvedValue(confirmedOrder());
+    choChotDon(dataSource, confirmedOrder());
     shipmentRepo.find.mockResolvedValue([
       { id: 3, seller: SELLER, status: ShipmentStatus.FAILED, error: 'x' },
     ]);
@@ -251,8 +276,11 @@ describe('H-07: vận đơn lỗi phải giữ lý do của GHN và tạo lại 
     // đơn kia mồ côi mà vẫn đi lấy hàng, thu hộ. Chốt là câu UPDATE có điều
     // kiện: chỉ một yêu cầu đổi được dòng, yêu cầu kia thấy affected = 0.
     const createOrder = jest.fn().mockResolvedValue({ order_code: 'L8NABC' });
-    const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
+    const { svc, orderRepo, shipmentRepo, dataSource } = makeService({
+      createOrder,
+    });
     orderRepo.findOne.mockResolvedValue(confirmedOrder());
+    choChotDon(dataSource, confirmedOrder());
     shipmentRepo.find.mockResolvedValue([
       { id: 3, seller: SELLER, status: ShipmentStatus.FAILED, error: 'x' },
     ]);
@@ -429,11 +457,14 @@ describe('GHN: tạo lại sau timeout không được sinh vận đơn trùng',
   // cũ (L8AR8L hai lần), nên mã cố định theo (đơn, người bán) là đủ chống trùng.
   it('mỗi lần tạo (kể cả tạo lại) gửi cùng client_order_code theo đơn và người bán', async () => {
     const createOrder = jest.fn().mockResolvedValue({ order_code: 'L8NABC' });
-    const { svc, orderRepo, shipmentRepo } = makeService({ createOrder });
+    const { svc, orderRepo, shipmentRepo, dataSource } = makeService({
+      createOrder,
+    });
     orderRepo.findOne.mockResolvedValue({
       ...confirmedOrder(),
       order_code: 'ORD-20261005-389',
     });
+    choChotDon(dataSource, confirmedOrder());
     shipmentRepo.find.mockResolvedValue([
       { id: 3, seller: SELLER, status: ShipmentStatus.FAILED, error: 'x' },
     ]);
