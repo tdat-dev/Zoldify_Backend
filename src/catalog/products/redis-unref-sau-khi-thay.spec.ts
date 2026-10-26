@@ -21,28 +21,33 @@ import type { StockEventsService } from '@catalog/stock/stock-events.service';
  * Chỉ chạy khi có REDIS_URL: không có Redis thì service không mở socket nào.
  */
 const coRedis = !!process.env.REDIS_URL;
-(coRedis ? describe : describe.skip)('ProductsService: unref socket Redis', () => {
-  it('unref đúng client đã mở dù this.redis bị thay trước lúc nối xong', async () => {
-    const ps = new ProductsService(
-      {} as Repository<Product>,
-      {} as Repository<Follow>,
-      {} as Repository<Shop>,
-      {} as NotificationsService,
-      createCache({ ttl: 1_000 }),
-      {} as StockEventsService,
-    );
-    const goc = (ps as unknown as { redis: Redis }).redis;
-    (ps as unknown as { redis: unknown }).redis = {
-      incr: () => Promise.resolve(1),
-    };
-    try {
-      await once(goc, 'ready');
-      const handle = (
-        goc as unknown as { stream?: { _handle?: { hasRef?: () => boolean } } }
-      ).stream?._handle;
-      expect(handle?.hasRef?.()).toBe(false);
-    } finally {
-      goc.disconnect();
-    }
-  });
-});
+(coRedis ? describe : describe.skip)(
+  'ProductsService: unref socket Redis',
+  () => {
+    it('unref đúng client đã mở dù this.redis bị thay trước lúc nối xong', async () => {
+      const ps = new ProductsService(
+        {} as Repository<Product>,
+        {} as Repository<Follow>,
+        {} as Repository<Shop>,
+        {} as NotificationsService,
+        createCache({ ttl: 1_000 }),
+        {} as StockEventsService,
+      );
+      const goc = (ps as unknown as { redis: Redis }).redis;
+      (ps as unknown as { redis: unknown }).redis = {
+        incr: () => Promise.resolve(1),
+      };
+      try {
+        await once(goc, 'ready');
+        const handle = (
+          goc as unknown as {
+            stream?: { _handle?: { hasRef?: () => boolean } };
+          }
+        ).stream?._handle;
+        expect(handle?.hasRef?.()).toBe(false);
+      } finally {
+        goc.disconnect();
+      }
+    });
+  },
+);
