@@ -33,6 +33,11 @@ export enum OrderStatus {
 // index, khỏi lần về bảng. Đo: type=ALL rows=1000 -> type=ref rows=681,
 // "Using index". Migration 1788000000000.
 @Index('idx_paid_status_amount', ['is_paid', 'status', 'final_amount'])
+// Header Idempotency-Key của POST /orders, duy nhất THEO NGƯỜI DÙNG.
+// Migration 1788200000000 giải thích vì sao là cột riêng.
+@Index('uq_order_user_client_key', ['user', 'client_idempotency_key'], {
+  unique: true,
+})
 export class Order {
   @PrimaryGeneratedColumn()
   id: number;
@@ -58,6 +63,14 @@ export class Order {
   @Column({ type: 'varchar', length: 64, nullable: true })
   @Index('uq_order_idempotency', { unique: true })
   idempotency_key: string | null;
+
+  /**
+   * Khoá chống trùng do CLIENT gửi qua header `Idempotency-Key` (tối đa 100
+   * ký tự). Gửi lại POST /orders với cùng khoá sau khi đơn đã tạo thì nhận
+   * lại chính đơn đó. NULL khi client không gửi header.
+   */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  client_idempotency_key: string | null;
 
   // Người đặt hàng
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
