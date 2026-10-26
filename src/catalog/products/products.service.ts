@@ -775,6 +775,36 @@ export class ProductsService {
     if (user.role !== 'admin' && product.seller.id !== user.id) {
       throw new ForbiddenException('Bạn không có quyền xóa sản phẩm này');
     }
+
+    // KHÔNG XOÁ MÓN ĐANG NẰM TRONG ĐƠN CHƯA XONG.
+    //
+    // Xoá mềm làm sản phẩm biến khỏi mọi truy vấn thường (TypeORM tự thêm
+    // `deleted_at IS NULL`, kể cả ở phép JOIN). Đơn đang giao mà món của nó bị
+    // xoá thì `applyCancellation` không thấy `item.product` để hoàn kho, trang
+    // đơn của người bán mất dòng hàng, và `cancelSale` không còn nhận ra ai là
+    // người bán. Tới 26/10 không có chốt nào: người bán xoá được món vừa bán
+    // ngay khi đơn còn `shipping` (đo bằng `khoa-xoa-nguoi-ban.spec.ts`).
+    //
+    // SQL thô chứ không qua entity OrderItem: catalog không được import
+    // ordering (luật ranh giới). Bốn trạng thái là mọi trạng thái chưa kết
+    // thúc của `OrderStatus`.
+    const [{ n }] = await this.productRepository.query<Array<{ n: number }>>(
+      `SELECT COUNT(DISTINCT o.id) AS n
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+        WHERE oi.product_id = ?
+          AND o.deleted_at IS NULL
+          AND o.status IN ('pending', 'confirmed', 'processing', 'shipping')`,
+      [id],
+    );
+    if (Number(n) > 0) {
+      throw new BadRequestException(
+        `Sản phẩm đang nằm trong ${Number(n)} đơn hàng chưa hoàn tất nên chưa ` +
+          'xoá được. Xử lý xong các đơn đó trước; muốn ngừng bán ngay thì đặt ' +
+          'tồn kho về 0.',
+      );
+    }
+
     await this.productRepository.softDelete(id);
     await this.cacheDel(this.detailKey(id));
     await this.moiDanhSach();
