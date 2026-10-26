@@ -339,6 +339,44 @@ describe('Đặt hàng và tồn kho', () => {
     expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
   });
 
+  /**
+   * Review 26/10 mục 7. `status === active` chỉ được kiểm trên bản đọc giỏ,
+   * NGOÀI transaction. Admin khoá người bán (hàng chuyển `draft`) đúng lúc
+   * người mua đang đặt thì đơn vẫn chốt món đã bị ẩn. Cùng cửa sổ với giá ở
+   * TC-P2-16, ép mở bằng spy trên lời đọc giỏ.
+   */
+  it('Review 7 — hàng bị ẩn giữa lúc đọc giỏ và lúc khoá dòng thì từ chối', async () => {
+    await themVaoGio(productId, 1);
+
+    const gioRepo = ds.getRepository(Cart);
+    const goc = gioRepo.find.bind(gioRepo) as (
+      o: FindManyOptions<Cart>,
+    ) => Promise<Cart[]>;
+    const spy = jest
+      .spyOn(gioRepo, 'find')
+      .mockImplementationOnce(async (opts: FindManyOptions<Cart>) => {
+        const items = await goc(opts);
+        // Người bán vừa bị khoá: hàng của họ bị ẩn.
+        await ds.query('UPDATE products SET status = ? WHERE id = ?', [
+          ProductStatus.DRAFT,
+          productId,
+        ]);
+        return items;
+      });
+
+    await expect(orders.create(donMacDinh(), nguoiMua())).rejects.toThrow(
+      /không mở bán/,
+    );
+    spy.mockRestore();
+
+    const [{ n }] = await ds.query<Array<{ n: number }>>(
+      'SELECT COUNT(*) AS n FROM orders WHERE user_id = ?',
+      [buyerId],
+    );
+    expect(Number(n)).toBe(0);
+    expect(await khoCua(productId)).toBe(KHO_BAN_DAU);
+  });
+
   it('TC-P1-06 — updateStock không được xoá kết quả trừ kho', async () => {
     const repo = ds.getRepository(Product);
     // `bind` trả `any`; ép kiểu lại một lần ở đây để phần thân spy bên dưới
