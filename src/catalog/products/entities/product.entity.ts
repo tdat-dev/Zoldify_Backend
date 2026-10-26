@@ -135,6 +135,14 @@ export class Product {
   })
   status: ProductStatus;
 
+  /**
+   * Lúc tin bị ẩn VÌ khoá tài khoản người bán (migration 1788300000000). Mở
+   * khoá chỉ bày lại tin có dấu này, rồi xoá dấu. `select: false`: chỉ là sổ
+   * ghi chép nội bộ, không đưa ra API.
+   */
+  @Column({ type: 'datetime', nullable: true, select: false })
+  hidden_by_lock_at?: Date | null;
+
   // 8. Quan hệ Nhiều-Một (Many-to-One): Một danh mục (Category) có nhiều sản phẩm (Products)
   @ManyToOne(() => Category, (category) => category.products, {
     onDelete: 'SET NULL',
