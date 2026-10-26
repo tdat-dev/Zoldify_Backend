@@ -945,23 +945,34 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
   }
 
   /** Ghi lại thứ tự id sản phẩm mà các lần cộng kho chạm tới. */
+  /**
+   * Ghi thứ tự sản phẩm được trả kho.
+   *
+   * Từ rà soát 26/10 (mục 8) huỷ và hoàn tiền không còn gọi
+   * `EntityManager.increment` mà đi qua `traKhoVaTruDaBan` (một câu UPDATE
+   * cộng kho và trừ sold_count), nên nghe ở đúng hàm đó. Thứ tự gọi nó chính
+   * là thứ tự khoá dòng sản phẩm.
+   */
   function ghiThuTuCongKho(): number[] {
     const thuTu: number[] = [];
-    // Cố ý lấy hàm rời khỏi prototype rồi gắn lại `this` bằng `call` bên dưới.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    const goc = EntityManager.prototype.increment;
-    jest
-      .spyOn(EntityManager.prototype, 'increment')
-      .mockImplementation(function (
-        this: EntityManager,
-        ...a: Parameters<EntityManager['increment']>
-      ) {
-        const dieuKien = a[1] as { id?: number };
-        if (a[0] === Product && dieuKien.id !== undefined) {
-          thuTu.push(dieuKien.id);
-        }
-        return goc.call(this, ...a) as ReturnType<EntityManager['increment']>;
-      });
+    type TraKho = (
+      em: EntityManager,
+      productId: number,
+      soLuong: number,
+    ) => Promise<void>;
+    const proto = OrdersService.prototype as unknown as {
+      traKhoVaTruDaBan: TraKho;
+    };
+    const goc = proto.traKhoVaTruDaBan;
+    jest.spyOn(proto, 'traKhoVaTruDaBan').mockImplementation(function (
+      this: OrdersService,
+      em: EntityManager,
+      productId: number,
+      soLuong: number,
+    ) {
+      thuTu.push(productId);
+      return Reflect.apply(goc, this, [em, productId, soLuong]);
+    });
     return thuTu;
   }
 
