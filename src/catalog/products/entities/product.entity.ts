@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { Category } from '@catalog/categories/entities/category.entity';
 import { User } from '@identity/users/entities/user.entity';
+import { ApiHideProperty } from '@nestjs/swagger';
 
 // Định nghĩa trạng thái sản phẩm
 export enum ProductStatus {
@@ -138,8 +139,10 @@ export class Product {
   /**
    * Lúc tin bị ẩn VÌ khoá tài khoản người bán (migration 1788300000000). Mở
    * khoá chỉ bày lại tin có dấu này, rồi xoá dấu. `select: false`: chỉ là sổ
-   * ghi chép nội bộ, không đưa ra API.
+   * ghi chép nội bộ, không đưa ra API, nên cũng ẩn khỏi openapi.json (ba
+   * client không được thấy một trường mà API không bao giờ trả).
    */
+  @ApiHideProperty()
   @Column({ type: 'datetime', nullable: true, select: false })
   hidden_by_lock_at?: Date | null;
 
