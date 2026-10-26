@@ -1,4 +1,5 @@
 import { DataSource, FindManyOptions } from 'typeorm';
+import { ConflictException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -265,6 +266,30 @@ describe('POST /orders với Idempotency-Key', () => {
     spy.mockRestore();
 
     expect(lai.id).toBe(dau?.id);
+    expect(await soDon()).toBe(1);
+  });
+
+  /**
+   * Review 26/10 mục 8. Đơn đã xoá mềm vẫn giữ khoá trong
+   * `uq_order_user_client_key`, nhưng `findOne` thường lọc `deleted_at`: tra
+   * khoá hụt, câu INSERT đụng UNIQUE, lượt tra lại cũng hụt, và người dùng
+   * nhận QueryFailedError thành 500.
+   */
+  it('khoá đã dùng cho một đơn đã xoá mềm: 409 nói rõ, không 500, không tạo đơn', async () => {
+    await gioCua(buyerId, 1);
+    const cu = await taoDon(don(), ai(buyerId), 'khoa-don-da-xoa');
+    await ds.query(
+      `UPDATE orders SET status = 'cancelled', deleted_at = NOW(6) WHERE id = ?`,
+      [cu.id],
+    );
+    await gioCua(buyerId, 1);
+
+    const loi = await taoDon(don(), ai(buyerId), 'khoa-don-da-xoa').catch(
+      (e: unknown) => e,
+    );
+
+    expect(loi).toBeInstanceOf(ConflictException);
+    expect((loi as Error).message).toMatch(/Idempotency-Key/);
     expect(await soDon()).toBe(1);
   });
 
