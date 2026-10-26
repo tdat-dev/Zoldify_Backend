@@ -476,10 +476,30 @@ export class PayosService {
     const isSuccess = webhookData.code === '00' && rawBody.success === true;
 
     const outcome = await this.dataSource.transaction(async (em) => {
-      const payment = await em.findOne(Payment, {
-        where: { payos_order_code: orderCode },
-        relations: ['order', 'user'],
-      });
+      // KHOÁ DÒNG PAYMENT TRƯỚC KHI ĐỌC NÓ.
+      //
+      // PayOS gửi trùng cùng một webhook, cùng lúc: bản cũ đọc payment không
+      // khoá, nên lượt sau thấy `pending`, chờ khoá dòng đơn trong
+      // `applyPaidPayment`, rồi ghi bút toán với đúng khoá chống trùng của lượt
+      // trước và nổ 1062 thay vì trả "Already paid" (bài kiểm "review 8": 4/5
+      // lượt lỗi). Có khoá thì lượt sau đứng chờ ở đây, và lần đọc có khoá trả
+      // bản mới nhất: `success`.
+      //
+      // Khoá riêng bảng payments, không JOIN (cùng bẫy với
+      // `EscrowsService.napVaKhoa`: FOR UPDATE khoá lây mọi dòng bị JOIN).
+      // Thứ tự khoá vẫn hợp lệ: payment, rồi đơn, rồi ký quỹ, rồi sổ cái.
+      const daKhoa = await em
+        .createQueryBuilder(Payment, 'p')
+        .setLock('pessimistic_write')
+        .where('p.payos_order_code = :orderCode', { orderCode })
+        .getOne();
+      const payment = daKhoa
+        ? await em.findOne(Payment, {
+            where: { id: daKhoa.id },
+            relations: ['order', 'user'],
+          })
+        : null;
+      if (payment && daKhoa) payment.status = daKhoa.status;
 
       if (!payment) {
         this.logger.warn(`Không tìm thấy payment cho orderCode=${orderCode}`);
