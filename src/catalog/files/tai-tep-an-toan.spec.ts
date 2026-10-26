@@ -45,6 +45,8 @@ function locDuoi(originalname: string): Promise<boolean> {
   const opts = new MulterConfigService().createMulterOptions();
   return new Promise((resolve) => {
     const tepGia = { originalname } as Express.Multer.File;
+    // Không có bộ lọc nghĩa là nhận mọi file: coi như lọt (true).
+    if (!opts.fileFilter) return resolve(true);
     opts.fileFilter({}, tepGia, (err, ok) => resolve(!err && ok === true));
   });
 }
