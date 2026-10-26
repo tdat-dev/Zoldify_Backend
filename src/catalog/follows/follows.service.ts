@@ -5,6 +5,24 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Follow } from './entities/follow.entity';
 import { Repository } from 'typeorm';
 
+/**
+ * Cột được trả ra ở hai danh sách theo dõi. Hai route đó là CÔNG KHAI
+ * (@Public), mà bản trước nạp `relations` rồi trả nguyên dòng `users`: email,
+ * số điện thoại, vai trò, token_version, is_locked, last_seen của từng người.
+ * Ai không đăng nhập cũng gom được email và số điện thoại của toàn bộ người
+ * theo dõi một shop.
+ *
+ * Chọn cột trong câu truy vấn chứ không lọc sau: cột không được SELECT thì
+ * không thể lọt ra, kể cả khi ai đó thêm cột nhạy cảm mới vào bảng users. Bộ
+ * cột khớp đúng thứ app đang đọc (FollowedUser: id, full_name, avatar,
+ * created_at).
+ */
+const CHON_NGUOI_CONG_KHAI = (quanHe: 'follower' | 'following') => ({
+  id: true,
+  created_at: true,
+  [quanHe]: { id: true, full_name: true, avatar: true, created_at: true },
+});
+
 @Injectable()
 export class FollowsService {
   constructor(
@@ -57,6 +75,7 @@ export class FollowsService {
     const [result, total] = await this.followRepository.findAndCount({
       where: { following_id: userId },
       relations: ['follower'],
+      select: CHON_NGUOI_CONG_KHAI('follower'),
       skip: (page - 1) * limit,
       take: limit,
       order: { created_at: 'DESC' },
@@ -77,6 +96,7 @@ export class FollowsService {
     const [result, total] = await this.followRepository.findAndCount({
       where: { follower_id: userId },
       relations: ['following'],
+      select: CHON_NGUOI_CONG_KHAI('following'),
       skip: (page - 1) * limit,
       take: limit,
       order: { created_at: 'DESC' },

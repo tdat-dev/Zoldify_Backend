@@ -9,9 +9,10 @@ import { UserRole } from '@identity/users/entities/user.entity';
  * quả: tài khoản OTP và tài khoản đăng ký thường (chưa chứng minh gì) trông
  * giống nhau ở cột email_verified.
  *
- * Tài khoản tạo qua OTP phải lưu email_verified = true NGAY LÚC TẠO. Đường
- * đăng ký thường (POST /auth/register, không OTP) phải giữ nguyên hành vi
- * cũ: email_verified = false.
+ * Tài khoản tạo qua OTP phải lưu email_verified = true NGAY LÚC TẠO. Mặc định
+ * của UsersService.register (không truyền cờ) vẫn là false: POST
+ * /auth/register đã bị gỡ, nhưng hàm vẫn có thể được gọi từ chỗ khác và
+ * không được tự coi email là đã xác minh.
  */
 describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
   type DongDaLuu = { email_verified?: boolean; role?: UserRole };
@@ -47,6 +48,8 @@ describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
     const service = makeAuthService(repo, {
       otp: '123456',
       full_name: 'Bên mua',
+      sai: 0,
+      het_han: Date.now() + 60_000,
     });
 
     await service.verifyRegisterOtp('a@b.com', '123456', 'matkhau123');
@@ -55,9 +58,9 @@ describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
     expect(getSaved().role).toBe(UserRole.BUYER);
   });
 
-  it('đăng ký thường (không OTP) vẫn giữ email_verified = false', async () => {
+  it('UsersService.register không truyền cờ thì email_verified = false', async () => {
     const { repo, getSaved } = makeRepo();
-    const service = makeAuthService(repo, undefined);
+    const service = new UsersService(repo as never);
 
     await service.register({
       full_name: 'Bên mua',

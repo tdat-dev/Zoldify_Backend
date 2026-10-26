@@ -12,6 +12,29 @@ import { Product } from '@catalog/products/entities/product.entity';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { IUser } from '@identity/users/users.interface';
+import { User } from '@identity/users/entities/user.entity';
+import { laAnhCuaSan } from '@common/public-url';
+
+/**
+ * Người kia trong khung chat, chỉ phần client cần: tên, ảnh, lần cuối online.
+ *
+ * Bản trước trả nguyên dòng users qua relations buyer/seller/sender: email, số
+ * điện thoại, vai trò, token_version, is_locked. Nhắn hỏi giá một món là đọc
+ * được email và số điện thoại tài khoản của người bán, trong khi sàn cố ý giữ
+ * liên lạc trong khung chat. Cột giữ lại theo đúng thứ web và app đọc (kiểm
+ * 26/10: partner_name, partner_avatar, partner_last_seen, sender.id). Lọc ở đây
+ * chứ không SELECT, vì getMyConversations đếm số câu truy vấn
+ * (chat.service.spec.ts) và đổi cách nạp quan hệ là đổi con số đó.
+ */
+function nguoiTrongChat(u: User | null | undefined): User {
+  if (!u) return u as unknown as User;
+  return {
+    id: u.id,
+    full_name: u.full_name,
+    avatar: u.avatar,
+    last_seen: u.last_seen,
+  } as User;
+}
 
 @Injectable()
 export class ChatService {
@@ -35,16 +58,33 @@ export class ChatService {
 
     const product = await this.productRepository.findOne({
       where: { id: product_id },
+      relations: ['seller'],
     });
     if (!product) {
       throw new NotFoundException('Không tìm thấy sản phẩm');
+    }
+
+    // NGƯỜI BÁN LẤY TỪ SẢN PHẨM, KHÔNG LẤY TỪ BODY.
+    //
+    // Bản trước dùng nguyên seller_id client gửi, nên mở được hội thoại "về
+    // sản phẩm X" với một người bất kỳ không liên quan tới X: nhắn rác tới ai
+    // cũng được, kèm sản phẩm của người khác cho trông như thật. Web và app
+    // đều gửi seller_id đúng là người bán của sản phẩm, nên seller_id trong
+    // body giờ chỉ còn dùng để chặn ca tự nhắn với mình; giữ trường đó trong
+    // DTO để client cũ không bị forbidNonWhitelisted từ chối.
+    const sellerId = product.seller?.id;
+    if (!sellerId) {
+      throw new BadRequestException('Sản phẩm không có người bán');
+    }
+    if (sellerId === user.id || seller_id === user.id) {
+      throw new BadRequestException('Bạn không thể nhắn tin với chính mình');
     }
 
     // Kiểm tra đã có conversation giữa buyer và seller về product này chưa
     const existing = await this.conversationRepository.findOne({
       where: {
         buyer: { id: user.id },
-        seller: { id: seller_id },
+        seller: { id: sellerId },
         product: { id: product_id },
       },
     });
@@ -55,7 +95,7 @@ export class ChatService {
 
     const conversation = this.conversationRepository.create({
       buyer: { id: user.id },
-      seller: { id: seller_id },
+      seller: { id: sellerId },
       product: { id: product_id },
     });
 
@@ -122,8 +162,8 @@ export class ChatService {
         id: conv.id,
         created_at: conv.created_at,
         updated_at: conv.updated_at,
-        buyer: conv.buyer,
-        seller: conv.seller,
+        buyer: nguoiTrongChat(conv.buyer),
+        seller: nguoiTrongChat(conv.seller),
         product: conv.product,
         partner_name: partner?.full_name,
         partner_id: partner?.id,
@@ -262,7 +302,10 @@ export class ChatService {
         pages: Math.ceil(totalItems / numLimit),
         total: totalItems,
       },
-      result: result.reverse(), // Đảo ngược để tin nhắn cũ lên đầu
+      // Đảo ngược để tin nhắn cũ lên đầu; sender chỉ còn phần công khai.
+      result: result
+        .reverse()
+        .map((m) => ({ ...m, sender: nguoiTrongChat(m.sender) })),
     };
   }
 
@@ -292,6 +335,17 @@ export class ChatService {
 
     const { content, images } = sendMessageDto;
 
+    // Ảnh chat thật luôn tải qua POST /files/upload, tức nằm trên host của sàn.
+    // URL trỏ ra máy chủ khác là ảnh theo dõi (lộ IP, giờ mở tin của người
+    // nhận), ảnh đổi nội dung sau khi gửi (sàn mất bằng chứng), hoặc
+    // javascript:/data: chờ một client render không cẩn thận. Kiểm ở service để
+    // cả HTTP lẫn socket đều đi qua.
+    if ((images ?? []).some((u) => !laAnhCuaSan(u, process.env))) {
+      throw new BadRequestException(
+        'Ảnh đính kèm phải được tải lên qua Zoldify',
+      );
+    }
+
     const message = this.messageRepository.create({
       conversation: { id: conversationId },
       sender: { id: user.id },
@@ -314,18 +368,30 @@ export class ChatService {
       relations: ['buyer', 'seller'],
     });
 
-    if (!conversation) {
+    // Cùng điều kiện thành viên với getMessages/sendMessage. Bản trước không
+    // kiểm, nên ai đăng nhập cũng xoá được chấm đỏ của hội thoại người khác.
+    // Người ngoài nhận CÙNG 404 như id không tồn tại: hai câu khác nhau là
+    // cho người ngoài dò được id hội thoại nào có thật.
+    if (
+      !conversation ||
+      (conversation.buyer?.id !== user.id &&
+        conversation.seller?.id !== user.id)
+    ) {
       throw new NotFoundException('Không tìm thấy cuộc trò chuyện');
     }
 
-    // Đánh dấu đã đọc tất cả tin nhắn chưa đọc trong conversation này
-    await this.messageRepository.update(
-      {
-        conversation: { id: conversationId },
-        is_read: false,
-      },
-      { is_read: true },
-    );
+    // Chỉ đánh dấu tin của NGƯỜI KIA. Bản trước đánh dấu mọi tin chưa đọc, kể
+    // cả tin người gọi vừa gửi: người mua mở hội thoại là tin của họ thành đã
+    // đọc, người bán không bao giờ thấy chấm đỏ. Đếm chưa đọc
+    // (getUnreadCount, demChuaDocTheoLo) đã loại tin của chính mình từ lâu.
+    await this.messageRepository
+      .createQueryBuilder()
+      .update(Message)
+      .set({ is_read: true })
+      .where('conversation_id = :conversationId', { conversationId })
+      .andWhere('is_read = 0')
+      .andWhere('sender_id <> :userId', { userId: user.id })
+      .execute();
 
     return 'Đã đánh dấu tất cả tin nhắn đã đọc';
   }

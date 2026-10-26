@@ -27,6 +27,7 @@ import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { FileEntity } from './entities/file.entity';
+import { doanLoaiAnh } from './doan-loai-anh';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('files')
@@ -52,6 +53,17 @@ export class FilesController {
       );
     }
 
+    // Loại file quyết định bằng BYTE THẬT, không bằng tên hay Content-Type
+    // client khai (xem doan-loai-anh.ts). Đuôi lưu xuống và ContentType gửi R2
+    // đều lấy từ đây: file HTML đội tên .jpg bị từ chối, còn ảnh PNG khai sai
+    // là text/html thì vẫn được lưu đúng là image/png.
+    const loai = doanLoaiAnh(file.buffer);
+    if (!loai) {
+      throw new BadRequestException(
+        'Chỉ nhận ảnh JPEG, PNG, WEBP, GIF hoặc BMP.',
+      );
+    }
+
     const folder = String(req?.headers?.folder_type ?? 'default').replace(
       /[^a-zA-Z0-9_-]/g,
       '',
@@ -64,12 +76,12 @@ export class FilesController {
       .replace(/[^a-zA-Z0-9_-]/g, '-')
       .replace(/-+/g, '-')
       .slice(0, 80);
-    const filename = `${safeBase || 'file'}-${Date.now()}${ext.toLowerCase()}`;
+    const filename = `${safeBase || 'file'}-${Date.now()}${loai.ext}`;
     const key = `${folder}/${filename}`;
 
     let url: string;
     if (this.storage.isEnabled()) {
-      url = await this.storage.upload(file.buffer, key, file.mimetype);
+      url = await this.storage.upload(file.buffer, key, loai.mime);
     } else {
       // Fallback đĩa (giữ hành vi cũ khi R2 chưa cấu hình): ghi buffer ra
       // public/images rồi ghép URL.
@@ -96,7 +108,7 @@ export class FilesController {
       {
         file_name: file.originalname,
         url,
-        mime_type: file.mimetype,
+        mime_type: loai.mime,
         size: file.size,
         folder,
       },
@@ -114,21 +126,23 @@ export class FilesController {
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('folder') folder: string,
+    @User() user: IUser,
   ) {
-    return this.filesService.findAll(+page || 1, +limit || 20, folder);
+    // Chủ file hoặc admin: kiểm trong FilesService.
+    return this.filesService.findAll(+page || 1, +limit || 20, folder, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   @ResponseMessage('Lấy chi tiết file thành công')
-  findOne(@Param('id') id: string) {
-    return this.filesService.findOne(+id);
+  findOne(@Param('id') id: string, @User() user: IUser) {
+    return this.filesService.findOne(+id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @ResponseMessage('Xóa file thành công')
-  remove(@Param('id') id: string) {
-    return this.filesService.remove(+id);
+  remove(@Param('id') id: string, @User() user: IUser) {
+    return this.filesService.remove(+id, user);
   }
 }

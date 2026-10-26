@@ -6,13 +6,12 @@ import {
   Req,
   Body,
   Patch,
+  UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import {
-  LoginUserDto,
-  RegisterUserDto,
-} from '@identity/users/dto/create-user.dto';
+import { LoginUserDto } from '@identity/users/dto/create-user.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { LocalAuthGuard } from './local-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
@@ -22,6 +21,7 @@ import type { IUser } from '@identity/users/users.interface';
 import { User } from '@common/decorators/user.decorator';
 import {
   ChangePasswordDto,
+  FirebaseLoginDto,
   RefreshTokenDto,
   ResetPasswordDto,
   SendOtpDto,
@@ -29,6 +29,7 @@ import {
   VerifyRegisterOtpDto,
 } from './dto/auth.entity';
 import { FirebaseService } from '@messaging/firebase/firebase.service';
+import { chuanHoaEmail, emailChuanHoaHoacLoi } from '@common/email';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User as UserEntity } from '@identity/users/entities/user.entity';
@@ -90,39 +91,73 @@ export class AuthController {
     return this.authService.verifyRegisterOtp(dto.email, dto.otp, dto.password);
   }
 
-  @Public()
-  @Throttle({
-    short: { limit: 1, ttl: 1000 },
-    medium: { limit: 5, ttl: 60000 },
-  })
-  @ApiEntity(AuthUserDto)
-  @Post('register')
-  @ResponseMessage('Đăng ký thành công')
-  handleRegister(@Body() registerUserDto: RegisterUserDto) {
-    return this.authService.register(registerUserDto);
-  }
+  // KHÔNG còn POST /auth/register (B-05, M-04). Route đó tạo tài khoản ngay
+  // mà không chứng minh gì về email, nên ai cũng đăng ký trước được email của
+  // người khác rồi chờ chủ thật tới. Cả ba client đều đăng ký qua send-otp và
+  // verify-otp ở trên; hàm gọi /auth/register còn sót trong mã web, admin và
+  // app nhưng không màn hình nào gọi tới (kiểm 25/10).
 
   @Public()
+  // Cùng mức với đăng nhập mật khẩu: mỗi lần gọi là một lần hỏi Google, và
+  // route này tự TẠO tài khoản, nên không được để ai bắn liên tục.
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 10, ttl: 60000 },
+  })
   @ApiEntity(LoginResponseDto)
   @Post('firebase')
-  async firebaseLogin(@Body('idToken') idToken: string) {
-    // để test đăng nhập bằng firebase: google
-    const fbUser = await this.firebaseService.verifyIdToken(idToken);
+  async firebaseLogin(@Body() dto: FirebaseLoginDto) {
+    // verifyIdToken đã từ chối token không phải Google, không có email, hoặc
+    // email chưa xác minh. Tới đây email là thứ Google đã chứng minh.
+    const fbUser = await this.firebaseService.verifyIdToken(dto.idToken);
+    // Cùng bộ chuẩn hoá với mọi cửa vào khác (common/email.ts).
+    const email = emailChuanHoaHoacLoi(fbUser.email);
 
+    // withDeleted: dòng đã xoá mềm vẫn giữ khoá UNIQUE(email). Bỏ qua nó thì
+    // nhánh "chưa có ai" bên dưới INSERT trùng và người dùng nhận 500.
     let user = await this.userRepository.findOne({
-      where: fbUser.email
-        ? { email: fbUser.email }
-        : { phone_number: fbUser.phone_number },
+      where: { email },
+      withDeleted: true,
     });
+    if (user?.deleted_at) {
+      throw new ForbiddenException(
+        'Tài khoản dùng email này đã bị xoá. Vui lòng liên hệ hỗ trợ để khôi phục.',
+      );
+    }
+
+    // So BẰNG NHAU sau khi chuẩn hoá, không tin phép tra ở trên. users.email
+    // dùng collation bỏ dấu, bỏ hoa thường, nên dòng tìm được có thể mang một
+    // email KHÁC email Google vừa chứng minh (nan-nhan@gmaïl.com khớp
+    // nan-nhan@gmail.com). Nối vào đó là trao tài khoản của địa chỉ này cho
+    // chủ của địa chỉ kia.
+    if (user && chuanHoaEmail(user.email) !== email) {
+      throw new UnauthorizedException(
+        'Email Google không khớp với email của tài khoản',
+      );
+    }
+
+    // KHÔNG tự nối vào tài khoản có sẵn mà email chưa xác minh (B-05).
+    //
+    // Đó đúng là hình dạng của "chiếm trước": kẻ xấu đăng ký victim@gmail.com
+    // qua đường không OTP, rồi chờ. Chủ thật bấm "Đăng nhập Google", bản cũ
+    // nối vào đúng tài khoản ấy, và kẻ xấu vẫn đăng nhập được bằng mật khẩu nó
+    // đã đặt. Chủ thật lấy lại tài khoản bằng Quên mật khẩu: OTP gửi về chính
+    // hộp thư đó, đặt lại xong thì email được đánh dấu đã xác minh và mọi phiên
+    // cũ bị thu hồi.
+    if (user && !user.email_verified) {
+      throw new UnauthorizedException(
+        'Email này đã có tài khoản chưa xác minh. Vui lòng dùng "Quên mật khẩu" để lấy lại tài khoản trước khi đăng nhập bằng Google.',
+      );
+    }
 
     if (!user) {
       user = this.userRepository.create({
-        email: fbUser.email || `${fbUser.uid}@firebase.zoldify.com`,
+        email,
         full_name: fbUser.name || 'User',
         password: '',
         avatar: fbUser.avatar,
         phone_number: fbUser.phone_number,
-        email_verified: !!fbUser.email,
+        email_verified: true,
       });
       user = await this.userRepository.save(user);
     } else if (fbUser.avatar && fbUser.avatar !== user.avatar) {

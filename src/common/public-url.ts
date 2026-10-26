@@ -76,3 +76,51 @@ export function urlTepCongKhai(
   const tienTo = env.CDN_BASE_URL ? '' : '/public';
   return `${goc}${tienTo}/images/${folder}/${filename}`;
 }
+
+export interface CauHinhAnh extends CauHinhGoc {
+  /** Domain công khai của bucket R2, ví dụ `https://img.zoldify.com`. */
+  R2_PUBLIC_URL?: string;
+}
+
+/**
+ * Các origin (scheme + host + cổng) mà ảnh của sàn có thể nằm trên: bucket R2,
+ * CDN, và chính API (đường lưu đĩa khi R2 chưa cấu hình, kể cả localhost ở máy
+ * dev). Lấy phần tử đầu của danh sách ngăn bởi dấu phẩy, cùng lý do như
+ * gocCongKhai.
+ */
+export function cacGocAnhCuaSan(env: CauHinhAnh): string[] {
+  const nguon = [
+    env.R2_PUBLIC_URL,
+    env.CDN_BASE_URL,
+    env.API_PUBLIC_URL,
+    gocCongKhai(env),
+  ];
+  const goc = new Set<string>();
+  for (const n of nguon) {
+    const dau = (n ?? '').split(',')[0].trim();
+    if (!dau) continue;
+    try {
+      goc.add(new URL(dau).origin);
+    } catch {
+      // Cấu hình hỏng thì bỏ qua, không làm sập cả việc gửi tin.
+    }
+  }
+  return [...goc];
+}
+
+/**
+ * URL này có phải ảnh trên host của sàn không. So ORIGIN đã phân tích, không so
+ * tiền tố chuỗi: "https://img.zoldify.com.evil.example" bắt đầu bằng
+ * "https://img.zoldify.com" nhưng là máy chủ khác. Chỉ http/https, nên
+ * javascript: và data: tự rơi ra.
+ */
+export function laAnhCuaSan(url: string, env: CauHinhAnh): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  return cacGocAnhCuaSan(env).includes(u.origin);
+}

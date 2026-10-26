@@ -573,83 +573,20 @@
         ]
       }
     },
-    "/api/v1/auth/register": {
+    "/api/v1/auth/firebase": {
       "post": {
-        "operationId": "AuthController_handleRegister_v1",
+        "operationId": "AuthController_firebaseLogin_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RegisterUserDto"
+                "$ref": "#/components/schemas/FirebaseLoginDto"
               }
             }
           }
         },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 200
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/AuthUserDto"
-                    }
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "statusCode": {
-                      "type": "integer",
-                      "example": 201
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/AuthUserDto"
-                    }
-                  },
-                  "required": [
-                    "statusCode",
-                    "data"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Auth"
-        ]
-      }
-    },
-    "/api/v1/auth/firebase": {
-      "post": {
-        "operationId": "AuthController_firebaseLogin_v1",
-        "parameters": [],
         "responses": {
           "200": {
             "description": "",
@@ -2921,6 +2858,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimGhnDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5528,9 +5475,7 @@
                     "message": {
                       "type": "string"
                     },
-                    "data": {
-                      "type": "object"
-                    }
+                    "data": {}
                   },
                   "required": [
                     "statusCode",
@@ -7405,12 +7350,12 @@
       "CreateUserDto": {
         "type": "object",
         "properties": {
-          "full_name": {
-            "type": "string"
-          },
           "email": {
             "type": "string",
             "format": "email"
+          },
+          "full_name": {
+            "type": "string"
           },
           "password": {
             "type": "string",
@@ -7436,8 +7381,8 @@
           }
         },
         "required": [
-          "full_name",
           "email",
+          "full_name",
           "password"
         ]
       },
@@ -7533,7 +7478,23 @@
       },
       "UpdateUserDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "phone_number": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "avatar": {
+            "type": "string"
+          },
+          "gender": {
+            "type": "string",
+            "maxLength": 10
+          }
+        }
       },
       "AuthUserDto": {
         "type": "object",
@@ -7644,28 +7605,15 @@
           "password"
         ]
       },
-      "RegisterUserDto": {
+      "FirebaseLoginDto": {
         "type": "object",
         "properties": {
-          "full_name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "password": {
-            "type": "string",
-            "minLength": 6
-          },
-          "phone_number": {
+          "idToken": {
             "type": "string"
           }
         },
         "required": [
-          "full_name",
-          "email",
-          "password"
+          "idToken"
         ]
       },
       "SendOtpDto": {
@@ -8440,6 +8388,21 @@
           }
         }
       },
+      "SimGhnDto": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "enum": [
+              "shipping",
+              "delivered"
+            ]
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
       "OrderShipment": {
         "type": "object",
         "properties": {
@@ -9002,12 +8965,14 @@
         "type": "object",
         "properties": {
           "content": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 2000
           },
           "images": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 500
             }
           }
         },

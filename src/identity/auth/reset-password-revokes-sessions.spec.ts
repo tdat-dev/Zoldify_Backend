@@ -42,7 +42,14 @@ describe('resetPassword thu hồi phiên cũ', () => {
     };
 
     const cacheManager = {
-      get: jest.fn(() => Promise.resolve('123456')),
+      // Bản ghi OTP dạng mới: mã, số lần sai, mốc hết hạn (xem kiemOtp).
+      get: jest.fn(() =>
+        Promise.resolve({
+          otp: '123456',
+          sai: 0,
+          het_han: Date.now() + 60_000,
+        }),
+      ),
       del: jest.fn(),
     };
 
@@ -79,6 +86,21 @@ describe('resetPassword thu hồi phiên cũ', () => {
     expect(updateCalls).toContainEqual({
       id: 7,
       patch: { refresh_token: null },
+    });
+  });
+
+  // Gõ đúng OTP gửi về hộp thư là đã chứng minh sở hữu email. Đây cũng là
+  // đường duy nhất để chủ thật lấy lại một tài khoản bị "chiếm trước" (kẻ xấu
+  // đăng ký email của họ khi chưa có OTP): /auth/firebase từ chối nối vào tài
+  // khoản chưa xác minh, và chỉ mở lại sau khi bước này đánh dấu xác minh.
+  it('đánh dấu email đã xác minh sau khi đặt lại bằng OTP', async () => {
+    const { service, updateCalls } = makeService();
+
+    await service.resetPassword('a@b.com', '123456', 'matkhaumoi123');
+
+    expect(updateCalls).toContainEqual({
+      id: 7,
+      patch: expect.objectContaining({ email_verified: true }) as unknown,
     });
   });
 

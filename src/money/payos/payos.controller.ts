@@ -78,8 +78,9 @@ export class PayosController {
   @UseGuards(JwtAuthGuard)
   @Get('order/:orderId')
   @ResponseMessage('Lấy trạng thái đơn hàng thành công')
-  async getOrderStatus(@Param('orderId') orderId: string) {
-    return this.payosService.getOrderStatus(+orderId);
+  async getOrderStatus(@Param('orderId') orderId: string, @User() user: IUser) {
+    // Chỉ người mua của đơn hoặc admin (kiểm trong service).
+    return this.payosService.getOrderStatus(+orderId, user);
   }
 
   @UseGuards(JwtAuthGuard)

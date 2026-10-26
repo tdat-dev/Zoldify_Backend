@@ -26,6 +26,8 @@ interface FakeClient {
   data: { user?: { id: number } };
   handshake: { auth: { token: string }; query: Record<string, string> };
   disconnect: jest.Mock;
+  join: jest.Mock;
+  emit: jest.Mock;
 }
 
 const lockedUser: FakeUser = {
@@ -109,12 +111,22 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
           update: () => Promise.resolve(),
         } as never,
       );
-      Object.assign(gateway, { server: { emit: jest.fn() } });
+      // Từ 6afa504 handleConnection đếm socket đang mở của người dùng qua
+      // server.in(phòng).fetchSockets(), nên server giả phải có hàm đó; thiếu nó
+      // thì handleConnection ném lỗi và rơi vào nhánh ngắt kết nối.
+      Object.assign(gateway, {
+        server: {
+          emit: jest.fn(),
+          in: () => ({ fetchSockets: () => Promise.resolve([]) }),
+        },
+      });
       const client: FakeClient = {
         id: 's1',
         data: {},
         handshake: { auth: { token: 't' }, query: {} },
         disconnect: jest.fn(),
+        join: jest.fn(() => Promise.resolve()),
+        emit: jest.fn(),
       };
       await gateway.handleConnection(client as never);
       return client;

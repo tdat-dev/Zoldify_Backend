@@ -104,6 +104,13 @@ export class AdminService {
       throw new BadRequestException('Vai trò không hợp lệ');
 
     user.role = role as any;
+    // Thu hồi mọi phiên đang có (B-08). JwtStrategy lấy role từ PAYLOAD của
+    // token, không đọc lại DB, nên admin vừa bị hạ vẫn cầm token role=admin và
+    // dùng tiếp các route admin tới khi token hết hạn, làm mới bằng refresh
+    // token cũ cũng được. Tăng token_version làm JwtStrategy, socket chat và
+    // /auth/refresh từ chối mọi token cũ, giống cách toggleUserLock làm.
+    // Người bị đổi vai trò đăng nhập lại để nhận token mang vai trò mới.
+    user.token_version = (user.token_version || 0) + 1;
     await this.userRepository.save(user);
     return { id: user.id, role: user.role };
   }

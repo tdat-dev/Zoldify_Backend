@@ -1,4 +1,5 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { EmailChuanHoa } from '@common/email';
 import { UserRole } from '../entities/user.entity';
 
 export class CreateUserDto {
@@ -7,7 +8,7 @@ export class CreateUserDto {
   full_name: string;
 
   @IsNotEmpty({ message: 'Email không được để trống' })
-  @IsEmail({}, { message: 'Email không đúng định dạng' })
+  @EmailChuanHoa()
   email: string;
 
   @IsNotEmpty({ message: 'Mật khẩu không được để trống' })
@@ -37,7 +38,7 @@ export class RegisterUserDto {
   full_name: string;
 
   @IsNotEmpty({ message: 'Email không được để trống' })
-  @IsEmail({}, { message: 'Đây không phải là một email' })
+  @EmailChuanHoa()
   email: string;
 
   @IsNotEmpty({ message: 'Mật khẩu không được để trống' })
@@ -54,7 +55,7 @@ export class RegisterUserDto {
 
 export class LoginUserDto {
   @IsNotEmpty({ message: 'Email không được để trống' })
-  @IsEmail({}, { message: 'Đây không phải là một email' })
+  @EmailChuanHoa()
   email: string;
 
   @IsNotEmpty({ message: 'Mật khẩu không được để trống' })

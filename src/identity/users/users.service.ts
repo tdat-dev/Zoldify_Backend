@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateUserDto, RegisterUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { COT_SUA_DUOC, UpdateUserDto } from './dto/update-user.dto';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -67,7 +67,16 @@ export class UsersService {
     if (!foundUser) {
       throw new NotFoundException('Tài khoản không tồn tại');
     }
-    await this.userRepository.update(id, updateUserDto);
+    // Lọc lại theo danh sách trắng dù DTO đã chặn: hàm này còn được gọi thẳng
+    // (script, test), và một object lọt password/role vào đây là ghi mật khẩu
+    // chưa băm hoặc đổi vai trò không thu hồi phiên (xem update-user.dto.ts).
+    const patch: UpdateUserDto = {};
+    for (const k of COT_SUA_DUOC) {
+      if (updateUserDto[k] !== undefined) patch[k] = updateUserDto[k];
+    }
+    if (Object.keys(patch).length) {
+      await this.userRepository.update(id, patch);
+    }
     return this.findOne(id);
   }
 
@@ -80,10 +89,10 @@ export class UsersService {
     return { message: 'Xóa tài khoản thành công' };
   }
 
-  // `emailVerified` mặc định false: giữ nguyên hành vi của đường đăng ký
-  // công khai POST /auth/register (không OTP, chưa chứng minh gì về email).
-  // Chỉ AuthService.verifyRegisterOtp gọi với true, sau khi người dùng đã gõ
-  // đúng mã OTP gửi về chính email đó.
+  // `emailVerified` mặc định false: người gọi phải tự nói là đã chứng minh
+  // email. POST /auth/register (không OTP) đã bị gỡ; hiện chỉ
+  // AuthService.verifyRegisterOtp gọi hàm này, với true, sau khi người dùng đã
+  // gõ đúng mã OTP gửi về chính email đó.
   async register(registerUserDto: RegisterUserDto, emailVerified = false) {
     const { full_name, email, password, phone_number } = registerUserDto;
     const existingUser = await this.userRepository.findOne({ where: { email } });

@@ -1206,36 +1206,65 @@ export class OrdersService {
 
   /**
    * SANDBOX: gia lap GHN day trang thai van don (GHN dev khong co shipper that).
-   * Chi chay tren host GHN dev. phase "shipping" = GHN da lay hang/dang giao ->
-   * don sang "Dang giao" (KHONG do nguoi ban bam). phase "delivered" = GHN giao
-   * toi cua -> danh dau van don DELIVERED (nguoi mua xac nhan / he thong tu chot).
+   * phase "shipping" = GHN da lay hang/dang giao -> don sang "Dang giao" (KHONG
+   * do nguoi ban bam). phase "delivered" = GHN giao toi cua -> danh dau van don
+   * DELIVERED (nguoi mua xac nhan / he thong tu chot).
+   *
+   * BẬT/TẮT bằng biến môi trường GHN_SIMULATOR:
+   *   on   bật, bất kể GHN_HOST (máy demo trỏ GHN thật nhưng vẫn cần nút).
+   *   off  tắt hẳn, kể cả trên sandbox (staging muốn chạy giống prod).
+   *   khác hoặc không đặt: như trước 25/10, chỉ bật khi GHN_HOST là sandbox
+   *        dev-online-gateway. Không đặt GHN_HOST thì tắt.
+   * Không thêm được vào .env.sample (hook chặn đường dẫn .env) nên ghi ở đây
+   * và ở docs/bao-cao/gia-lap-ghn.md.
+   *
+   * VÌ SAO "delivered" CHỈ ADMIN, VÀ CHỈ CHO ĐƠN ĐANG GIAO.
+   *
+   * Bản trước cho cả NGƯỜI BÁN gọi "delivered". Vận đơn thành DELIVERED, cron
+   * chốt vận đơn coi như hàng đã tới tay người mua và giải ngân ký quỹ cho
+   * người bán, trong khi chưa có món nào rời khỏi nhà. Mọi máy chạy sandbox
+   * (staging, máy demo) đều mở cửa này. Đơn đã huỷ hay đã hoàn tiền cũng giả
+   * lập "đã giao" được, vì nhánh này không nhìn trạng thái đơn.
+   *
+   * Ai gọi gì (kiểm 25/10): trang Đơn hàng của admin web gọi cả "shipping" lẫn
+   * "delivered"; app người bán chỉ gọi "shipping". Nên "shipping" giữ cho người
+   * bán của đơn hoặc admin, "delivered" chỉ admin và chỉ khi đơn đang SHIPPING.
    */
   async simulateGhnStatus(
     orderId: number,
-    phase: "shipping" | "delivered",
+    phase: 'shipping' | 'delivered',
     user: IUser,
   ) {
-    const ghnHost = (process["env"]["GHN_HOST"] as string) ?? "";
-    if (!ghnHost.includes("dev-online-gateway")) {
-      throw new BadRequestException("Gia lap GHN chi dung o moi truong sandbox");
+    const congTac = ((process['env']['GHN_SIMULATOR'] as string) ?? '')
+      .trim()
+      .toLowerCase();
+    const ghnHost = (process['env']['GHN_HOST'] as string) ?? '';
+    const batGiaLap =
+      congTac === 'on'
+        ? true
+        : congTac === 'off'
+          ? false
+          : ghnHost.includes('dev-online-gateway');
+    if (!batGiaLap) {
+      throw new BadRequestException(
+        'Gia lap GHN dang tat (GHN_SIMULATOR=off, hoac GHN_HOST khong phai sandbox)',
+      );
     }
     const { order, actors } = await this.findOneForActor(orderId, user);
-    if (
-      !actors.includes(OrderActor.SELLER) &&
-      !actors.includes(OrderActor.ADMIN)
-    ) {
+    const laAdmin = actors.includes(OrderActor.ADMIN);
+    if (!actors.includes(OrderActor.SELLER) && !laAdmin) {
       throw new ForbiddenException(
-        "Chi nguoi ban cua don hoac admin moi gia lap GHN",
+        'Chi nguoi ban cua don hoac admin moi gia lap GHN',
       );
     }
 
-    if (phase === "shipping") {
+    if (phase === 'shipping') {
       if (
         order.status !== OrderStatus.CONFIRMED &&
         order.status !== OrderStatus.PROCESSING
       ) {
         throw new BadRequestException(
-          "Chi gia lap dang giao cho don da xac nhan hoac dang chuan bi",
+          'Chi gia lap dang giao cho don da xac nhan hoac dang chuan bi',
         );
       }
       // GHN chỉ "đang giao" được lô hàng nó đã nhận vận đơn. Trước đây nhánh
@@ -1246,6 +1275,18 @@ export class OrdersService {
       order.status = OrderStatus.SHIPPING;
       await this.orderRepository.save(order);
       return { order_id: order.id, status: order.status };
+    }
+
+    if (phase !== 'delivered') {
+      throw new BadRequestException('phase phai la shipping hoac delivered');
+    }
+    if (!laAdmin) {
+      throw new ForbiddenException('Chi admin moi gia lap GHN da giao');
+    }
+    if (order.status !== OrderStatus.SHIPPING) {
+      throw new BadRequestException(
+        'Chi gia lap da giao cho don dang giao (khong cho don da huy/hoan tien)',
+      );
     }
 
     const shipments = await this.shipmentRepository.find({
