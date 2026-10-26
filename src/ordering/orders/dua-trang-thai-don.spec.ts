@@ -890,10 +890,10 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     const goc = ledger.post.bind(ledger) as LedgerService['post'];
     jest.spyOn(ledger, 'post').mockImplementation(async (input, em) => {
       if (dem === undefined && input.type === LedgerTxType.ORDER_HOLD && em) {
-        const r = (await em.query(
+        const r = await em.query<Array<{ n: number | string }>>(
           'SELECT COUNT(*) AS n FROM escrows WHERE order_id = ?',
           [orderId],
-        )) as Array<{ n: number | string }>;
+        );
         dem = Number(r[0].n);
       }
       return goc(input, em);
@@ -943,6 +943,8 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
   /** Ghi lại thứ tự id sản phẩm mà các lần cộng kho chạm tới. */
   function ghiThuTuCongKho(): number[] {
     const thuTu: number[] = [];
+    // Cố ý lấy hàm rời khỏi prototype rồi gắn lại `this` bằng `call` bên dưới.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     const goc = EntityManager.prototype.increment;
     jest
       .spyOn(EntityManager.prototype, 'increment')
@@ -954,7 +956,7 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
         if (a[0] === Product && dieuKien.id !== undefined) {
           thuTu.push(dieuKien.id);
         }
-        return goc.apply(this, a);
+        return goc.call(this, ...a) as ReturnType<EntityManager['increment']>;
       });
     return thuTu;
   }

@@ -22,10 +22,7 @@ import {
 import { WalletsService } from '@money/wallets/wallets.service';
 import { EscrowsService } from '@money/escrows/escrows.service';
 import { Wallet } from '@money/wallets/entities/wallet.entity';
-import {
-  KHONG_NHAN_TIEN_DON,
-  PayosService,
-} from '@money/payos/payos.service';
+import { KHONG_NHAN_TIEN_DON, PayosService } from '@money/payos/payos.service';
 
 @Injectable()
 export class PaymentsService {

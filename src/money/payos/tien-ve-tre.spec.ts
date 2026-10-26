@@ -395,10 +395,10 @@ describe('PayosService: tiền về trễ', () => {
     const goc = ledger.post.bind(ledger) as LedgerService['post'];
     jest.spyOn(ledger, 'post').mockImplementation(async (input, em) => {
       if (dem === undefined && input.type === LedgerTxType.ORDER_HOLD && em) {
-        const r = (await em.query(
+        const r = await em.query<Array<{ n: number | string }>>(
           'SELECT COUNT(*) AS n FROM escrows WHERE order_id = ?',
           [orderId],
-        )) as Array<{ n: number | string }>;
+        );
         dem = Number(r[0].n);
       }
       return goc(input, em);
