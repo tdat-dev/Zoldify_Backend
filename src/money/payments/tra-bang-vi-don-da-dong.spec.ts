@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { DataSource, FindOneOptions } from 'typeorm';
 import { PaymentsService } from './payments.service';
 import { Payment } from './entities/payment.entity';
@@ -347,5 +348,50 @@ describe('PaymentsService: trả bằng ví cho đơn đã đóng', () => {
     await traBangVi(orderId);
 
     expect(docSoDu).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Review 7: bản vá D đòi đơn phải \`pending\`, nên đơn đã được người bán xác
+   * nhận mà chưa trả tiền (vd COD đổi ý trả bằng ví) không trả bằng ví được
+   * nữa, trong khi PayOS vẫn nhận tiền cho đúng đơn đó. Hai cổng tiền phải
+   * cùng một luật. Trả xong thì đơn giữ nguyên \`confirmed\`.
+   */
+  it('review 7: đơn đã xác nhận chưa trả tiền thì trả bằng ví được', async () => {
+    const orderId = await taoDonChuaTra(OrderStatus.CONFIRMED);
+    await napVi(buyerId, TIEN_HANG);
+
+    await traBangVi(orderId);
+
+    expect(await donLuc(orderId)).toEqual({
+      status: OrderStatus.CONFIRMED,
+      is_paid: 1,
+    });
+    expect(await viNguoiMua()).toBe(0n);
+  });
+
+  /**
+   * Review 7: đơn biến mất giữa lúc đọc và lúc khoá thì báo "không tìm thấy",
+   * không báo "đã được thanh toán" (câu đó làm người mua tưởng tiền đã đi).
+   */
+  it('review 7: đơn biến mất giữa chừng thì báo không tìm thấy', async () => {
+    const orderId = await taoDonChuaTra(OrderStatus.PENDING);
+    await napVi(buyerId, TIEN_HANG);
+
+    const repo = ds.getRepository(Order);
+    const goc = repo.findOne.bind(repo) as (
+      o: FindOneOptions<Order>,
+    ) => Promise<Order | null>;
+    jest
+      .spyOn(repo, 'findOne')
+      .mockImplementationOnce(async (opts: FindOneOptions<Order>) => {
+        const don = await goc(opts);
+        await ds.query('UPDATE orders SET deleted_at = NOW() WHERE id = ?', [
+          orderId,
+        ]);
+        return don;
+      });
+
+    await expect(traBangVi(orderId)).rejects.toBeInstanceOf(NotFoundException);
+    expect(await viNguoiMua()).toBe(BigInt(TIEN_HANG));
   });
 });
