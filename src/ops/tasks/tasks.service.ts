@@ -232,6 +232,14 @@ export class TasksService {
     const updates: Record<number, number> = {};
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
+      // Pipeline trả lỗi THEO TỪNG LỆNH ([err, kết quả]), không ném. Bỏ qua
+      // phần lỗi thì một khoá hỏng (sai kiểu, bị SET nhầm) đứng yên mãi mà
+      // không một dòng log nào nói vì sao (review 27/10, mục H).
+      const loi = results[i]?.[0];
+      if (loi) {
+        this.logger.error(`flushViewCount GETDEL ${key} lỗi: ${loi.message}`);
+        continue;
+      }
       const count = results[i]?.[1];
       if (count) {
         const productId = parseInt(key.replace('view_count:', ''), 10);
