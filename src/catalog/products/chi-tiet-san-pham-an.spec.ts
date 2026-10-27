@@ -2,6 +2,7 @@ import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { createCache } from 'cache-manager';
 import { ProductsService } from './products.service';
+import { ProductsController } from './products.controller';
 import { Product, ProductStatus } from './entities/product.entity';
 import { Category } from '@catalog/categories/entities/category.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
@@ -158,10 +159,57 @@ describe('Chi tiết sản phẩm chưa mở bán', () => {
     await expect(xem(id)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('token hỏng mà mở bản nháp → 401 để app làm mới token, không 404', async () => {
+  // Review 27/10 (B): bản đầu trả 401 cho token hỏng + bản nháp. Hai cái sai:
+  //  - 401 ở bản nháp nhưng 404 ở id không có thật là CHỈ ĐIỂM: dò id kèm một
+  //    token rác là biết id nào là bản nháp đang nằm đó.
+  //  - Web và app KHÔNG có luồng làm mới token: gặp 401 bất kỳ là xoá phiên,
+  //    đẩy về màn đăng nhập. Người mua token hết hạn bấm link tới sản phẩm của
+  //    người bán bị khoá (hàng bị đưa về nháp) là bị đăng xuất.
+  // Nên: route này không bao giờ 401, và bản nháp với người ngoài trông y hệt
+  // id không tồn tại.
+  it('token hỏng mà mở bản nháp → 404 y hệt id không tồn tại, không 401', async () => {
     const id = await taoSanPham(ProductStatus.DRAFT);
-    await expect(xem(id, { tokenHong: true })).rejects.toBeInstanceOf(
-      UnauthorizedException,
+    const loiNhap = await xem(id, { tokenHong: true }).catch((e: unknown) => e);
+    expect(loiNhap).toBeInstanceOf(NotFoundException);
+    expect(loiNhap).not.toBeInstanceOf(UnauthorizedException);
+
+    // Cùng thân lỗi với một id không có thật (khác mỗi con số id).
+    const idMa = id + 10_000_000;
+    const loiMa = await xem(idMa).catch((e: unknown) => e);
+    expect(loiMa).toBeInstanceOf(NotFoundException);
+    expect((loiNhap as NotFoundException).getResponse()).toEqual(
+      JSON.parse(
+        JSON.stringify((loiMa as NotFoundException).getResponse()).replace(
+          String(idMa),
+          String(id),
+        ),
+      ),
     );
+  });
+
+  it('chủ xem bản nháp qua controller → Cache-Control: private, no-store', async () => {
+    const id = await taoSanPham(ProductStatus.DRAFT);
+    const header: Record<string, string> = {};
+    const res = {
+      setHeader: (k: string, v: string) => {
+        header[k.toLowerCase()] = v;
+      },
+    };
+    const controller = new ProductsController(products);
+    const xemQuaController = controller.findOne.bind(controller) as (
+      id: number,
+      req: unknown,
+      res: unknown,
+    ) => Promise<Product>;
+
+    await xemQuaController(id, { user: chu() }, res);
+    expect(header['cache-control']).toBe('private, no-store');
+
+    // Sản phẩm đang bán (công khai) thì không ép gì, để CDN/trình duyệt
+    // cache được như trước.
+    const idBan = await taoSanPham(ProductStatus.ACTIVE);
+    delete header['cache-control'];
+    await xemQuaController(idBan, {}, res);
+    expect(header['cache-control']).toBeUndefined();
   });
 });
