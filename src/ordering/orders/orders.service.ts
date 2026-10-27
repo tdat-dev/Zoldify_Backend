@@ -1236,12 +1236,8 @@ export class OrdersService {
     // Tiền đi sau khi trạng thái đã lưu. Lỗi ở đây được NÉM RA, không nuốt:
     // trước đây `catch { console.error }` khiến API trả 200 trong khi tiền
     // không hề chuyển, và không ai biết cho tới lúc đối soát.
-    if (nextStatus === OrderStatus.DELIVERED) {
-      await this.releaseEscrowOrExplain(order.id, 'giải ngân');
-    }
-
-    // Báo SAU khi trạng thái đã commit và tiền đã đi xong. `processing` không
-    // báo: với người mua nó không khác gì "đã xác nhận", báo hai lần là ồn.
+    // Báo SAU khi trạng thái đã commit. `processing` không báo: với người mua
+    // nó không khác gì "đã xác nhận", báo hai lần là ồn.
     const suKien: Partial<Record<OrderStatus, SuKienDon>> = {
       [OrderStatus.CONFIRMED]: 'xac-nhan',
       [OrderStatus.SHIPPING]: 'dang-giao',
@@ -1249,7 +1245,19 @@ export class OrdersService {
       [OrderStatus.REFUNDED]: 'hoan-tien',
     };
     const canBao = nextStatus ? suKien[nextStatus] : undefined;
-    if (canBao) await this.bao(order.id, canBao);
+
+    // `finally`: giải ngân có thể ném SAU khi `delivered` đã commit (review
+    // 27/10, mục F). Bản đầu báo sau bước giải ngân, nên giải ngân hỏng là
+    // thông báo "đã giao" mất hẳn: đơn đã `delivered` thì không ai bấm lại
+    // được để kích nó lần nữa. Trạng thái là sự thật đã lưu; báo theo nó, còn
+    // lỗi tiền vẫn ném lên cho người gọi và admin xử lý như trước.
+    try {
+      if (nextStatus === OrderStatus.DELIVERED) {
+        await this.releaseEscrowOrExplain(order.id, 'giải ngân');
+      }
+    } finally {
+      if (canBao) await this.bao(order.id, canBao);
+    }
 
     return this.orderRepository.findOne({
       where: { id: order.id },
