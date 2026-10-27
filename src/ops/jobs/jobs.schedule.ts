@@ -31,10 +31,29 @@ export async function dangKyLichLap(
     await queue.upsertJobScheduler(
       l.id,
       { pattern: l.pattern, tz: 'Asia/Ho_Chi_Minh' },
-      { name: l.ten },
+      { name: l.ten, opts: GIU_JOB_LICH_LAP },
     );
   }
 }
+
+/**
+ * Giữ bao nhiêu job lịch lặp đã xong / đã hỏng trong Redis.
+ *
+ * BullMQ mặc định giữ TẤT CẢ. Ba lịch đẻ 24 + 24 + 288 = 336 job mỗi ngày,
+ * hơn 120 nghìn bản ghi một năm không ai đọc, trong khi Redis còn gánh
+ * throttler và cache: đầy bộ nhớ là ba thứ chết cùng lúc. Đo bằng
+ * `jobs.schedule.spec.ts`.
+ *
+ * Giữ đủ để điều tra: job xong 7 ngày (tối đa 500, tức gần hai ngày của job
+ * 5 phút một lần), job hỏng 30 ngày (tối đa 2000) vì hỏng mới là thứ cần đọc
+ * lại. `age` tính bằng GIÂY, không phải mili giây.
+ *
+ * Đổi `opts` ở đây là thay tại chỗ (upsert theo id), không đẻ lịch thứ hai.
+ */
+export const GIU_JOB_LICH_LAP = {
+  removeOnComplete: { age: 7 * 24 * 3600, count: 500 },
+  removeOnFail: { age: 30 * 24 * 3600, count: 2000 },
+} as const;
 
 /**
  * Xoá những lịch KHÔNG còn trong danh sách.

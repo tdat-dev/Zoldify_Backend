@@ -10,7 +10,7 @@ import { TasksService } from '@ops/tasks/tasks.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { LICH_LAP, TEN_HANG_DOI } from './jobs.constants';
 import { taoBoXuLy } from './jobs.processor';
-import { dangKyLichLap, donLichThua } from './jobs.schedule';
+import { dangKyLichLap, donLichThua, GIU_JOB_LICH_LAP } from './jobs.schedule';
 
 /**
  * Chủ sở hữu hàng đợi và worker BullMQ. CHỈ tiến trình worker nạp provider này.
@@ -66,7 +66,13 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
       this.logger.error(`Kết nối Redis lỗi: ${e.message}`),
     );
 
-    this.queue = new Queue(TEN_HANG_DOI, { connection: this.conn });
+    // Mặc định cho job xếp bằng CHÍNH hàng đợi này (không qua lịch lặp), cùng
+    // giới hạn với lịch lặp: thiếu thì job xong nằm lại Redis mãi (xem
+    // GIU_JOB_LICH_LAP trong jobs.schedule.ts).
+    this.queue = new Queue(TEN_HANG_DOI, {
+      connection: this.conn,
+      defaultJobOptions: GIU_JOB_LICH_LAP,
+    });
 
     // Ghép hai nguồn việc: ba job lịch lặp của TasksService và job "báo hàng
     // mới" của ProductsService (rà soát 26/10 mục 6). Ghép ở đây thay vì nhét
