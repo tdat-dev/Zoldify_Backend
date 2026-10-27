@@ -7,7 +7,7 @@ import {
 import { CreateShopDto } from './dto/create-shop.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Shop, ShopStatus } from './entities/shop.entity';
 import { User } from '@identity/users/entities/user.entity';
 import {
@@ -195,18 +195,62 @@ export class ShopService {
       offset,
     } = normalizePagination(rawPage, rawLimit, 20);
 
-    const where: any = { product: { seller: { id: sellerId } } };
-    if (status) {
-      where.order = { status };
-    }
+    // PHÂN TRANG THEO ĐƠN, KHÔNG THEO DÒNG HÀNG.
+    //
+    // Bản cũ `findAndCount` trên `order_items` rồi mới gom theo đơn: đơn ba món
+    // vắt qua hai trang (trang sau hiện món còn lại như một đơn riêng),
+    // `limit=20` trả ít hơn 20 đơn, và `meta.total` đếm số MÓN nên app tính số
+    // trang sai (ba đơn ba món ra total 9). Đo bằng
+    // `don-nguoi-ban-phan-trang.spec.ts`.
+    //
+    // Nay ba bước, cùng khuôn với `OrdersService.findAll`: đếm đơn DISTINCT,
+    // lấy id đơn của trang, rồi mới nạp món của đúng những đơn đó. Đơn đã xoá
+    // mềm bị loại ở cả ba bước (join thường của TypeORM tự thêm điều kiện
+    // deleted_at, ghi rõ ra để không ai phải nhớ).
+    const locDon = () => {
+      const qb = this.orderItemRepository
+        .createQueryBuilder('oi')
+        .innerJoin('oi.product', 'p')
+        .innerJoin('oi.order', 'o')
+        .where('p.seller_id = :sellerId', { sellerId })
+        .andWhere('o.deleted_at IS NULL');
+      if (status) qb.andWhere('o.status = :status', { status });
+      return qb;
+    };
 
-    const [items, total] = await this.orderItemRepository.findAndCount({
-      where,
-      relations: ['order', 'order.user', 'product'],
-      skip: offset,
-      take: limit,
-      order: { id: 'DESC' },
-    });
+    const dem = await locDon()
+      .select('COUNT(DISTINCT o.id)', 'n')
+      .getRawOne<{ n: string }>();
+    const total = Number(dem?.n ?? 0);
+
+    // Mới nhất trước theo id đơn (id tăng dần theo thời gian tạo), thay cho
+    // `id DESC` của dòng hàng bản cũ: cùng thứ tự với người dùng nhìn thấy.
+    const idRows = await locDon()
+      .select('o.id', 'id')
+      .groupBy('o.id')
+      .orderBy('o.id', 'DESC')
+      .offset(offset)
+      .limit(limit)
+      .getRawMany<{ id: number }>();
+    const pageIds = idRows.map((r) => Number(r.id));
+
+    // Chỉ món của CHÍNH người bán này: đơn nhiều người bán thì món của người
+    // khác không thuộc về màn này (cùng luật với OrdersService.findOne).
+    const items = pageIds.length
+      ? await this.orderItemRepository.find({
+          where: {
+            order: { id: In(pageIds) },
+            product: { seller: { id: sellerId } },
+          },
+          relations: ['order', 'order.user', 'product'],
+          order: { id: 'DESC' },
+        })
+      : [];
+    // Xếp món theo thứ tự đơn của trang để Map bên dưới giữ đúng thứ tự đó.
+    const viTri = new Map(pageIds.map((id, i) => [id, i]));
+    items.sort(
+      (a, b) => (viTri.get(a.order.id) ?? 0) - (viTri.get(b.order.id) ?? 0),
+    );
 
     const orderMap = new Map<number, any>();
     for (const item of items) {

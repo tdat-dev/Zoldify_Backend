@@ -63,13 +63,32 @@ function dung() {
     } as never,
     { count: () => Promise.resolve(5) } as never,
     {
-      findAndCount: (o: { skip: number; take: number }) => {
-        timDon.push(o);
-        return Promise.resolve([
-          [{ id: 11, order: { id: 100, user: buyer }, product: { id: 5 } }],
-          1,
-        ]);
+      // getSellerOrders phân trang theo ĐƠN (don-nguoi-ban-phan-trang.spec.ts):
+      // một QueryBuilder đếm + lấy id đơn của trang, rồi `find` nạp món. Giả
+      // đúng chuỗi đó; `offset`/`limit` ghi vào `timDon` như skip/take cũ.
+      createQueryBuilder: () => {
+        const trang = { skip: 0, take: 0 };
+        const qb = {
+          innerJoin: () => qb,
+          where: () => qb,
+          andWhere: () => qb,
+          select: () => qb,
+          groupBy: () => qb,
+          orderBy: () => qb,
+          offset: (n: number) => ((trang.skip = n), qb),
+          limit: (n: number) => ((trang.take = n), qb),
+          getRawOne: () => Promise.resolve({ n: '1' }),
+          getRawMany: () => {
+            timDon.push(trang);
+            return Promise.resolve([{ id: 100 }]);
+          },
+        };
+        return qb;
       },
+      find: () =>
+        Promise.resolve([
+          { id: 11, order: { id: 100, user: buyer }, product: { id: 5 } },
+        ]),
     } as never,
   );
   return { service, timSanPham, timDon };

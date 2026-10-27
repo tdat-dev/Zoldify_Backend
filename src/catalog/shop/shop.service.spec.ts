@@ -71,8 +71,24 @@ describe('ShopService', () => {
       },
     } as unknown as Repository<Product>;
 
+    // getSellerOrders đếm và lấy id đơn bằng QueryBuilder rồi `find` món
+    // (phân trang theo đơn, xem don-nguoi-ban-phan-trang.spec.ts). Bài kiểm
+    // này chỉ đo quyền xem, nên chuỗi giả trả rỗng là đủ.
+    const qbRong = {
+      innerJoin: () => qbRong,
+      where: () => qbRong,
+      andWhere: () => qbRong,
+      select: () => qbRong,
+      groupBy: () => qbRong,
+      orderBy: () => qbRong,
+      offset: () => qbRong,
+      limit: () => qbRong,
+      getRawOne: () => Promise.resolve({ n: '0' }),
+      getRawMany: () => Promise.resolve([]),
+    };
     const orderItemRepo = {
-      findAndCount: () => Promise.resolve([[], 0]),
+      createQueryBuilder: () => qbRong,
+      find: () => Promise.resolve([]),
     } as unknown as Repository<OrderItem>;
 
     const service = new ShopService(
