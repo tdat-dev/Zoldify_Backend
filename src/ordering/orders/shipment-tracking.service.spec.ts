@@ -400,6 +400,84 @@ describe('ShipmentTrackingService — webhook GHN', () => {
     expect(kq.updated).toBe(false);
   });
 
+  // ── Hoàn hàng, huỷ, thất lạc ─────────────────────────────────────────────
+  //
+  // Tới 27/10 lượt đồng bộ chỉ nghe "đã lấy hàng" và "đã giao". GHN báo hoàn
+  // hàng, huỷ hay thất lạc thì không gì xảy ra: lô nằm CREATED, đơn nằm "Đang
+  // giao" vĩnh viễn, tiền người mua kẹt trong ký quỹ, không ai được báo. Tối
+  // thiểu phải: ghi lý do lên lô và báo quản trị viên. KHÔNG tự hoàn tiền: hàng
+  // hoàn về tay người bán hay mất giữa đường là chuyện cần người xem.
+  const SU_CO = [
+    'return',
+    'returning',
+    'return_transporting',
+    'return_sorting',
+    'returned',
+    'cancel',
+    'lost',
+    'damage',
+    'exception',
+  ];
+
+  async function dungVoiKenh() {
+    await ds.query(
+      `INSERT INTO users (full_name, email, password, role)
+       VALUES ('ad', 'ad@t.local', 'x', 'admin')`,
+    );
+    const adminId = await idVuaChen();
+    const gui: Array<{
+      user_id: number;
+      type: string;
+      content: string;
+      data?: Record<string, unknown>;
+    }> = [];
+    const kenh = {
+      create: (d: (typeof gui)[number]) => {
+        gui.push(d);
+        return Promise.resolve(undefined);
+      },
+    };
+    const s2 = new ShipmentTrackingService(repo, ghnGoc, kenh as never);
+    return { s2, gui, adminId };
+  }
+
+  it.each(SU_CO)(
+    'GHN báo "%s" → ghi lý do lên lô, báo admin một lần, không động tiền',
+    async (st) => {
+      const { s2, gui, adminId } = await dungVoiKenh();
+      const lo = await taoLo();
+      ghnTraVe = st;
+
+      await s2.dongBoTatCa();
+
+      const sau = await doc(lo.id);
+      // Không tự chốt giao, không tự huỷ: tiền đi đâu là việc của người.
+      expect(sau.status).toBe(ShipmentStatus.CREATED);
+      expect(sau.delivered_at).toBeNull();
+      expect(sau.error ?? '').toContain(st);
+
+      const choAdmin = gui.filter((g) => g.user_id === adminId);
+      expect(choAdmin).toHaveLength(1);
+      expect(choAdmin[0].type).toBe('system');
+      expect(choAdmin[0].data).toMatchObject({ order_id: orderId });
+
+      // Lượt quét giờ sau gặp lại đúng trạng thái đó thì không báo lại.
+      await s2.dongBoTatCa();
+      expect(gui.filter((g) => g.user_id === adminId)).toHaveLength(1);
+    },
+  );
+
+  it('webhook nghe GHN báo hoàn hàng cũng ghi lý do và báo admin', async () => {
+    const { s2, gui, adminId } = await dungVoiKenh();
+    const lo = await taoLo();
+    ghnTraVe = 'returned';
+
+    await s2.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
+
+    expect((await doc(lo.id)).error ?? '').toContain('returned');
+    expect(gui.filter((g) => g.user_id === adminId)).toHaveLength(1);
+  });
+
   it('một lô lỗi không làm chết cả lượt đồng bộ', async () => {
     await taoLo(ShipmentStatus.CREATED, 'GHN-HONG');
     await taoLo(ShipmentStatus.CREATED, 'GHN-OK');
