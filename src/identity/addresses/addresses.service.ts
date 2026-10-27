@@ -77,8 +77,17 @@ export class AddressesService {
   }
 
   async update(id: number, dto: UpdateAddressDto, user: IUser) {
-    const address = await this.findOne(id, user);
     return this.trongKhoaNguoiDung(user.id, async (repo) => {
+      // ĐỌC TRONG KHOÁ, không đọc trước rồi mới vào khoá (review 27/10). Bản
+      // trước đọc địa chỉ bên ngoài rồi `save` nguyên entity bên trong: một
+      // lần `setDefault` khác chen giữa (bỏ mặc định cái này, đặt cái kia) thì
+      // lần lưu ghi lại `is_default = true` đã cũ, người dùng có hai địa chỉ
+      // mặc định. Đo bằng bài "sửa nhãn địa chỉ mặc định..." trong
+      // `dia-chi-mac-dinh-dua.spec.ts`.
+      const address = await repo.findOne({
+        where: { id, user: { id: user.id } },
+      });
+      if (!address) throw new NotFoundException('Không tìm thấy địa chỉ');
       if (dto.is_default) await this.boMacDinh(repo, user.id);
       Object.assign(address, dto);
       return repo.save(address);
