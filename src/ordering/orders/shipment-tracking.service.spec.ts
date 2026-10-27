@@ -431,14 +431,17 @@ describe('ShipmentTrackingService — webhook GHN', () => {
       content: string;
       data?: Record<string, unknown>;
     }> = [];
+    // `trangThai.hong = true`: kênh thông báo ném như FCM/MySQL chập.
+    const trangThai = { hong: false };
     const kenh = {
       create: (d: (typeof gui)[number]) => {
+        if (trangThai.hong) return Promise.reject(new Error('FCM sập'));
         gui.push(d);
         return Promise.resolve(undefined);
       },
     };
     const s2 = new ShipmentTrackingService(repo, ghnGoc, kenh);
-    return { s2, gui, adminId };
+    return { s2, gui, adminId, trangThai };
   }
 
   it.each(SU_CO)(
@@ -454,7 +457,9 @@ describe('ShipmentTrackingService — webhook GHN', () => {
       // Không tự chốt giao, không tự huỷ: tiền đi đâu là việc của người.
       expect(sau.status).toBe(ShipmentStatus.CREATED);
       expect(sau.delivered_at).toBeNull();
-      expect(sau.error ?? '').toContain(st);
+      // Lý do theo NHÓM sự cố, không phải chuỗi trạng thái thô của GHN (xem
+      // bài "đi hết chuỗi hoàn hàng" bên dưới).
+      expect(sau.error ?? '').not.toBe('');
 
       const choAdmin = gui.filter((g) => g.user_id === adminId);
       expect(choAdmin).toHaveLength(1);
@@ -474,8 +479,64 @@ describe('ShipmentTrackingService — webhook GHN', () => {
 
     await s2.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
 
-    expect((await doc(lo.id)).error ?? '').toContain('returned');
+    expect((await doc(lo.id)).error ?? '').toMatch(/hoàn/i);
     expect(gui.filter((g) => g.user_id === adminId)).toHaveLength(1);
+  });
+
+  // ── Review 27/10: báo trùng và báo mất ──────────────────────────────────
+  //
+  // Bản đầu chống báo trùng bằng `error <> :loi` với `loi` CHỨA trạng thái thô
+  // của GHN. Một lần hoàn hàng bình thường đi qua năm trạng thái (return ->
+  // return_transporting -> return_sorting -> returning -> returned), mỗi
+  // trạng thái là một chuỗi `loi` khác, nên mọi admin nhận năm thông báo cho
+  // cùng một kiện. Và cột `error` được ghi TRƯỚC khi báo, trong khi hàm báo
+  // nuốt lỗi: báo hỏng một lần là không bao giờ báo lại.
+  it('đi hết chuỗi hoàn hàng của GHN → admin nhận ĐÚNG một thông báo', async () => {
+    const { s2, gui, adminId } = await dungVoiKenh();
+    await taoLo();
+
+    for (const st of [
+      'return',
+      'return_transporting',
+      'return_sorting',
+      'returning',
+      'return_transporting',
+      'returned',
+    ]) {
+      ghnTraVe = st;
+      await s2.dongBoTatCa();
+    }
+
+    expect(gui.filter((g) => g.user_id === adminId)).toHaveLength(1);
+  });
+
+  it('đổi NHÓM sự cố (đang hoàn → thất lạc) thì báo thêm một lần', async () => {
+    const { s2, gui, adminId } = await dungVoiKenh();
+    await taoLo();
+
+    ghnTraVe = 'returning';
+    await s2.dongBoTatCa();
+    ghnTraVe = 'lost';
+    await s2.dongBoTatCa();
+    ghnTraVe = 'damage';
+    await s2.dongBoTatCa();
+
+    expect(gui.filter((g) => g.user_id === adminId)).toHaveLength(2);
+  });
+
+  it('báo admin hỏng thì KHÔNG đánh dấu, lượt sau báo lại được', async () => {
+    const { s2, gui, adminId, trangThai } = await dungVoiKenh();
+    const lo = await taoLo();
+    ghnTraVe = 'returned';
+
+    trangThai.hong = true;
+    await s2.dongBoTatCa();
+    expect((await doc(lo.id)).error).toBeNull();
+
+    trangThai.hong = false;
+    await s2.dongBoTatCa();
+    expect(gui.filter((g) => g.user_id === adminId)).toHaveLength(1);
+    expect((await doc(lo.id)).error ?? '').not.toBe('');
   });
 
   it('một lô lỗi không làm chết cả lượt đồng bộ', async () => {
