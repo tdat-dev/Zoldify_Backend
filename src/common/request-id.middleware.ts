@@ -25,6 +25,27 @@ const HOP_LE = /^[A-Za-z0-9-]{1,64}$/;
  * Không dùng mã này cho bất kỳ việc gì liên quan bảo mật: nó đoán được.
  */
 const TIEN_TO = randomUUID().slice(0, 8);
+
+/**
+ * Tham số truy vấn mang BÍ MẬT, giá trị phải che trước khi vào log.
+ *
+ * Webhook GHN không cho đặt header riêng nên bí mật nằm ngay trong URL
+ * (`?token=`, xem shipment-tracking.service.ts). Tới 27/10 dòng log dưới đây
+ * ghi nguyên `originalUrl`: mỗi lần GHN gọi là token nằm trong log JSON, đi
+ * theo log tới mọi nơi log được gửi, và ai đọc được log là giả được webhook.
+ * `checksum`/`signature` là chữ ký của cổng thanh toán, cùng lý do.
+ */
+const THAM_SO_BI_MAT = /([?&](?:token|checksum|signature)=)[^&#]*/gi;
+
+/**
+ * Che giá trị bí mật nhưng GIỮ tên tham số: vẫn đọc được là request có gửi
+ * token, chỉ không đọc được token. Không có `?` thì trả nguyên (đường nóng:
+ * gần như mọi request, không tốn một lần chạy regex).
+ */
+function cheUrl(url: string): string {
+  if (!url.includes('?')) return url;
+  return url.replace(THAM_SO_BI_MAT, '$1***');
+}
 let dem = 0;
 
 @Injectable()
@@ -50,8 +71,9 @@ export class RequestIdMiddleware implements NestMiddleware {
         msg: 'request',
         method: req.method,
         // `originalUrl` chứ không `path`: giữ cả chuỗi truy vấn thì mới biết
-        // trang nào, bộ lọc nào — đúng thứ cần khi đi tìm chỗ chậm.
-        path: req.originalUrl,
+        // trang nào, bộ lọc nào — đúng thứ cần khi đi tìm chỗ chậm. Nhưng che
+        // bí mật trong đó trước (cheUrl).
+        path: cheUrl(req.originalUrl),
         status: res.statusCode,
         ms: Math.round(ms * 100) / 100,
         userId: (req as Request & { user?: { id?: number } }).user?.id,
