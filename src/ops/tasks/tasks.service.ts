@@ -165,8 +165,8 @@ export class TasksService {
    * Flush view_count tu Redis ve MySQL.
    *
    * Chay moi 5 phut (pattern: mot nguoc 5 * * * *). Redis key: `view_count:{productId}`.
-   * Dung SCAN de lay tat ca key `view_count:*`, doc gia tri, cong vao MySQL,
-   * roi xoa key trong Redis. Dung pipeline de toi uu.
+   * Dung SCAN de lay tat ca key `view_count:*`, GETDEL (doc va xoa nguyen tu)
+   * roi cong vao MySQL. Dung pipeline de toi uu.
    * on('error') chỉ bắt sự kiện kết nối — lệnh SCAN/GET/DEL bị reject phải try/catch.
    */
   async flushViewCount() {
@@ -193,16 +193,24 @@ export class TasksService {
 
     if (!keys.length) return;
 
+    // GETDEL: ĐỌC VÀ XOÁ TRONG MỘT LỆNH NGUYÊN TỬ (Redis 6.2+, compose chạy
+    // redis:7).
+    //
+    // Bản cũ GET hết, cộng vào MySQL, rồi mới DEL hết. Giữa hai bước là cả vòng
+    // UPDATE MySQL, và mọi INCR rơi vào khoảng đó bị DEL xoá mà chưa từng được
+    // cộng: sản phẩm càng nhiều người xem càng mất nhiều. Đo bằng
+    // `dem-luot-xem-khong-mat.spec.ts` (10 lượt xem, MySQL + Redis chỉ còn 8).
+    // Với GETDEL, INCR đến sau tạo khoá mới từ 0 và được lượt flush sau cộng.
     let results: Array<[Error | null, unknown]> = [];
     try {
       const pipeline = this.redis.pipeline();
       for (const key of keys) {
-        pipeline.get(key);
+        pipeline.getdel(key);
       }
       results = (await pipeline.exec()) ?? [];
     } catch (err) {
       this.logger.error(
-        `flushViewCount GET pipeline lỗi: ${(err as Error).message}`,
+        `flushViewCount GETDEL pipeline lỗi: ${(err as Error).message}`,
       );
       return;
     }
@@ -235,22 +243,14 @@ export class TasksService {
           this.logger.error(
             `flushViewCount increment product ${productId} lỗi: ${(err as Error).message}`,
           );
+          // Khoá đã bị GETDEL xoá: trả số lại Redis để lượt sau cộng, thay vì
+          // mất hẳn. INCRBY cộng dồn với lượt xem mới đến trong lúc đó.
+          try {
+            await this.redis.incrby(`view_count:${productId}`, count);
+          } catch {
+            // Redis cũng hỏng thì đành mất lượt này; log ở trên đã ghi số.
+          }
         }
-      }
-    }
-
-    // Xoa key trong Redis sau khi flush
-    if (keys.length) {
-      try {
-        const delPipeline = this.redis.pipeline();
-        for (const key of keys) {
-          delPipeline.del(key);
-        }
-        await delPipeline.exec();
-      } catch (err) {
-        this.logger.error(
-          `flushViewCount DEL pipeline lỗi: ${(err as Error).message}`,
-        );
       }
     }
 
