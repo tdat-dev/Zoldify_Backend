@@ -50,7 +50,6 @@ import {
   OrderActor,
 } from './order-status.policy';
 import { SuKienDon, ThongBaoDon } from './thong-bao-don';
-import type { KenhThongBao } from '@common/kenh-thong-bao';
 import {
   normalizePagination,
   decodeCursor,
@@ -126,7 +125,7 @@ export class OrdersService {
    */
   private bao(orderId: number, suKien: SuKienDon): Promise<void> {
     return new ThongBaoDon(
-      this.notificationsService as unknown as KenhThongBao,
+      this.notificationsService,
       this.dataSource,
       this.logger,
     ).bao(orderId, suKien);

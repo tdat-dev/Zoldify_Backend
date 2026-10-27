@@ -20,6 +20,7 @@ import { Shop } from '@catalog/shop/entities/shop.entity';
 import { Repository, Between, MoreThan } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IUser } from '@identity/users/users.interface';
+import { UserRole } from '@identity/users/entities/user.entity';
 import { formatMoney } from '@common/money';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
@@ -768,7 +769,7 @@ export class ProductsService {
     if (!SAN_PHAM_CONG_KHAI.includes(product.status)) {
       const u = nguoiXem.user;
       const duocXem =
-        !!u && (u.role === 'admin' || product.seller?.id === u.id);
+        !!u && (u.role === UserRole.ADMIN || product.seller?.id === u.id);
       if (!duocXem) {
         // Token hỏng: có thể chính chủ đang mở trang sửa với token hết hạn.
         // 401 để app làm mới token rồi gọi lại; 404 thì người bán tưởng sản

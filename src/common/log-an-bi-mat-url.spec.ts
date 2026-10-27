@@ -32,7 +32,8 @@ describe('Log request che bí mật trong chuỗi truy vấn', () => {
 
     new RequestIdMiddleware().use(req, res, () => undefined);
     xong();
-    const dong = (ghiDongLog as jest.Mock).mock.calls[0][0] as { path: string };
+    const goi = (ghiDongLog as jest.Mock<void, [{ path: string }]>).mock.calls;
+    const dong = goi[0][0];
     return dong.path;
   }
 

@@ -104,7 +104,8 @@ describe('Đăng xuất gỡ push token', () => {
 
   it('DTO nhận body rỗng, chặn push_token quá dài hoặc sai kiểu', async () => {
     const Dto = (authDto as Record<string, unknown>).LogoutDto as
-      (new () => object) | undefined;
+      | (new () => object)
+      | undefined;
     expect(Dto).toBeDefined();
     if (!Dto) return;
 

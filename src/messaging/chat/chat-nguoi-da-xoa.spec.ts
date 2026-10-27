@@ -118,7 +118,7 @@ describe('Chat với tài khoản đã xoá', () => {
 
   it('gửi tin cho người đã xoá → 400 có lời giải thích, không 500', async () => {
     await expect(
-      svc.sendMessage(convId, { content: 'Còn không?' } as never, ai(MUA)),
+      svc.sendMessage(convId, { content: 'Còn không?' }, ai(MUA)),
     ).rejects.toBeInstanceOf(BadRequestException);
     const soTin = await ds
       .getRepository(Message)

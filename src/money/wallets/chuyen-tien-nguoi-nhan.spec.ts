@@ -140,8 +140,7 @@ describe('WalletsService.transfer: người nhận phải là tài khoản đang
     ['đã xoá tài khoản', { xoa: true }],
   ])('người nhận %s → 400, tiền không đi', async (_ten, tuyChon) => {
     const a = await taoUser();
-    const b =
-      tuyChon === null ? 900_000_000 + R : await taoUser(tuyChon as object);
+    const b = tuyChon === null ? 900_000_000 + R : await taoUser(tuyChon);
     await wallets.topup(a, 50_000);
 
     await expect(wallets.transfer(a, b, 20_000)).rejects.toBeInstanceOf(

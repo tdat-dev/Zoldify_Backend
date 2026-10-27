@@ -22,7 +22,7 @@ interface ThongTinDon {
   id: number;
   order_code: string;
   user_id: number;
-  payment_method: string;
+  payment_method: PaymentMethod;
   is_paid: number;
   sellers: string | null;
 }

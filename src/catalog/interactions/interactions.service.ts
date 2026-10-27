@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Review } from './entities/review.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -268,7 +268,7 @@ export class InteractionsService {
     // `?.`: người viết đã xoá tài khoản (xoá mềm) thì quan hệ `user` nạp thành
     // null, và `review.user.id` từng ném TypeError thành 500. Nay người đó
     // không còn ai là "chính chủ", chỉ admin sửa/xoá được (interactions.service.spec).
-    if (review.user?.id !== user.id && user.role !== 'admin') {
+    if (review.user?.id !== user.id && user.role !== UserRole.ADMIN) {
       throw new BadRequestException('Bạn không có quyền sửa đánh giá này');
     }
 
@@ -298,7 +298,7 @@ export class InteractionsService {
       throw new NotFoundException(`Không tìm thấy đánh giá! `);
     }
     // `?.`: xem `update`, người viết có thể đã xoá tài khoản.
-    if (review.user?.id !== user.id && user.role !== 'admin') {
+    if (review.user?.id !== user.id && user.role !== UserRole.ADMIN) {
       throw new BadRequestException('Bạn không có quyền xóa đánh giá này');
     }
     await this.reviewRepository.softDelete(id);

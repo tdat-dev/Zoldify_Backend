@@ -359,7 +359,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
   // RECEIVED, ghi received_at, tiền đã nhả cho người bán) thì lần lưu này kéo
   // lô về DELIVERED và xoá received_at: job tự xác nhận sau N ngày thấy lô
   // "chưa nhận" và nhả tiền lần hai cho cùng một lô.
-  async function nguoiMuaNhanGiuaChung(loId: number, luc: Date) {
+  function nguoiMuaNhanGiuaChung(loId: number, luc: Date): void {
     (svc as unknown as { ghn: Pick<GhnService, 'getOrderStatus'> }).ghn = {
       getOrderStatus: async () => {
         await ds.query(
@@ -376,7 +376,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
   it('lượt đồng bộ không ghi đè lô người mua vừa xác nhận', async () => {
     const lo = await taoLo();
     const luc = new Date('2026-10-20T10:00:00Z');
-    await nguoiMuaNhanGiuaChung(lo.id, luc);
+    nguoiMuaNhanGiuaChung(lo.id, luc);
 
     const kq = await svc.dongBoTatCa();
 
@@ -390,7 +390,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
   it('webhook cũng không ghi đè lô người mua vừa xác nhận', async () => {
     const lo = await taoLo();
     const luc = new Date('2026-10-20T10:00:00Z');
-    await nguoiMuaNhanGiuaChung(lo.id, luc);
+    nguoiMuaNhanGiuaChung(lo.id, luc);
 
     const kq = await svc.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
 
@@ -437,7 +437,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
         return Promise.resolve(undefined);
       },
     };
-    const s2 = new ShipmentTrackingService(repo, ghnGoc, kenh as never);
+    const s2 = new ShipmentTrackingService(repo, ghnGoc, kenh);
     return { s2, gui, adminId };
   }
 
