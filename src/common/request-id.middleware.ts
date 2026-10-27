@@ -34,8 +34,15 @@ const TIEN_TO = randomUUID().slice(0, 8);
  * ghi nguyên `originalUrl`: mỗi lần GHN gọi là token nằm trong log JSON, đi
  * theo log tới mọi nơi log được gửi, và ai đọc được log là giả được webhook.
  * `checksum`/`signature` là chữ ký của cổng thanh toán, cùng lý do.
+ *
+ * Thêm (review 27/10): token đăng nhập, refresh token, khoá API và mật khẩu.
+ * Không route nào của mình nhận chúng qua query, nhưng client cũ, link
+ * callback OAuth hay người gõ nhầm thì có; đọc được log là dùng được ngay.
+ * So khớp không phân biệt hoa thường (cờ `i`), nên `refreshToken` và
+ * `refresh_token` cùng một nhánh.
  */
-const THAM_SO_BI_MAT = /([?&](?:token|checksum|signature)=)[^&#]*/gi;
+const THAM_SO_BI_MAT =
+  /([?&](?:token|checksum|signature|access_token|refresh_?token|api_?key|password)=)[^&#]*/gi;
 
 /**
  * Che giá trị bí mật nhưng GIỮ tên tham số: vẫn đọc được là request có gửi
