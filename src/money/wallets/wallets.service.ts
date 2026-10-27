@@ -224,6 +224,26 @@ export class WalletsService {
       throw new BadRequestException('Không thể chuyển tiền cho chính mình');
     }
 
+    // NGƯỜI NHẬN PHẢI LÀ TÀI KHOẢN ĐANG HOẠT ĐỘNG.
+    //
+    // `getOrCreateWallet` bên dưới tạo tài khoản sổ cái cho BẤT KỲ id nào, kể
+    // cả id không có thật: tiền chuyển vào đó là mất, không ai đăng nhập để
+    // rút. Người đã bị khoá hay đã xoá tài khoản cũng nhận được tiền mà không
+    // dùng được. Đo bằng `chuyen-tien-nguoi-nhan.spec.ts`.
+    //
+    // SQL thô qua `dataSource` có sẵn chứ không tiêm thêm repository User:
+    // thêm tham số constructor là sửa mọi spec đang dựng service này bằng
+    // tay, trong khi chỉ cần hai cột. Cùng một câu trả lời cho cả ba trường
+    // hợp để không mách được id nào tồn tại.
+    const [nguoiNhan] = await this.dataSource.query<
+      Array<{ is_locked: number; deleted_at: Date | null }>
+    >('SELECT is_locked, deleted_at FROM users WHERE id = ?', [toUserId]);
+    if (!nguoiNhan || Number(nguoiNhan.is_locked) || nguoiNhan.deleted_at) {
+      throw new BadRequestException(
+        'Người nhận không tồn tại hoặc tài khoản không còn hoạt động',
+      );
+    }
+
     const from = await this.getOrCreateWallet(fromUserId);
     const to = await this.getOrCreateWallet(toUserId);
 

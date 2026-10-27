@@ -7,6 +7,7 @@ import { LedgerService } from '@money/ledger/ledger.service';
 import { LedgerOwnerType, LedgerPurpose } from '@money/ledger/ledger.types';
 import { Wallet } from './entities/wallet.entity';
 import { WalletsService } from './wallets.service';
+import { User } from '@identity/users/entities/user.entity';
 
 /**
  * VÍ NGƯỜI DÙNG — module `wallets` trước hôm nay KHÔNG CÓ MỘT BÀI KIỂM NÀO.
@@ -67,7 +68,10 @@ describe('WalletsService — tiền chỉ đi bằng bút toán hai chân', () =
       // KHÔNG khai `Wallet` ở đây. Entity đó có quan hệ tới `User`, nên nạp nó
       // kéo theo cả chuỗi entity của catalog/ordering vào một bài kiểm chỉ đụng
       // sổ cái. Và nó không cần: service KHÔNG dùng `walletRepository` lần nào.
-      entities: [LedgerAccount, LedgerTransaction, LedgerEntry],
+      // `User`: từ 27/10 `transfer` hỏi bảng users xem người nhận còn hoạt
+      // động không (chuyen-tien-nguoi-nhan.spec.ts). Khai để bảng chắc chắn có
+      // dù suite này chạy đầu tiên trên database mới.
+      entities: [LedgerAccount, LedgerTransaction, LedgerEntry, User],
       synchronize: true,
       logging: false,
     });
@@ -250,9 +254,16 @@ describe('WalletsService — tiền chỉ đi bằng bút toán hai chân', () =
     // kiểm chốt lại: sau một lần chuyển, tổng hai ví không đổi.
     const a = idMoi();
     const b = idMoi();
+    // Người nhận phải là tài khoản có thật (chuyen-tien-nguoi-nhan.spec.ts).
+    await dataSource.query(
+      `INSERT INTO users (id, full_name, email, password, role)
+       VALUES (?, 'nhan', ?, 'x', 'buyer')`,
+      [b, `vi-${b}@t.local`],
+    );
     await wallets.topup(a, 100_000);
 
     await wallets.transfer(a, b, 40_000);
+    await dataSource.query('DELETE FROM users WHERE id = ?', [b]);
 
     expect(Number(await khaDung(a))).toBe(60_000);
     expect(Number(await khaDung(b))).toBe(40_000);
