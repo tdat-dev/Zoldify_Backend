@@ -211,6 +211,34 @@ describe('InteractionsService — ai được đánh giá cái gì', () => {
     expect(daXoaMem).toEqual([1]);
   });
 
+  // ── Người viết đã xoá tài khoản ──────────────────────────────────────────
+  //
+  // `users` xoá mềm, nên đánh giá của người đã xoá nạp quan hệ `user` thành
+  // null. `update`/`remove` đọc thẳng `review.user.id`: admin dọn một đánh giá
+  // spam của tài khoản đã xoá nhận 500 thay vì xoá được.
+  it('admin xoá được đánh giá của tài khoản đã xoá', async () => {
+    const { service, daXoaMem } = dungService({
+      danhGiaTheoId: { id: 3, user: null as unknown as User },
+    });
+
+    await service.remove(3, quanTri);
+    expect(daXoaMem).toEqual([3]);
+  });
+
+  it('người khác sửa đánh giá của tài khoản đã xoá → 400, không 500', async () => {
+    const { service, daLuu } = dungService({
+      danhGiaTheoId: { id: 3, user: null as unknown as User },
+    });
+
+    await expect(service.update(3, { rating: 1 }, nguoiKhac)).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(service.remove(3, nguoiKhac)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(daLuu).toHaveLength(0);
+  });
+
   it('sửa đánh giá không tồn tại → NotFound', async () => {
     const { service } = dungService({ danhGiaTheoId: null });
     await expect(service.update(999, { rating: 1 }, nguoiMua)).rejects.toThrow(
