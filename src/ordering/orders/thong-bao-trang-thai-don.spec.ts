@@ -369,6 +369,26 @@ describe('Thông báo khi đơn đổi trạng thái', () => {
     kiemDuLieu(guiCho(sellerId)[0], id, 'seller');
   });
 
+  // Review 27/10 (F): trạng thái `delivered` commit TRƯỚC, giải ngân chạy SAU
+  // và có thể ném (ví dụ thiếu khoản ký quỹ). Bản đầu gửi thông báo sau bước
+  // giải ngân, nên giải ngân hỏng là thông báo "đã giao" mất hẳn: đơn đã
+  // `delivered` thì không ai bấm lại được để kích nó lần nữa.
+  it('giải ngân hỏng sau khi đã lưu delivered → vẫn báo người mua và người bán', async () => {
+    const id = await taoDonDaTra(OrderStatus.SHIPPING);
+    jest
+      .spyOn(escrows, 'release')
+      .mockRejectedValueOnce(new Error('sổ cái từ chối'));
+
+    await expect(
+      orders.updateStatus(id, { status: OrderStatus.DELIVERED }, nguoiMua()),
+    ).rejects.toThrow();
+
+    expect(await trangThai(id)).toBe(OrderStatus.DELIVERED);
+    expect(guiCho(buyerId)).toHaveLength(1);
+    expect(guiCho(sellerId)).toHaveLength(1);
+    jest.restoreAllMocks();
+  });
+
   it('hoàn tiền đơn PayOS → người mua được báo tiền về ví', async () => {
     const id = await taoDonDaTra(OrderStatus.DELIVERED, PaymentMethod.PAYOS);
 
