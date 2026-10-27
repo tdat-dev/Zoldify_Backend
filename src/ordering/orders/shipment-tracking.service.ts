@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull } from 'typeorm';
 import { timingSafeEqual } from 'crypto';
@@ -8,6 +13,8 @@ import {
   ShipmentStatus,
 } from './entities/order-shipment.entity';
 import { Order, OrderStatus } from './entities/order.entity';
+import { KENH_THONG_BAO, type KenhThongBao } from '@common/kenh-thong-bao';
+import { ThongBaoDon } from './thong-bao-don';
 
 /**
  * Trạng thái GHN nghĩa là "tài xế đã cầm hàng đi": từ `picked` trở về sau trên
@@ -57,7 +64,26 @@ export class ShipmentTrackingService {
     @InjectRepository(OrderShipment)
     private readonly shipments: Repository<OrderShipment>,
     private readonly ghn: GhnService,
+    // Không đánh dấu @Optional: thiếu provider thì Nest phải chết lúc dựng
+    // (check:boot bắt được), chứ không lặng lẽ thôi báo cho người mua. Dấu `?`
+    // chỉ để các spec cũ dựng lớp này bằng hai tham số vẫn biên dịch được.
+    @Inject(KENH_THONG_BAO) private readonly kenh?: KenhThongBao,
   ) {}
+
+  /**
+   * Báo người mua sau khi trạng thái đã ghi xong. Không bao giờ ném (xem
+   * `thong-bao-don.ts`): lượt đồng bộ GHN không được hỏng vì FCM chập.
+   */
+  private baoTheoLo(
+    loId: number,
+    suKien: 'dang-giao' | 'giao-toi-cua',
+  ): Promise<void> {
+    return new ThongBaoDon(
+      this.kenh,
+      this.shipments.manager,
+      this.logger,
+    ).baoTheoLo(loId, suKien);
+  }
 
   /**
    * Cửa đầu tiên: token bí mật trong URL webhook.
@@ -110,6 +136,9 @@ export class ShipmentTrackingService {
     lo.status = ShipmentStatus.DELIVERED;
     lo.delivered_at = new Date();
     await this.shipments.save(lo);
+    // Nhắc người mua bấm "Đã nhận hàng": không bấm thì tiền người bán chờ đủ
+    // cửa sổ tự xác nhận (AUTO_CONFIRM_RECEIPT_DAYS) mới được nhả.
+    await this.baoTheoLo(lo.id, 'giao-toi-cua');
     return true;
   }
 
@@ -139,7 +168,11 @@ export class ShipmentTrackingService {
         truoc: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING],
       })
       .execute();
-    return (kq.affected ?? 0) > 0;
+    const doi = (kq.affected ?? 0) > 0;
+    // Chỉ lượt thật sự đổi đơn mới báo: webhook và lượt quét chạy chồng nhau
+    // thì lượt sau `affected = 0`, người mua không nhận hai tin.
+    if (doi) await this.baoTheoLo(lo.id, 'dang-giao');
+    return doi;
   }
 
   /**

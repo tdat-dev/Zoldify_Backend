@@ -49,6 +49,8 @@ import {
   DA_DONG_KHONG_GIAO,
   OrderActor,
 } from './order-status.policy';
+import { SuKienDon, ThongBaoDon } from './thong-bao-don';
+import type { KenhThongBao } from '@common/kenh-thong-bao';
 import {
   normalizePagination,
   decodeCursor,
@@ -116,6 +118,18 @@ export class OrdersService {
     for (const id of new Set(ids)) {
       await this.productsService.invalidateProductCache(id);
     }
+  }
+
+  /**
+   * Báo người mua/người bán khi đơn đổi trạng thái. KHÔNG BAO GIỜ NÉM (xem
+   * `thong-bao-don.ts`), nên gọi được ở mọi chỗ sau commit mà không cần bọc.
+   */
+  private bao(orderId: number, suKien: SuKienDon): Promise<void> {
+    return new ThongBaoDon(
+      this.notificationsService as unknown as KenhThongBao,
+      this.dataSource,
+      this.logger,
+    ).bao(orderId, suKien);
   }
 
   async getStats() {
@@ -973,8 +987,7 @@ export class OrdersService {
     // của chính mình nhận 404, app không làm được màn Đơn bán. Người không liên
     // quan vẫn nhận 404 (findOneForActor), không lộ là đơn có tồn tại.
     const { order, actors } = await this.findOneForActor(id, user);
-    const sellerOnly =
-      actors.length === 1 && actors[0] === OrderActor.SELLER;
+    const sellerOnly = actors.length === 1 && actors[0] === OrderActor.SELLER;
     if (sellerOnly) {
       // Người bán chỉ cần biết ai nhận (đã có receiver_* trên đơn), không cần
       // email/hồ sơ tài khoản của người mua.
@@ -1221,6 +1234,17 @@ export class OrdersService {
       await this.releaseEscrowOrExplain(order.id, 'giải ngân');
     }
 
+    // Báo SAU khi trạng thái đã commit và tiền đã đi xong. `processing` không
+    // báo: với người mua nó không khác gì "đã xác nhận", báo hai lần là ồn.
+    const suKien: Partial<Record<OrderStatus, SuKienDon>> = {
+      [OrderStatus.CONFIRMED]: 'xac-nhan',
+      [OrderStatus.SHIPPING]: 'dang-giao',
+      [OrderStatus.DELIVERED]: 'da-giao',
+      [OrderStatus.REFUNDED]: 'hoan-tien',
+    };
+    const canBao = nextStatus ? suKien[nextStatus] : undefined;
+    if (canBao) await this.bao(order.id, canBao);
+
     return this.orderRepository.findOne({
       where: { id: order.id },
       relations: ['user', 'items', 'items.product'],
@@ -1410,13 +1434,16 @@ export class OrdersService {
     // "chưa phải delivered", nên đơn đã huỷ hoặc đã hoàn tiền cũng bị kéo sang
     // delivered. Điều kiện nằm trong WHERE thì một lượt huỷ commit chen giữa
     // cũng không bị ghi đè.
-    await this.orderRepository.update(
+    const kq = await this.orderRepository.update(
       {
         id: orderId,
         status: Not(In([...DA_DONG_KHONG_GIAO, OrderStatus.DELIVERED])),
       },
       { status: OrderStatus.DELIVERED },
     );
+    // Chỉ báo khi CHÍNH câu này đổi đơn: người mua bấm nhận lô cuối và job tự
+    // xác nhận có thể cùng tới đây, chỉ một bên được `affected = 1`.
+    if ((kq.affected ?? 0) > 0) await this.bao(orderId, 'da-giao');
   }
 
   /**
@@ -1489,6 +1516,7 @@ export class OrdersService {
       await this.assertAllSellersShipped(order);
       order.status = OrderStatus.SHIPPING;
       await this.orderRepository.save(order);
+      await this.bao(order.id, 'dang-giao');
       return { order_id: order.id, status: order.status };
     }
 
@@ -1517,7 +1545,6 @@ export class OrdersService {
     }
     return { order_id: order.id, delivered_shipments: shipments.length };
   }
-
 
   /**
    * Mỗi người bán trong đơn phải có một vận đơn GHN không FAILED. Thiếu hay
@@ -2090,7 +2117,10 @@ export class OrdersService {
           );
           await this.shipmentRepository.save(
             previous
-              ? Object.assign(previous, { cod_amount: codAmount, error: message })
+              ? Object.assign(previous, {
+                  cod_amount: codAmount,
+                  error: message,
+                })
               : this.shipmentRepository.create({
                   order: { id: order.id } as Order,
                   seller: { id: sellerId } as User,
@@ -2162,9 +2192,12 @@ export class OrdersService {
    * huỷ, tiền người mua nằm lại trong `escrow_hold` vĩnh viễn và không ai
    * được báo — chỉ còn một dòng log không ai đọc.
    */
-  private async applyCancellation(order: Order) {
+  private async applyCancellation(order: Order): Promise<boolean> {
     // Gom id san pham da hoan kho, de phat SAU khi transaction commit.
     const daHoan: number[] = [];
+    // Có phải CHÍNH lượt này huỷ đơn không. Nơi gọi dựa vào nó để báo đúng
+    // một lần: hai lượt huỷ đua nhau thì lượt thua thấy 'cancelled' và về sớm.
+    let daHuy = false;
     await this.dataSource.transaction(async (em: EntityManager) => {
       // KHOÁ DÒNG ĐƠN TRƯỚC MỌI THỨ, RỒI ĐỌC LẠI TRẠNG THÁI TỪ DATABASE.
       //
@@ -2254,6 +2287,7 @@ export class OrdersService {
         { status: OrderStatus.CANCELLED },
       );
       order.status = OrderStatus.CANCELLED;
+      daHuy = true;
 
       // KHÔNG CỘNG LẠI KHO CHO MÓN NGƯỜI MUA ĐÃ CẦM TRONG TAY.
       //
@@ -2312,6 +2346,7 @@ export class OrdersService {
       if (p) await this.stockEvents.phat(productId, p.stock);
     }
     await this.lamMoiCacheSanPham(daHoan);
+    return daHuy;
   }
 
   /**
@@ -2438,8 +2473,17 @@ export class OrdersService {
     this.assertCancellable(order, 'hủy đơn hàng');
 
     await this.huyVanDonGhnTruoc(order.id);
-    await this.applyCancellation(order);
+    const daHuy = await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
+
+    // Người mua tự huỷ thì báo người bán (họ có thể đang đóng gói). Admin huỷ
+    // thì báo người mua: họ không bấm gì mà đơn biến mất.
+    if (daHuy) {
+      await this.bao(
+        order.id,
+        order.user?.id === user.id ? 'huy-boi-nguoi-mua' : 'huy-boi-admin',
+      );
+    }
 
     return this.findOne(id, user);
   }
@@ -2458,7 +2502,10 @@ export class OrdersService {
    * huỷ xong, hàng về kho, tiền người mua kẹt trong `escrow_hold` vĩnh viễn —
    * đúng con bug đã sửa ở `cancel()` nhưng còn sống nguyên trong cron.
    */
-  async cancelExpired(orderId: number): Promise<void> {
+  async cancelExpired(
+    orderId: number,
+    tuyChon: { baoTin?: boolean } = {},
+  ): Promise<void> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
       relations: ['items', 'items.product'],
@@ -2467,8 +2514,15 @@ export class OrdersService {
 
     this.assertCancellable(order, 'hủy đơn quá hạn');
     await this.huyVanDonGhnTruoc(order.id);
-    await this.applyCancellation(order);
+    const daHuy = await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
+
+    // `baoTin: false` cho `huyDonChoCuaNguoiBan`: đường đó tự báo người mua
+    // với lý do riêng ("người bán ngừng hoạt động"); báo thêm "quá hạn" ở đây
+    // là người mua nhận hai tin trái nhau cho cùng một đơn.
+    if (daHuy && tuyChon.baoTin !== false) {
+      await this.bao(order.id, 'huy-qua-han');
+    }
   }
 
   /**
@@ -2506,7 +2560,7 @@ export class OrdersService {
     const daHuy: number[] = [];
     for (const d of don) {
       try {
-        await this.cancelExpired(Number(d.id));
+        await this.cancelExpired(Number(d.id), { baoTin: false });
         daHuy.push(Number(d.id));
       } catch (err) {
         this.logger.warn(
@@ -2672,8 +2726,9 @@ export class OrdersService {
     // hai bản chép tay của cùng một việc, thứ tự các bước còn khác nhau — nên
     // sửa một chỗ là bỏ sót chỗ kia.
     await this.huyVanDonGhnTruoc(order.id);
-    await this.applyCancellation(order);
+    const daHuy = await this.applyCancellation(order);
     await this.voidOpenPaymentLink(order.id);
+    if (daHuy) await this.bao(order.id, 'huy-boi-nguoi-ban');
 
     return { message: 'Hủy bán thành công', order_id: order.id };
   }
