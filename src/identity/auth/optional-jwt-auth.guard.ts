@@ -3,13 +3,9 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import type { IUser } from '@identity/users/users.interface';
 
-/** Cờ trên request: có gửi token nhưng token không dùng được. */
-export const TOKEN_HONG = 'tokenHong';
-
 /** Request sau khi đi qua OptionalJwtAuthGuard. */
 export type RequestNguoiXem = Request & {
   user?: IUser | null;
-  [TOKEN_HONG]?: boolean;
 };
 
 /**
@@ -26,11 +22,10 @@ export type RequestNguoiXem = Request & {
  *    passport, không tốn một câu SELECT users nào cho khách vãng lai.
  *  - Có token hợp lệ: `req.user` như mọi route cần đăng nhập (JwtStrategy vẫn
  *    kiểm khoá tài khoản, token_version).
- *  - Có token nhưng hỏng (hết hạn, bị thu hồi): KHÔNG ném 401 ngay, vì trang
- *    sản phẩm đang bán vẫn phải mở được với token cũ. Đánh dấu `tokenHong`
- *    để service quyết: chỉ khi người đó cần quyền chủ (mở bản nháp) mới trả
- *    401, cho app làm mới token rồi gọi lại, thay vì 404 làm người bán tưởng
- *    sản phẩm của mình đã mất.
+ *  - Có token nhưng hỏng (hết hạn, bị thu hồi): coi như khách vãng lai, KHÔNG
+ *    BAO GIỜ 401. Web và app không có luồng làm mới token, gặp 401 là xoá
+ *    phiên: người mua token hết hạn mở trang sản phẩm mà bị đăng xuất là sai.
+ *    Và 401 khác 404 thì thành chỉ điểm id nào là bản nháp (review 27/10).
  */
 @Injectable()
 export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
@@ -44,13 +39,9 @@ export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
     err: unknown,
     user: TUser | false,
     _info: unknown,
-    context: ExecutionContext,
+    _context: ExecutionContext,
   ): TUser {
-    if (err || !user) {
-      const req = context.switchToHttp().getRequest<RequestNguoiXem>();
-      req[TOKEN_HONG] = true;
-      return null as TUser;
-    }
+    if (err || !user) return null as TUser;
     return user;
   }
 }

@@ -7,7 +7,6 @@ import {
   Logger,
   NotFoundException,
   Optional,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from '@nestjs/cache-manager';
@@ -71,7 +70,7 @@ const PRODUCT_LIST_GEN_TTL = 24 * 60 * 60_000; // 24h
 const DOI_NHO_MS = 1_000;
 
 /** Trạng thái ai cũng xem được chi tiết (xem `findOne`). */
-const SAN_PHAM_CONG_KHAI: ProductStatus[] = [
+export const SAN_PHAM_CONG_KHAI: ProductStatus[] = [
   ProductStatus.ACTIVE,
   ProductStatus.SOLD,
 ];
@@ -733,10 +732,7 @@ export class ProductsService {
    * bằng chính route này). Bản họ đọc KHÔNG vào cache: cache chi tiết là
    * chung cho mọi người xem, ghi bản nháp vào đó là người lạ đọc ra trong 60s.
    */
-  async findOne(
-    id: number,
-    nguoiXem: { user?: IUser | null; tokenHong?: boolean } = {},
-  ) {
+  async findOne(id: number, nguoiXem: { user?: IUser | null } = {}) {
     const key = this.detailKey(id);
     const cached = await this.cacheGet<Product>(key);
     // Cache chỉ chứa bản công khai (xem cuối hàm), nhưng vẫn kiểm lại: bản
@@ -771,13 +767,13 @@ export class ProductsService {
       const duocXem =
         !!u && (u.role === UserRole.ADMIN || product.seller?.id === u.id);
       if (!duocXem) {
-        // Token hỏng: có thể chính chủ đang mở trang sửa với token hết hạn.
-        // 401 để app làm mới token rồi gọi lại; 404 thì người bán tưởng sản
-        // phẩm đã mất. Người không gửi token thì 404 y như id không tồn tại,
-        // không mách rằng có một bản nháp nằm ở id này.
-        if (nguoiXem.tokenHong) {
-          throw new UnauthorizedException('Phiên đăng nhập đã hết hạn');
-        }
+        // 404 Y HỆT id không tồn tại, kể cả khi token hỏng. KHÔNG BAO GIỜ 401
+        // ở route này (review 27/10): bản đầu trả 401 cho token hỏng + bản
+        // nháp, tức là chỉ điểm (dò id kèm token rác là biết id nào là bản
+        // nháp), và web lẫn app không có luồng làm mới token, gặp 401 là xoá
+        // phiên. Người mua token hết hạn bấm link tới hàng của người bán bị
+        // khoá (đã về nháp) là bị đăng xuất. Chủ sản phẩm có token hết hạn thì
+        // các route cần đăng nhập khác sẽ đưa họ đi đăng nhập lại.
         throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
       }
       // Không đếm lượt xem, không ghi cache: đây là người bán xem hàng của

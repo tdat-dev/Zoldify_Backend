@@ -10,19 +10,20 @@ import {
   Query,
   ParseIntPipe,
   Req,
+  Res,
 } from '@nestjs/common';
 import { ApiQuery } from '@nestjs/swagger';
 import { SoTuyChonPipe } from '@common/pipes/so-tuy-chon.pipe';
-import { ProductsService } from './products.service';
+import { ProductsService, SAN_PHAM_CONG_KHAI } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import {
   OptionalJwtAuthGuard,
-  TOKEN_HONG,
   type RequestNguoiXem,
 } from '@identity/auth/optional-jwt-auth.guard';
+import type { Response } from 'express';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
@@ -115,11 +116,19 @@ export class ProductsController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number, @Req() req: RequestNguoiXem) {
-    return this.productsService.findOne(id, {
-      user: req.user,
-      tokenHong: req[TOKEN_HONG],
-    });
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: RequestNguoiXem,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const product = await this.productsService.findOne(id, { user: req.user });
+    // Bản nháp chỉ chủ và admin thấy: không cho trình duyệt, proxy hay CDN nào
+    // giữ lại. Thiếu header này thì một cache dùng chung giữa nhiều người
+    // (proxy công ty, CDN cấu hình lỏng) có thể trả bản nháp cho người khác.
+    if (!SAN_PHAM_CONG_KHAI.includes(product.status)) {
+      res.setHeader('Cache-Control', 'private, no-store');
+    }
+    return product;
   }
 
   @UseGuards(JwtAuthGuard)
