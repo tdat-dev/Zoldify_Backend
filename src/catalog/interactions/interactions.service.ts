@@ -263,8 +263,12 @@ export class InteractionsService {
       throw new NotFoundException(`Không tìm thấy đánh giá với ID ${id}`);
     }
 
-    // Chỉ người tạo hoặc admin mới được sửa
-    if (review.user.id !== user.id && user.role !== 'admin') {
+    // Chỉ người tạo hoặc admin mới được sửa.
+    //
+    // `?.`: người viết đã xoá tài khoản (xoá mềm) thì quan hệ `user` nạp thành
+    // null, và `review.user.id` từng ném TypeError thành 500. Nay người đó
+    // không còn ai là "chính chủ", chỉ admin sửa/xoá được (interactions.service.spec).
+    if (review.user?.id !== user.id && user.role !== 'admin') {
       throw new BadRequestException('Bạn không có quyền sửa đánh giá này');
     }
 
@@ -293,7 +297,8 @@ export class InteractionsService {
     if (!review) {
       throw new NotFoundException(`Không tìm thấy đánh giá! `);
     }
-    if (review.user.id !== user.id && user.role !== 'admin') {
+    // `?.`: xem `update`, người viết có thể đã xoá tài khoản.
+    if (review.user?.id !== user.id && user.role !== 'admin') {
       throw new BadRequestException('Bạn không có quyền xóa đánh giá này');
     }
     await this.reviewRepository.softDelete(id);
