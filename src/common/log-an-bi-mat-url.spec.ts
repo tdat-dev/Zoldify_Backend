@@ -52,6 +52,20 @@ describe('Log request che bí mật trong chuỗi truy vấn', () => {
     expect(p).toContain('page=2');
   });
 
+  // Review 27/10 (I): ngoài token webhook, URL còn có thể mang token đăng
+  // nhập, refresh token, khoá API hay mật khẩu (client cũ, link callback
+  // OAuth, người gõ nhầm vào query). Đều là thứ đọc được log là dùng được.
+  it('access_token, refresh_token, api key và password cũng bị che', () => {
+    const p = ghiMotLuot(
+      '/api/v1/x?access_token=A1&refresh_token=R2&refreshToken=R3' +
+        '&api_key=K4&apikey=K5&password=P6&q=ao',
+    );
+    for (const bi of ['A1', 'R2', 'R3', 'K4', 'K5', 'P6']) {
+      expect(p).not.toContain(`=${bi}`);
+    }
+    expect(p).toContain('q=ao');
+  });
+
   it('URL không có gì nhạy cảm thì giữ nguyên', () => {
     expect(ghiMotLuot('/api/v1/products?page=2&limit=20')).toBe(
       '/api/v1/products?page=2&limit=20',
