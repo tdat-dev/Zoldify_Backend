@@ -39,6 +39,35 @@ const GHN_DA_LAY_HANG = new Set([
 ]);
 
 /**
+ * Trạng thái GHN nghĩa là "hàng KHÔNG tới tay người mua theo đường thường":
+ * hoàn về người bán, GHN huỷ, thất lạc, hư hỏng, hoặc kẹt ngoại lệ.
+ *
+ * Tới 27/10 lượt đồng bộ chỉ nghe hai thứ (đã lấy hàng, đã giao), nên gặp một
+ * trong số này thì không gì xảy ra: lô nằm CREATED, đơn nằm "Đang giao" vĩnh
+ * viễn, tiền người mua kẹt trong ký quỹ, không ai được báo. Đo bằng các bài
+ * "GHN báo ..." trong `shipment-tracking.service.spec.ts`.
+ *
+ * Xử lý ở đây CỐ Ý tối thiểu: ghi lý do lên lô + báo quản trị viên. KHÔNG tự
+ * huỷ đơn, KHÔNG tự hoàn tiền: "hoàn hàng" có thể là người mua từ chối nhận
+ * (hoàn tiền trừ phí ship?) hay địa chỉ sai (giao lại?), "thất lạc" thì GHN
+ * đền cho người bán chứ không phải sàn. Tự động hoá những quyết định đó trên
+ * một tín hiệu từ bên ngoài là đặt tiền vào tay một chuỗi trạng thái mình
+ * không kiểm soát. Gỡ khi có luồng xử lý hoàn hàng thật.
+ */
+const GHN_SU_CO = new Set([
+  'waiting_to_return',
+  'return',
+  'returning',
+  'return_transporting',
+  'return_sorting',
+  'returned',
+  'cancel',
+  'lost',
+  'damage',
+  'exception',
+]);
+
+/**
  * "GHN nói gì về lô hàng này" — MỘT chỗ duy nhất, hai đường vào.
  *
  * Đường nhanh: webhook GHN gọi ngay khi trạng thái đổi (task #26).
@@ -156,6 +185,46 @@ export class ShipmentTrackingService {
   }
 
   /**
+   * GHN báo sự cố (xem GHN_SU_CO): ghi lý do vào cột `error` của lô và báo
+   * quản trị viên. Trả true nếu lượt này là lượt GHI (lượt đầu nghe tin).
+   *
+   * UPDATE có điều kiện `error` khác nội dung sắp ghi: lượt quét mỗi giờ sẽ
+   * gặp lại đúng trạng thái đó tới khi admin xử lý xong, và báo lại mỗi giờ
+   * là dạy admin bỏ qua thông báo. GHN đổi trạng thái (return -> returned)
+   * thì nội dung khác, báo thêm một lần: đó là tin mới thật.
+   *
+   * `status = created` trong WHERE: lô đã DELIVERED/RECEIVED/FAILED thì
+   * không viết đè lý do của nó.
+   */
+  private async ghiSuCo(lo: OrderShipment, thuc: string): Promise<boolean> {
+    const loi =
+      `GHN báo "${thuc}" (hoàn hàng, huỷ hoặc thất lạc). Cần quản trị viên ` +
+      'xử lý; hệ thống không tự hoàn tiền.';
+    const kq = await this.shipments
+      .createQueryBuilder()
+      .update(OrderShipment)
+      .set({ error: loi })
+      .where('id = :id AND status = :st', {
+        id: lo.id,
+        st: ShipmentStatus.CREATED,
+      })
+      .andWhere('(error IS NULL OR error <> :loi)', { loi })
+      .execute();
+    if (!kq.affected) return false;
+
+    this.logger.error(
+      `Vận đơn ${lo.tracking_code} (lô #${lo.id}): GHN báo "${thuc}". ` +
+        'Đã báo quản trị viên.',
+    );
+    await new ThongBaoDon(
+      this.kenh,
+      this.shipments.manager,
+      this.logger,
+    ).baoAdminSuCoVanDon(lo.id, thuc);
+    return true;
+  }
+
+  /**
    * Đưa đơn của lô này sang "Đang giao" khi GHN báo tài xế đã lấy hàng.
    *
    * MỘT câu UPDATE có điều kiện chứ không đọc-rồi-ghi: webhook và lượt quét mỗi
@@ -256,6 +325,10 @@ export class ShipmentTrackingService {
       return { known: true, updated: false };
     }
 
+    if (thuc !== null && GHN_SU_CO.has(thuc)) {
+      return { known: true, updated: await this.ghiSuCo(lo, thuc) };
+    }
+
     const dangGiao =
       thuc !== null && GHN_DA_LAY_HANG.has(thuc)
         ? await this.chuyenDonSangDangGiao(lo)
@@ -291,6 +364,10 @@ export class ShipmentTrackingService {
       if (!lo.tracking_code) continue;
       try {
         const thuc = await this.ghn.getOrderStatus(lo.tracking_code);
+        if (thuc !== null && GHN_SU_CO.has(thuc)) {
+          await this.ghiSuCo(lo, thuc);
+          continue;
+        }
         if (thuc !== null && GHN_DA_LAY_HANG.has(thuc)) {
           await this.chuyenDonSangDangGiao(lo);
         }

@@ -119,6 +119,64 @@ export class ThongBaoDon {
     }
   }
 
+  /**
+   * Báo MỌI quản trị viên đang hoạt động rằng một vận đơn GHN gặp sự cố (hoàn
+   * hàng, huỷ, thất lạc). Loại `system`, không phải `order_status`: người cần
+   * hành động là admin, và màn của admin mở theo `order_id`.
+   *
+   * Báo tất cả admin chứ không chọn một: chưa có phân ca trực, và một tin đến
+   * nhầm người thì vẫn hơn một đơn kẹt "Đang giao" không ai biết.
+   */
+  async baoAdminSuCoVanDon(loId: number, ghnStatus: string): Promise<void> {
+    if (!this.kenh) return;
+    try {
+      const [lo] = await this.db.query<
+        Array<{ order_id: number; order_code: string; tracking_code: string }>
+      >(
+        `SELECT s.order_id, o.order_code, s.tracking_code
+           FROM order_shipments s
+           JOIN orders o ON o.id = s.order_id
+          WHERE s.id = ?`,
+        [loId],
+      );
+      if (!lo) return;
+      const admins = await this.db.query<Array<{ id: number }>>(
+        `SELECT id FROM users
+          WHERE role = 'admin' AND is_locked = 0 AND deleted_at IS NULL`,
+      );
+      for (const a of admins) {
+        try {
+          await this.kenh.create({
+            user_id: Number(a.id),
+            type: 'system' as never,
+            title: 'Vận đơn GHN gặp sự cố',
+            content:
+              `Đơn ${lo.order_code}, vận đơn ${lo.tracking_code}: GHN báo ` +
+              `"${ghnStatus}". Kiểm tra rồi quyết định giao lại hay hoàn tiền.`,
+            data: {
+              order_id: Number(lo.order_id),
+              order_code: lo.order_code,
+              shipment_id: loId,
+              tracking_code: lo.tracking_code,
+              ghn_status: ghnStatus,
+              view: 'admin',
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Không báo được admin ${a.id} về sự cố vận đơn ${lo.tracking_code}: ` +
+              `${(err as Error)?.message ?? String(err)}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Không báo được admin về sự cố lô #${loId}: ` +
+          `${(err as Error)?.message ?? String(err)}`,
+      );
+    }
+  }
+
   private ghiLoi(cho: string, suKien: SuKienDon, err: unknown): void {
     this.logger.warn(
       `Không gửi được thông báo "${suKien}" cho ${cho}: ` +
