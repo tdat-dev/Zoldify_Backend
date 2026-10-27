@@ -47,7 +47,7 @@ describe('Flush view_count không mất lượt xem chen giữa', () => {
       const p: Record<string, unknown> = {
         exec: () =>
           Promise.resolve(
-            hang.map((f) => {
+            hang.map((f): [unknown, unknown] => {
               try {
                 return [null, f()];
               } catch (e) {

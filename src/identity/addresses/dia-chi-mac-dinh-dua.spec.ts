@@ -174,17 +174,19 @@ describe('Địa chỉ mặc định: luôn đúng một cái', () => {
   // được dù bản vá dời lần đọc vào trong transaction.
   it('sửa nhãn địa chỉ mặc định trong lúc đặt mặc định cái khác → vẫn một', async () => {
     const em = repo.manager;
-    const goc = em.transaction.bind(em) as typeof em.transaction;
+    const goc = em.transaction.bind(em) as (
+      ...x: unknown[]
+    ) => Promise<unknown>;
     let daChen = false;
-    jest.spyOn(em, 'transaction').mockImplementation((async (
-      ...a: unknown[]
-    ) => {
-      if (!daChen) {
-        daChen = true;
-        await svc.setDefault(ids[1], toi());
-      }
-      return (goc as (...x: unknown[]) => Promise<unknown>)(...a);
-    }) as typeof em.transaction);
+    jest
+      .spyOn(em, 'transaction')
+      .mockImplementation(async (...a: unknown[]) => {
+        if (!daChen) {
+          daChen = true;
+          await svc.setDefault(ids[1], toi());
+        }
+        return goc(...a);
+      });
 
     await svc.update(ids[0], { label: 'Cơ quan' }, toi());
 
