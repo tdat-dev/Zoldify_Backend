@@ -127,8 +127,11 @@ export class ThongBaoDon {
    * Báo tất cả admin chứ không chọn một: chưa có phân ca trực, và một tin đến
    * nhầm người thì vẫn hơn một đơn kẹt "Đang giao" không ai biết.
    */
-  async baoAdminSuCoVanDon(loId: number, ghnStatus: string): Promise<void> {
-    if (!this.kenh) return;
+  async baoAdminSuCoVanDon(loId: number, ghnStatus: string): Promise<number> {
+    // Trả SỐ admin đã nhận tin: nơi gọi chỉ đánh dấu "đã báo" khi số này > 0,
+    // để một lần báo hỏng được thử lại ở lượt sau (review 27/10).
+    let daBao = 0;
+    if (!this.kenh) return daBao;
     try {
       const [lo] = await this.db.query<
         Array<{ order_id: number; order_code: string; tracking_code: string }>
@@ -139,7 +142,7 @@ export class ThongBaoDon {
           WHERE s.id = ?`,
         [loId],
       );
-      if (!lo) return;
+      if (!lo) return daBao;
       const admins = await this.db.query<Array<{ id: number }>>(
         `SELECT id FROM users
           WHERE role = 'admin' AND is_locked = 0 AND deleted_at IS NULL`,
@@ -162,6 +165,7 @@ export class ThongBaoDon {
               view: 'admin',
             },
           });
+          daBao += 1;
         } catch (err) {
           this.logger.warn(
             `Không báo được admin ${a.id} về sự cố vận đơn ${lo.tracking_code}: ` +
@@ -175,6 +179,7 @@ export class ThongBaoDon {
           `${(err as Error)?.message ?? String(err)}`,
       );
     }
+    return daBao;
   }
 
   private ghiLoi(cho: string, suKien: SuKienDon, err: unknown): void {

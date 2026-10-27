@@ -54,18 +54,45 @@ const GHN_DA_LAY_HANG = new Set([
  * một tín hiệu từ bên ngoài là đặt tiền vào tay một chuỗi trạng thái mình
  * không kiểm soát. Gỡ khi có luồng xử lý hoàn hàng thật.
  */
-const GHN_SU_CO = new Set([
-  'waiting_to_return',
-  'return',
-  'returning',
-  'return_transporting',
-  'return_sorting',
-  'returned',
-  'cancel',
-  'lost',
-  'damage',
-  'exception',
+type NhomSuCo = 'hoan-hang' | 'huy' | 'that-lac';
+
+/**
+ * Trạng thái GHN -> NHÓM sự cố. Chống báo trùng theo NHÓM, không theo trạng
+ * thái thô (review 27/10): một lần hoàn hàng bình thường đi qua năm trạng thái
+ * (return -> return_transporting -> return_sorting -> returning -> returned),
+ * và bản đầu lấy trạng thái thô làm khoá chống trùng nên mọi admin nhận năm
+ * thông báo cho cùng một kiện. Với admin, cả chuỗi đó là MỘT việc: "hàng đang
+ * quay về người bán". Đổi nhóm (đang hoàn rồi thất lạc) mới là tin mới.
+ */
+const GHN_SU_CO = new Map<string, NhomSuCo>([
+  ['waiting_to_return', 'hoan-hang'],
+  ['return', 'hoan-hang'],
+  ['returning', 'hoan-hang'],
+  ['return_transporting', 'hoan-hang'],
+  ['return_sorting', 'hoan-hang'],
+  ['returned', 'hoan-hang'],
+  ['cancel', 'huy'],
+  ['lost', 'that-lac'],
+  ['damage', 'that-lac'],
+  ['exception', 'that-lac'],
 ]);
+
+/**
+ * Lý do ghi vào cột `error` của lô, CỐ ĐỊNH theo nhóm: chính chuỗi này là
+ * khoá chống báo trùng. Trạng thái thô của GHN chỉ đi vào log và vào `data`
+ * của thông báo, không vào đây.
+ */
+const LY_DO_SU_CO: Record<NhomSuCo, string> = {
+  'hoan-hang':
+    'GHN đang hoàn hàng về người bán. Cần quản trị viên xử lý; hệ thống ' +
+    'không tự hoàn tiền.',
+  huy:
+    'GHN đã huỷ vận đơn. Cần quản trị viên xử lý; hệ thống không tự hoàn ' +
+    'tiền.',
+  'that-lac':
+    'GHN báo hàng thất lạc, hư hỏng hoặc gặp sự cố. Cần quản trị viên xử ' +
+    'lý; hệ thống không tự hoàn tiền.',
+};
 
 /**
  * "GHN nói gì về lô hàng này" — MỘT chỗ duy nhất, hai đường vào.
@@ -185,21 +212,59 @@ export class ShipmentTrackingService {
   }
 
   /**
-   * GHN báo sự cố (xem GHN_SU_CO): ghi lý do vào cột `error` của lô và báo
-   * quản trị viên. Trả true nếu lượt này là lượt GHI (lượt đầu nghe tin).
+   * GHN báo sự cố (xem GHN_SU_CO): báo quản trị viên, RỒI MỚI ghi lý do của
+   * nhóm vào cột `error` của lô. Trả true nếu lượt này là lượt ghi.
    *
-   * UPDATE có điều kiện `error` khác nội dung sắp ghi: lượt quét mỗi giờ sẽ
-   * gặp lại đúng trạng thái đó tới khi admin xử lý xong, và báo lại mỗi giờ
-   * là dạy admin bỏ qua thông báo. GHN đổi trạng thái (return -> returned)
-   * thì nội dung khác, báo thêm một lần: đó là tin mới thật.
+   * Cột `error` là dấu "đã báo rồi": cùng nhóm thì lượt quét mỗi giờ (và
+   * webhook GHN gửi lại) không báo nữa, báo lại mỗi giờ là dạy admin bỏ qua
+   * thông báo.
+   *
+   * BÁO TRƯỚC, ĐÁNH DẤU SAU (review 27/10). Bản đầu ghi dấu trước rồi mới báo,
+   * mà hàm báo nuốt lỗi: FCM hay MySQL chập đúng lần đó là dấu đã nằm trên lô,
+   * lượt sau thấy dấu và im lặng, kiện hàng đang hoàn không ai biết. Nay chỉ
+   * đánh dấu khi ít nhất một admin nhận được tin; báo hỏng hết thì lượt sau
+   * thử lại. Đổi lại: webhook và lượt quét chạy trùng đúng khoảnh khắc thì có
+   * thể báo hai lần, chấp nhận được hơn là báo không lần nào.
    *
    * `status = created` trong WHERE: lô đã DELIVERED/RECEIVED/FAILED thì
    * không viết đè lý do của nó.
    */
   private async ghiSuCo(lo: OrderShipment, thuc: string): Promise<boolean> {
-    const loi =
-      `GHN báo "${thuc}" (hoàn hàng, huỷ hoặc thất lạc). Cần quản trị viên ` +
-      'xử lý; hệ thống không tự hoàn tiền.';
+    const nhom = GHN_SU_CO.get(thuc);
+    if (!nhom) return false;
+    const loi = LY_DO_SU_CO[nhom];
+
+    // Đọc lại dòng lô NGAY LÚC NÀY: `lo` được nạp trước lời gọi GHN.
+    const [hienTai] = await this.shipments.manager.query<
+      Array<{ status: string; error: string | null }>
+    >('SELECT status, error FROM order_shipments WHERE id = ?', [lo.id]);
+    if (
+      !hienTai ||
+      hienTai.status !== (ShipmentStatus.CREATED as string) ||
+      hienTai.error === loi
+    ) {
+      return false;
+    }
+
+    // Trạng thái thô của GHN đi vào log (để điều tra), không vào khoá chống
+    // báo trùng.
+    this.logger.error(
+      `Vận đơn ${lo.tracking_code} (lô #${lo.id}): GHN báo "${thuc}" ` +
+        `(nhóm ${nhom}).`,
+    );
+    const soDaBao = await new ThongBaoDon(
+      this.kenh,
+      this.shipments.manager,
+      this.logger,
+    ).baoAdminSuCoVanDon(lo.id, thuc);
+    if (soDaBao === 0) {
+      this.logger.warn(
+        `Chưa báo được admin nào về vận đơn ${lo.tracking_code}; KHÔNG đánh ` +
+          'dấu, lượt đồng bộ sau sẽ báo lại.',
+      );
+      return false;
+    }
+
     const kq = await this.shipments
       .createQueryBuilder()
       .update(OrderShipment)
@@ -210,18 +275,7 @@ export class ShipmentTrackingService {
       })
       .andWhere('(error IS NULL OR error <> :loi)', { loi })
       .execute();
-    if (!kq.affected) return false;
-
-    this.logger.error(
-      `Vận đơn ${lo.tracking_code} (lô #${lo.id}): GHN báo "${thuc}". ` +
-        'Đã báo quản trị viên.',
-    );
-    await new ThongBaoDon(
-      this.kenh,
-      this.shipments.manager,
-      this.logger,
-    ).baoAdminSuCoVanDon(lo.id, thuc);
-    return true;
+    return (kq.affected ?? 0) > 0;
   }
 
   /**
