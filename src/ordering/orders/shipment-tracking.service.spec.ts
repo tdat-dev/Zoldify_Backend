@@ -52,6 +52,8 @@ describe('ShipmentTrackingService — webhook GHN', () => {
 
   let orderId: number;
   let sellerId: number;
+  /** GhnService giả gốc, để mỗi test bắt đầu lại từ nó sau khi có test thay. */
+  let ghnGoc: GhnService;
 
   beforeAll(async () => {
     ds = new DataSource({
@@ -81,6 +83,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
     } as unknown as GhnService;
 
     process.env.GHN_WEBHOOK_TOKEN = TOKEN;
+    ghnGoc = ghnGia;
     svc = new ShipmentTrackingService(repo, ghnGia);
   });
 
@@ -91,6 +94,7 @@ describe('ShipmentTrackingService — webhook GHN', () => {
   beforeEach(async () => {
     ghnTraVe = 'delivered';
     soLanHoiGhn = 0;
+    (svc as unknown as { ghn: GhnService }).ghn = ghnGoc;
 
     await ds.query('SET FOREIGN_KEY_CHECKS = 0');
     for (const t of ['order_shipments', 'order_items', 'orders', 'users']) {
@@ -277,7 +281,10 @@ describe('ShipmentTrackingService — webhook GHN', () => {
   // gì đưa đơn sang "Đang giao" cả. Lối duy nhất là nút giả lập, mà nút đó chỉ
   // chạy ở sandbox.
   async function datTrangThaiDon(status: string) {
-    await ds.query('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
+    await ds.query('UPDATE orders SET status = ? WHERE id = ?', [
+      status,
+      orderId,
+    ]);
   }
   async function trangThaiDon(): Promise<string> {
     const rows = await ds.query<Array<{ status: string }>>(
@@ -343,6 +350,54 @@ describe('ShipmentTrackingService — webhook GHN', () => {
 
     expect(await trangThaiDon()).toBe('shipping');
     expect((await doc(lo.id)).status).toBe(ShipmentStatus.CREATED);
+  });
+
+  // ── Ghi đè khi người mua xác nhận chen giữa ──────────────────────────────
+  //
+  // Lượt đồng bộ nạp lô, hỏi GHN (mạng, vài giây), rồi `save(lo)` NGUYÊN
+  // entity đã nạp. Người mua bấm "Đã nhận hàng" trong quãng đó (lô sang
+  // RECEIVED, ghi received_at, tiền đã nhả cho người bán) thì lần lưu này kéo
+  // lô về DELIVERED và xoá received_at: job tự xác nhận sau N ngày thấy lô
+  // "chưa nhận" và nhả tiền lần hai cho cùng một lô.
+  async function nguoiMuaNhanGiuaChung(loId: number, luc: Date) {
+    (svc as unknown as { ghn: Pick<GhnService, 'getOrderStatus'> }).ghn = {
+      getOrderStatus: async () => {
+        await ds.query(
+          `UPDATE order_shipments
+              SET status = 'received', received_at = ?, delivered_at = ?
+            WHERE id = ?`,
+          [luc, luc, loId],
+        );
+        return 'delivered';
+      },
+    };
+  }
+
+  it('lượt đồng bộ không ghi đè lô người mua vừa xác nhận', async () => {
+    const lo = await taoLo();
+    const luc = new Date('2026-10-20T10:00:00Z');
+    await nguoiMuaNhanGiuaChung(lo.id, luc);
+
+    const kq = await svc.dongBoTatCa();
+
+    const sau = await doc(lo.id);
+    expect(sau.status).toBe(ShipmentStatus.RECEIVED);
+    expect(sau.received_at?.getTime()).toBe(luc.getTime());
+    expect(sau.delivered_at?.getTime()).toBe(luc.getTime());
+    expect(kq.delivered).toBe(0);
+  });
+
+  it('webhook cũng không ghi đè lô người mua vừa xác nhận', async () => {
+    const lo = await taoLo();
+    const luc = new Date('2026-10-20T10:00:00Z');
+    await nguoiMuaNhanGiuaChung(lo.id, luc);
+
+    const kq = await svc.xuLyWebhook(TOKEN, { OrderCode: 'GHN123' });
+
+    const sau = await doc(lo.id);
+    expect(sau.status).toBe(ShipmentStatus.RECEIVED);
+    expect(sau.received_at?.getTime()).toBe(luc.getTime());
+    expect(kq.updated).toBe(false);
   });
 
   it('một lô lỗi không làm chết cả lượt đồng bộ', async () => {
