@@ -163,4 +163,37 @@ describe('Địa chỉ mặc định: luôn đúng một cái', () => {
     await expect(svc.setDefault(ids[1], nguoiKhac)).rejects.toThrow();
     expect(await soMacDinh()).toBe(1);
   });
+
+  // Review 27/10 (D): `update` đọc địa chỉ NGOÀI khoá rồi `save` nguyên entity
+  // TRONG khoá. Sửa nhãn địa chỉ đang mặc định (A) trong lúc một yêu cầu khác
+  // đặt B làm mặc định: lần lưu của `update` ghi lại `is_default = true` đã
+  // cũ của A, và người dùng có hai địa chỉ mặc định.
+  //
+  // Điểm chen: ngay trước khi `update` mở transaction, cho `setDefault(B)`
+  // chạy trọn. Chen ở `transaction` chứ không ở `findOne` để bài kiểm vẫn đo
+  // được dù bản vá dời lần đọc vào trong transaction.
+  it('sửa nhãn địa chỉ mặc định trong lúc đặt mặc định cái khác → vẫn một', async () => {
+    const em = repo.manager;
+    const goc = em.transaction.bind(em) as typeof em.transaction;
+    let daChen = false;
+    jest.spyOn(em, 'transaction').mockImplementation((async (
+      ...a: unknown[]
+    ) => {
+      if (!daChen) {
+        daChen = true;
+        await svc.setDefault(ids[1], toi());
+      }
+      return (goc as (...x: unknown[]) => Promise<unknown>)(...a);
+    }) as typeof em.transaction);
+
+    await svc.update(ids[0], { label: 'Cơ quan' }, toi());
+
+    expect(await soMacDinh()).toBe(1);
+    const [a] = await ds.query<Array<{ label: string; is_default: number }>>(
+      'SELECT label, is_default FROM addresses WHERE id = ?',
+      [ids[0]],
+    );
+    expect(a.label).toBe('Cơ quan');
+    expect(Number(a.is_default)).toBe(0);
+  });
 });
