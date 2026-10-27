@@ -8235,22 +8235,28 @@
         "type": "object",
         "properties": {
           "shipping_address": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "receiver_name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "receiver_phone": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20
           },
           "province": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "district": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "note": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "payment_method": {
             "type": "string",
@@ -8273,12 +8279,16 @@
             "minimum": 1
           },
           "ghn_ward_code": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20
           },
           "cart_item_ids": {
+            "minItems": 1,
+            "maxItems": 50,
             "type": "array",
             "items": {
-              "type": "number"
+              "type": "number",
+              "minimum": 1
             }
           }
         },
@@ -8379,6 +8389,11 @@
             "format": "date-time",
             "type": "string"
           },
+          "confirmed_at": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
           "receiver_name": {
             "type": "string"
           },
@@ -8440,6 +8455,7 @@
           "payment_method",
           "is_paid",
           "paid_at",
+          "confirmed_at",
           "receiver_name",
           "receiver_phone",
           "shipping_address",
@@ -9015,14 +9031,17 @@
         "type": "object",
         "properties": {
           "to_user_id": {
-            "type": "number"
+            "type": "number",
+            "minimum": 1
           },
           "amount": {
             "type": "number",
-            "minimum": 1000
+            "minimum": 1000,
+            "maximum": 1000000000
           },
           "note": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           }
         },
         "required": [
@@ -9649,8 +9668,7 @@
             "enum": [
               "buyer",
               "seller",
-              "admin",
-              "moderator"
+              "admin"
             ]
           }
         },
