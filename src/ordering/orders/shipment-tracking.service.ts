@@ -57,6 +57,15 @@ const GHN_DA_LAY_HANG = new Set([
 type NhomSuCo = 'hoan-hang' | 'huy' | 'that-lac';
 
 /**
+ * Dấu `OrdersService.huyVanDonGhnTruoc` ghi lên lô TRƯỚC khi gọi GHN huỷ, gỡ
+ * đi nếu GHN từ chối. Lượt theo dõi gặp GHN báo "cancel" trên lô mang dấu này
+ * thì biết đó là việc chính mình đang làm, không báo admin (review 27/10, mục
+ * E): bản đầu gọi GHN huỷ rồi mới đánh dấu FAILED, webhook "cancel" rơi đúng
+ * vào khe giữa là mọi admin nhận báo sự cố cho một lần huỷ bình thường.
+ */
+export const DANG_HUY_VAN_DON = 'Đang huỷ vận đơn trên GHN vì đơn hàng bị huỷ.';
+
+/**
  * Trạng thái GHN -> NHÓM sự cố. Chống báo trùng theo NHÓM, không theo trạng
  * thái thô (review 27/10): một lần hoàn hàng bình thường đi qua năm trạng thái
  * (return -> return_transporting -> return_sorting -> returning -> returned),
@@ -236,12 +245,29 @@ export class ShipmentTrackingService {
 
     // Đọc lại dòng lô NGAY LÚC NÀY: `lo` được nạp trước lời gọi GHN.
     const [hienTai] = await this.shipments.manager.query<
-      Array<{ status: string; error: string | null }>
-    >('SELECT status, error FROM order_shipments WHERE id = ?', [lo.id]);
+      Array<{ status: string; error: string | null; don: string }>
+    >(
+      `SELECT s.status, s.error, o.status AS don
+         FROM order_shipments s
+         JOIN orders o ON o.id = s.order_id
+        WHERE s.id = ?`,
+      [lo.id],
+    );
     if (
       !hienTai ||
       hienTai.status !== (ShipmentStatus.CREATED as string) ||
       hienTai.error === loi
+    ) {
+      return false;
+    }
+    // GHN huỷ vì CHÍNH mình huỷ: đang huỷ (dấu DANG_HUY_VAN_DON) hoặc đơn đã
+    // đóng. Không phải sự cố, không làm phiền admin.
+    if (
+      nhom === 'huy' &&
+      (hienTai.error === DANG_HUY_VAN_DON ||
+        [OrderStatus.CANCELLED, OrderStatus.REFUNDED].includes(
+          hienTai.don as OrderStatus,
+        ))
     ) {
       return false;
     }

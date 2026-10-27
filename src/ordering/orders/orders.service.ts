@@ -8,7 +8,10 @@ import {
   Optional,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import { ShipmentTrackingService } from './shipment-tracking.service';
+import {
+  DANG_HUY_VAN_DON,
+  ShipmentTrackingService,
+} from './shipment-tracking.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
@@ -2389,12 +2392,32 @@ export class OrdersService {
       );
     }
 
+    // ĐÁNH DẤU "ĐANG HUỶ" TRƯỚC KHI GỌI GHN (review 27/10, mục E). GHN nhận
+    // lệnh huỷ là đẩy webhook "cancel" ngay; nếu nó tới trước câu UPDATE sang
+    // FAILED bên dưới thì lượt theo dõi thấy lô CREATED của một đơn còn sống
+    // và báo admin một "sự cố" chính mình gây ra. Có dấu này thì
+    // ShipmentTrackingService bỏ qua. GHN từ chối hay lỗi mạng thì gỡ dấu,
+    // trả lại lý do cũ của từng lô.
+    await this.shipmentRepository.update(
+      { id: In(lo.map((s) => s.id)), status: ShipmentStatus.CREATED },
+      { error: DANG_HUY_VAN_DON },
+    );
+    const goDau = async (cacLo: OrderShipment[]) => {
+      for (const s of cacLo) {
+        await this.shipmentRepository.update(
+          { id: s.id, error: DANG_HUY_VAN_DON },
+          { error: s.error ?? null },
+        );
+      }
+    };
+
     let ketQua: Array<{ order_code: string; result: boolean; message: string }>;
     try {
       ketQua = await this.ghnService.cancelOrders(
         lo.map((s) => s.tracking_code),
       );
     } catch (err) {
+      await goDau(lo);
       throw new BadRequestException(
         `Chưa huỷ được vận đơn trên GHN (${ghnErrorMessage(err)}) nên chưa huỷ ` +
           'đơn. Thử lại sau ít phút.',
@@ -2417,6 +2440,7 @@ export class OrdersService {
 
     const biTuChoi = lo.filter((s) => !ghnNhan.has(s.tracking_code));
     if (biTuChoi.length) {
+      await goDau(biTuChoi);
       const lyDo = ketQua.find(
         (k) =>
           !k.result && k.message && k.order_code === biTuChoi[0].tracking_code,
