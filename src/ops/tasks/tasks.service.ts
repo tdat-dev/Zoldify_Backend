@@ -1,7 +1,7 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, IsNull } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { OrdersService } from '@ordering/orders/orders.service';
@@ -93,21 +93,34 @@ export class TasksService {
     // hoàn tiền cho người mua trong khi món hàng vẫn đang trên đường tới nhà
     // họ — người bán mất cả hàng lẫn tiền, và không thao tác nào của họ gây ra
     // chuyện đó. Bản cũ quét cả những đơn này.
-    const staleOrders = await this.orderRepository.find({
-      where: [
-        {
-          status: OrderStatus.PENDING,
-          created_at: LessThan(cutoff),
-          tracking_code: IsNull(),
-        },
-        {
-          status: OrderStatus.CONFIRMED,
-          created_at: LessThan(cutoff),
-          tracking_code: IsNull(),
-        },
-      ],
-      select: ['id', 'order_code'],
-    });
+    //
+    // HAI ĐỒNG HỒ KHÁC NHAU.
+    //  - `pending`: đếm từ lúc tạo. Người bán 48 giờ không xác nhận thì thôi.
+    //  - `confirmed`: đếm từ lúc ĐƯỢC XÁC NHẬN. Tới 27/10 cả hai cùng đếm từ
+    //    `created_at`, nên đơn đặt thứ Sáu, người bán xác nhận sáng thứ Hai
+    //    (hay xác nhận xong mà GHN lỗi, đơn nằm chờ tạo lại vận đơn) bị huỷ và
+    //    hoàn tiền ngay lượt quét kế tiếp. Mốc là `confirmed_at` (người bán
+    //    bấm), hoặc `paid_at` với đơn tự sang `confirmed` lúc tiền về; đơn cũ
+    //    chưa có mốc nào thì lùi về `created_at` như trước.
+    //    Đo bằng `huy-qua-han-tu-luc-xac-nhan.spec.ts`.
+    const staleOrders = await this.orderRepository
+      .createQueryBuilder('o')
+      .select(['o.id', 'o.order_code'])
+      .where('o.tracking_code IS NULL')
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('o.status = :choXacNhan AND o.created_at < :cutoff').orWhere(
+            'o.status = :daXacNhan AND ' +
+              'COALESCE(o.confirmed_at, o.paid_at, o.created_at) < :cutoff',
+          );
+        }),
+      )
+      .setParameters({
+        choXacNhan: OrderStatus.PENDING,
+        daXacNhan: OrderStatus.CONFIRMED,
+        cutoff,
+      })
+      .getMany();
 
     if (!staleOrders.length) return;
 

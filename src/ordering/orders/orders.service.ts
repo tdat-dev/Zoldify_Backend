@@ -1175,6 +1175,10 @@ export class OrdersService {
         thayDoi.paid_at = new Date();
       }
       if (nextStatus) thayDoi.status = nextStatus;
+      // Mốc cho job huỷ quá hạn: đơn vừa xác nhận được đủ 48 giờ để gửi hàng,
+      // không bị đếm từ lúc đặt (xem Order.confirmed_at).
+      if (nextStatus === OrderStatus.CONFIRMED)
+        thayDoi.confirmed_at = new Date();
 
       // HOÀN TIỀN, TRẢ KHO VÀ GHI `refunded`: CÙNG MỘT TRANSACTION.
       //

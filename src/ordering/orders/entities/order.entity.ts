@@ -130,6 +130,14 @@ export class Order {
   @Column({ type: 'datetime', nullable: true })
   paid_at: Date;
 
+  // Mốc người bán hoặc admin xác nhận đơn (pending -> confirmed qua
+  // updateStatus). Job huỷ quá hạn đếm 48 giờ của đơn `confirmed` từ ĐÂY chứ
+  // không từ `created_at`: tới 27/10 đơn đặt thứ Sáu, xác nhận sáng thứ Hai bị
+  // huỷ ngay lượt quét kế tiếp. NULL cho đơn cũ và đơn tự sang `confirmed` lúc
+  // tiền về (đường đó dùng `paid_at`). Migration AddOrderConfirmedAt.
+  @Column({ type: 'datetime', nullable: true })
+  confirmed_at: Date | null;
+
   // Tên người nhận hàng
   @Column({ type: 'varchar', length: 100 })
   receiver_name: string;
