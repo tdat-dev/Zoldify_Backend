@@ -18,13 +18,17 @@ import { PaymentMethod } from '@common/enums/payment.enum';
  * Vượt trần mà không chặn ở đây thì MySQL strict mode ném "Data too long"
  * thành 500, SAU khi đơn đã đi qua cả vòng khoá kho. Hai cột `text`
  * (shipping_address, note) không lỗi gì, nên trần của chúng là trần nghiệp
- * vụ: địa chỉ thật không dài quá 255, ghi chú 60KB thì nằm trên mọi màn đơn
- * hàng và mọi thông báo. Đo bằng `dat-hang-gioi-han.spec.ts`.
+ * vụ: ghi chú 60KB thì nằm trên mọi màn đơn hàng và mọi thông báo. Đo bằng
+ * `dat-hang-gioi-han.spec.ts`.
+ *
+ * Địa chỉ 500 chứ không 255 (review 27/10): web và app GHÉP số nhà, đường
+ * (ô nhập tới 255) với tên phường, quận, tỉnh (tới 100 mỗi phần) vào trường
+ * này. Trần 255 từ chối oan một địa chỉ thật có tên đường dài.
  */
 export class CreateOrderDto {
   @IsNotEmpty({ message: 'Địa chỉ giao hàng không được để trống' })
   @IsString({ message: 'Địa chỉ giao hàng phải là chuỗi' })
-  @MaxLength(255, { message: 'Địa chỉ giao hàng tối đa 255 ký tự' })
+  @MaxLength(500, { message: 'Địa chỉ giao hàng tối đa 500 ký tự' })
   shipping_address: string;
 
   @IsNotEmpty({ message: 'Tên người nhận không được để trống' })

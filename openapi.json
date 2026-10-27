@@ -8236,7 +8236,7 @@
         "properties": {
           "shipping_address": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 500
           },
           "receiver_name": {
             "type": "string",
