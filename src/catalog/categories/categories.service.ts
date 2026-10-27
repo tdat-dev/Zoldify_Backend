@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Category } from './entities/category.entity';
 import { Repository } from 'typeorm';
 import { TranslationService } from './translation.service';
+import { ProductStatus } from '@catalog/products/entities/product.entity';
 
 @Injectable()
 export class CategoriesService {
@@ -42,7 +43,19 @@ export class CategoriesService {
 
     const raw = await this.categoryRepository
       .createQueryBuilder('category')
-      .leftJoin('products', 'product', 'product.category_id = category.id')
+      // Chỉ đếm sản phẩm khách thật sự thấy được khi bấm vào danh mục: đang
+      // bán và chưa xoá. Tới 27/10 điều kiện JOIN chỉ có category_id, nên
+      // nháp, chờ duyệt, bị từ chối đều được đếm: "Điện thoại (120)" mà bấm
+      // vào chỉ 40 món (dem-san-pham-danh-muc.spec.ts). `deleted_at` ghi rõ dù
+      // TypeORM tự thêm khi nhận ra 'products' là entity: chỗ đó phụ thuộc
+      // cách khai entity, điều kiện viết tay thì không.
+      .leftJoin(
+        'products',
+        'product',
+        'product.category_id = category.id AND product.status = :dangBan ' +
+          'AND product.deleted_at IS NULL',
+        { dangBan: ProductStatus.ACTIVE },
+      )
       .select('category.id', 'id')
       .addSelect('category.name', 'name')
       .addSelect('category.name_en', 'name_en')
