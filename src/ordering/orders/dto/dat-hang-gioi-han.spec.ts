@@ -41,7 +41,9 @@ describe('CreateOrderDto có trần cho mọi chuỗi và mảng', () => {
   it.each([
     ['receiver_name', 101],
     ['receiver_phone', 21],
-    ['shipping_address', 256],
+    // 500 chứ không 255 (review 27/10): client ghép đường (255) + phường, quận,
+    // tỉnh (100 mỗi phần) vào đây; cột là text.
+    ['shipping_address', 501],
     ['province', 101],
     ['district', 101],
     ['ghn_ward_code', 21],
