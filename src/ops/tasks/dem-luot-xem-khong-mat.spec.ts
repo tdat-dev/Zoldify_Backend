@@ -32,6 +32,9 @@ describe('Flush view_count không mất lượt xem chen giữa', () => {
         return v === undefined ? null : String(v);
       },
       getdel: (k) => {
+        // Khoá sai kiểu (ai đó SET nhầm một hash) thì Redis trả lỗi riêng cho
+        // đúng lệnh này trong pipeline, các lệnh khác vẫn chạy.
+        if (k === 'view_count:hong') throw new Error('WRONGTYPE');
         const v = kho.get(k);
         kho.delete(k);
         khachChen(k);
@@ -42,7 +45,16 @@ describe('Flush view_count không mất lượt xem chen giữa', () => {
     const pipeline = () => {
       const hang: Array<() => unknown> = [];
       const p: Record<string, unknown> = {
-        exec: () => Promise.resolve(hang.map((f) => [null, f()])),
+        exec: () =>
+          Promise.resolve(
+            hang.map((f) => {
+              try {
+                return [null, f()];
+              } catch (e) {
+                return [e, null];
+              }
+            }),
+          ),
       };
       for (const ten of Object.keys(lenh)) {
         p[ten] = (k: string) => {
@@ -100,5 +112,38 @@ describe('Flush view_count không mất lượt xem chen giữa', () => {
     const conTrongRedis = [...kho.values()].reduce((a, b) => a + b, 0);
     expect(trongMySql).toBe(8);
     expect(trongMySql + conTrongRedis).toBe(tong());
+  });
+
+  // Review 27/10 (H): pipeline.exec trả lỗi THEO TỪNG LỆNH ([err, kết quả]).
+  // Bản trước chỉ đọc kết quả, lỗi của một khoá bị bỏ qua không một dòng log:
+  // lượt xem của khoá đó đứng yên mãi mà không ai biết vì sao.
+  it('lệnh GETDEL lỗi trên một khoá thì ghi log, các khoá khác vẫn cộng', async () => {
+    const daCong: Record<number, number> = {};
+    const tasks = new TasksService(
+      {} as Repository<Order>,
+      {
+        increment: (w: { id: number }, _c: string, n: number) => {
+          daCong[w.id] = (daCong[w.id] ?? 0) + n;
+          return Promise.resolve({});
+        },
+      } as unknown as Repository<Product>,
+      {} as OrdersService,
+      {} as never,
+    );
+    (
+      tasks as unknown as { redis?: { disconnect?: () => void } }
+    ).redis?.disconnect?.();
+    const { redis } = redisGia({ 'view_count:1': 4, 'view_count:hong': 1 });
+    (tasks as unknown as { redis: unknown }).redis = redis;
+    const log = jest.spyOn(
+      (tasks as unknown as { logger: { error: (m: string) => void } }).logger,
+      'error',
+    );
+
+    await tasks.flushViewCount();
+
+    expect(daCong).toEqual({ 1: 4 });
+    const dong = log.mock.calls.map((c) => String(c[0]));
+    expect(dong.some((d) => d.includes('view_count:hong'))).toBe(true);
   });
 });
