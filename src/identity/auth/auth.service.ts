@@ -277,9 +277,32 @@ export class AuthService {
     };
   }
 
-  async logout(user: IUser) {
+  async logout(user: IUser, pushToken?: string) {
     await this.userRepository.increment({ id: user.id }, 'token_version', 1);
     await this.usersService.updateUserToken('', user.id.toString());
+
+    // Gỡ push token của thiết bị này TRONG CÙNG request (xem LogoutDto).
+    //
+    // SQL thô chứ không repository PushToken: entity đó thuộc messaging, mà
+    // identity không được import messaging (eslint boundaries). Xoá theo CẢ
+    // token lẫn user_id, giống `unregisterToken`: ai biết token FCM của máy
+    // người khác cũng không gỡ được thông báo của họ.
+    //
+    // Lỗi ở đây KHÔNG làm hỏng đăng xuất: phiên đã bị thu hồi ở trên rồi, mất
+    // bước này thì cùng lắm máy còn nhận push tới khi FCM báo token chết.
+    if (pushToken) {
+      try {
+        await this.userRepository.manager.query(
+          'DELETE FROM push_tokens WHERE token = ? AND user_id = ?',
+          [pushToken, user.id],
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Không gỡ được push token khi user ${user.id} đăng xuất: ` +
+            `${(err as Error).message}`,
+        );
+      }
+    }
     return { message: 'Đăng xuất thành công' };
   }
   // ===================== FORGOT PASSWORD =====================

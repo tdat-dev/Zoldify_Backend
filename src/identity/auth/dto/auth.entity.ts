@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { EmailChuanHoa } from '@common/email';
 
 // 1. Luồng Quên mật khẩu - Bước 1: Gửi OTP
@@ -76,4 +82,19 @@ export class RefreshTokenDto {
   @IsString()
   @IsNotEmpty({ message: 'Refresh token không được để trống' })
   refreshToken: string;
+}
+
+// 7. Đăng xuất. `push_token` tuỳ chọn: token FCM của CHÍNH thiết bị đang đăng
+// xuất, để gỡ trong cùng request. App không gỡ sau được nữa vì logout tăng
+// token_version, JWT chết ngay, lời gọi DELETE /notifications/push-token đến
+// sau nhận 401. Thiếu trường này thì máy đã đăng xuất vẫn nhận thông báo đơn
+// của tài khoản cũ.
+export class LogoutDto {
+  /** Token FCM của thiết bị đang đăng xuất (bỏ trống nếu chưa đăng ký push). */
+  @IsOptional()
+  @IsString()
+  // Cột push_tokens.token là varchar(512); dài hơn thì chắc chắn không có dòng
+  // nào để xoá, chặn ở cửa cho khỏi đi xuống database.
+  @MaxLength(512)
+  push_token?: string;
 }

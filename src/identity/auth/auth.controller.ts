@@ -22,6 +22,7 @@ import { User } from '@common/decorators/user.decorator';
 import {
   ChangePasswordDto,
   FirebaseLoginDto,
+  LogoutDto,
   RefreshTokenDto,
   ResetPasswordDto,
   SendOtpDto,
@@ -212,10 +213,13 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @ApiEntity(MessageResponseDto)
+  // Body tuỳ chọn: app cũ gọi logout không gửi gì vẫn phải chạy.
+  @ApiBody({ type: LogoutDto, required: false })
   @Post('logout')
   @ResponseMessage('Đăng xuất thành công')
-  async logout(@User() user: IUser) {
-    return this.authService.logout(user);
+  async logout(@User() user: IUser, @Body() dto: LogoutDto) {
+    // `dto` có thể là {} (body rỗng): app cũ không gửi gì vẫn đăng xuất được.
+    return this.authService.logout(user, dto?.push_token);
   }
 
   @UseGuards(JwtAuthGuard)

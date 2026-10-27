@@ -869,6 +869,16 @@
       "post": {
         "operationId": "AuthController_logout_v1",
         "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -7774,6 +7784,16 @@
         "required": [
           "newPassword"
         ]
+      },
+      "LogoutDto": {
+        "type": "object",
+        "properties": {
+          "push_token": {
+            "type": "string",
+            "description": "Token FCM của thiết bị đang đăng xuất (bỏ trống nếu chưa đăng ký push).",
+            "maxLength": 512
+          }
+        }
       },
       "RefreshTokenDto": {
         "type": "object",
