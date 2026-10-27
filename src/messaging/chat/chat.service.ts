@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOneOptions, Repository } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -28,6 +28,16 @@ import { laAnhCuaSan } from '@common/public-url';
  */
 function nguoiTrongChat(u: User | null | undefined): User {
   if (!u) return u as unknown as User;
+  // Tài khoản đã xoá mềm: giữ id (client dựa vào sender.id để biết tin nào của
+  // mình) nhưng không trả tên, ảnh của người đã rời sàn.
+  if (u.deleted_at) {
+    return {
+      id: u.id,
+      full_name: TEN_TAI_KHOAN_DA_XOA,
+      avatar: null,
+      last_seen: null,
+    } as unknown as User;
+  }
   return {
     id: u.id,
     full_name: u.full_name,
@@ -35,6 +45,27 @@ function nguoiTrongChat(u: User | null | undefined): User {
     last_seen: u.last_seen,
   } as User;
 }
+
+/** Tên hiển thị thay cho người kia khi tài khoản đó đã bị xoá. */
+const TEN_TAI_KHOAN_DA_XOA = 'Tài khoản đã xoá';
+
+/**
+ * Nạp hội thoại KÈM người đã xoá mềm (`withDeleted`).
+ *
+ * `users` xoá mềm, nên nạp quan hệ thường thì người đã xoá thành `null`, và
+ * mọi chỗ đọc `conversation.buyer.id` ném TypeError: người còn lại mở hội
+ * thoại cũ nhận 500 (rà soát 27/10, đo bằng `chat-nguoi-da-xoa.spec.ts`).
+ * Nạp kèm thì quan hệ luôn có `id` để kiểm thành viên, và `deleted_at` để biết
+ * người kia đã đi. Bảng conversations không xoá mềm nên `withDeleted` không
+ * kéo thêm hội thoại nào.
+ */
+const NAP_HOI_THOAI: Pick<
+  FindOneOptions<Conversation>,
+  'relations' | 'withDeleted'
+> = {
+  relations: ['buyer', 'seller'],
+  withDeleted: true,
+};
 
 @Injectable()
 export class ChatService {
@@ -157,7 +188,13 @@ export class ChatService {
 
     const result = conversations.map((conv) => {
       const isBuyer = conv.buyer?.id === user.id;
-      const partner = isBuyer ? conv.seller : conv.buyer;
+      // KHÔNG `withDeleted` ở đây (khác NAP_HOI_THOAI): danh sách còn nạp
+      // `product`, và nạp kèm bản ghi đã xoá là hiện lại cả sản phẩm đã gỡ.
+      // Người kia đã xoá thì quan hệ là null: hiện "Tài khoản đã xoá" thay
+      // vì một dòng không tên.
+      const partner = (isBuyer ? conv.seller : conv.buyer) ?? {
+        full_name: TEN_TAI_KHOAN_DA_XOA,
+      };
       return {
         id: conv.id,
         created_at: conv.created_at,
@@ -263,7 +300,7 @@ export class ChatService {
   ) {
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
-      relations: ['buyer', 'seller'],
+      ...NAP_HOI_THOAI,
     });
 
     if (!conversation) {
@@ -272,8 +309,8 @@ export class ChatService {
 
     // Kiểm tra user có trong cuộc trò chuyện này không
     if (
-      conversation.buyer.id !== user.id &&
-      conversation.seller.id !== user.id
+      conversation.buyer?.id !== user.id &&
+      conversation.seller?.id !== user.id
     ) {
       throw new BadRequestException(
         'Bạn không phải là thành viên của cuộc trò chuyện này',
@@ -292,6 +329,8 @@ export class ChatService {
       skip: offset,
       take: numLimit,
       relations: ['sender'],
+      // Tin của người đã xoá vẫn phải có `sender.id`, xem NAP_HOI_THOAI.
+      withDeleted: true,
       order: { created_at: 'DESC' },
     });
 
@@ -317,7 +356,7 @@ export class ChatService {
   ) {
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
-      relations: ['buyer', 'seller'],
+      ...NAP_HOI_THOAI,
     });
 
     if (!conversation) {
@@ -325,11 +364,23 @@ export class ChatService {
     }
 
     if (
-      conversation.buyer.id !== user.id &&
-      conversation.seller.id !== user.id
+      conversation.buyer?.id !== user.id &&
+      conversation.seller?.id !== user.id
     ) {
       throw new BadRequestException(
         'Bạn không phải là thành viên của cuộc trò chuyện này',
+      );
+    }
+
+    // Người kia đã xoá tài khoản: không ai đọc tin này nữa. 400 kèm lý do chứ
+    // không lặng lẽ lưu một tin không bao giờ tới.
+    const nguoiKia =
+      conversation.buyer?.id === user.id
+        ? conversation.seller
+        : conversation.buyer;
+    if (!nguoiKia || nguoiKia.deleted_at) {
+      throw new BadRequestException(
+        'Người này đã xoá tài khoản Zoldify nên không nhận được tin nhắn nữa.',
       );
     }
 
@@ -365,7 +416,7 @@ export class ChatService {
   async markAsRead(conversationId: number, user: IUser) {
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
-      relations: ['buyer', 'seller'],
+      ...NAP_HOI_THOAI,
     });
 
     // Cùng điều kiện thành viên với getMessages/sendMessage. Bản trước không
