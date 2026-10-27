@@ -133,9 +133,22 @@ export class ShipmentTrackingService {
    */
   private async danhDauDaGiao(lo: OrderShipment): Promise<boolean> {
     if (lo.status !== ShipmentStatus.CREATED) return false;
-    lo.status = ShipmentStatus.DELIVERED;
-    lo.delivered_at = new Date();
-    await this.shipments.save(lo);
+    // MỘT câu UPDATE có điều kiện, CHỈ hai cột vừa đổi, chứ không `save(lo)`.
+    //
+    // `lo` được nạp TRƯỚC lời gọi GHN (vài giây, có khi tới timeout 10s).
+    // Người mua bấm "Đã nhận hàng" trong quãng đó thì dòng đã là RECEIVED,
+    // có received_at, tiền đã nhả. Bản cũ lưu nguyên entity cũ: kéo lô về
+    // DELIVERED và xoá received_at, rồi job tự xác nhận N ngày sau thấy lô
+    // "chưa nhận" và gọi giải ngân lần nữa. Đo bằng hai bài "không ghi đè lô
+    // người mua vừa xác nhận" trong `shipment-tracking.service.spec.ts`.
+    //
+    // `status = created` trong WHERE là phép kiểm thật; phép kiểm trên `lo`
+    // phía trên chỉ để khỏi gửi câu lệnh vô ích.
+    const kq = await this.shipments.update(
+      { id: lo.id, status: ShipmentStatus.CREATED },
+      { status: ShipmentStatus.DELIVERED, delivered_at: new Date() },
+    );
+    if (!kq.affected) return false;
     // Nhắc người mua bấm "Đã nhận hàng": không bấm thì tiền người bán chờ đủ
     // cửa sổ tự xác nhận (AUTO_CONFIRM_RECEIPT_DAYS) mới được nhả.
     await this.baoTheoLo(lo.id, 'giao-toi-cua');
