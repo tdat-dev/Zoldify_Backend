@@ -7,32 +7,49 @@ import {
   Min,
   IsInt,
   IsArray,
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  MaxLength,
 } from 'class-validator';
 import { PaymentMethod } from '@common/enums/payment.enum';
 
+/**
+ * Trần độ dài lấy theo cột của bảng `orders` (varchar(100), varchar(20)).
+ * Vượt trần mà không chặn ở đây thì MySQL strict mode ném "Data too long"
+ * thành 500, SAU khi đơn đã đi qua cả vòng khoá kho. Hai cột `text`
+ * (shipping_address, note) không lỗi gì, nên trần của chúng là trần nghiệp
+ * vụ: địa chỉ thật không dài quá 255, ghi chú 60KB thì nằm trên mọi màn đơn
+ * hàng và mọi thông báo. Đo bằng `dat-hang-gioi-han.spec.ts`.
+ */
 export class CreateOrderDto {
   @IsNotEmpty({ message: 'Địa chỉ giao hàng không được để trống' })
   @IsString({ message: 'Địa chỉ giao hàng phải là chuỗi' })
+  @MaxLength(255, { message: 'Địa chỉ giao hàng tối đa 255 ký tự' })
   shipping_address: string;
 
   @IsNotEmpty({ message: 'Tên người nhận không được để trống' })
   @IsString({ message: 'Tên người nhận phải là chuỗi' })
+  @MaxLength(100, { message: 'Tên người nhận tối đa 100 ký tự' })
   receiver_name: string;
 
   @IsNotEmpty({ message: 'Số điện thoại không được để trống' })
   @IsString({ message: 'Số điện thoại phải là chuỗi' })
+  @MaxLength(20, { message: 'Số điện thoại tối đa 20 ký tự' })
   receiver_phone: string;
 
   @IsOptional()
   @IsString({ message: 'Tỉnh/Thành phố phải là chuỗi' })
+  @MaxLength(100, { message: 'Tỉnh/Thành phố tối đa 100 ký tự' })
   province?: string;
 
   @IsOptional()
   @IsString({ message: 'Quận/Huyện phải là chuỗi' })
+  @MaxLength(100, { message: 'Quận/Huyện tối đa 100 ký tự' })
   district?: string;
 
   @IsOptional()
   @IsString({ message: 'Ghi chú phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự' })
   note?: string;
 
   @IsOptional()
@@ -57,10 +74,18 @@ export class CreateOrderDto {
 
   @IsNotEmpty({ message: 'Thiếu phường/xã giao hàng (GHN)' })
   @IsString({ message: 'Mã phường/xã GHN phải là chuỗi' })
+  @MaxLength(20, { message: 'Mã phường/xã GHN tối đa 20 ký tự' })
   ghn_ward_code: string;
 
+  // Không gửi = cả giỏ. Gửi thì phải có ít nhất một món: mảng rỗng từng bị
+  // hiểu thành "cả giỏ" (orders.service kiểm `length > 0`), tức người dùng
+  // bỏ chọn hết lại đặt toàn bộ giỏ. Trần 50: mỗi phần tử là một tham số của
+  // câu `IN (...)`, và không giỏ thật nào gần tới đó.
   @IsOptional()
   @IsArray()
+  @ArrayNotEmpty({ message: 'Chọn ít nhất một món để đặt hàng' })
+  @ArrayMaxSize(50, { message: 'Mỗi đơn tối đa 50 món trong giỏ' })
   @IsInt({ each: true })
+  @Min(1, { each: true })
   cart_item_ids?: number[];
 }
