@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { VAI_TRO_DAT_DUOC } from './dto/change-role.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -159,8 +160,8 @@ export class AdminService {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
 
-    const validRoles = ['buyer', 'seller', 'admin', 'moderator'];
-    if (!validRoles.includes(role))
+    // Cùng danh sách với DTO: service cũng được gọi không qua HTTP.
+    if (!VAI_TRO_DAT_DUOC.includes(role))
       throw new BadRequestException('Vai trò không hợp lệ');
 
     user.role = role as any;
