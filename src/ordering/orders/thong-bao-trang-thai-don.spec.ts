@@ -536,4 +536,59 @@ describe('Thông báo khi đơn đổi trạng thái', () => {
     const [lo] = await shipRepo.find({ where: { order: { id } } });
     expect(lo.status).toBe(ShipmentStatus.DELIVERED);
   });
+
+  // ── Review 27/10 (E): GHN báo "cancel" vì CHÍNH mình vừa huỷ vận đơn ─────
+  //
+  // `huyVanDonGhnTruoc` gọi GHN huỷ rồi mới đánh dấu lô FAILED, hai bước rời.
+  // GHN đẩy webhook "cancel" (hay lượt quét chạy) đúng vào khe đó thì lô vẫn
+  // CREATED, đơn vẫn chưa huỷ, và mọi admin nhận "Vận đơn GHN gặp sự cố" cho
+  // một việc chính hệ thống vừa làm.
+  const choAdmin = () =>
+    daGui.filter((g) => g.user_id === adminId && g.type === 'system');
+
+  it('GHN báo cancel giữa lúc mình đang huỷ vận đơn → không báo admin', async () => {
+    const id = await taoDon();
+    await ds.query(`UPDATE orders SET status = 'confirmed' WHERE id = ?`, [id]);
+    await taoLoGhn(id);
+    ghnTraVe = 'cancel';
+    const theoDoi = dungTheoDoi();
+    // GHN nhận lệnh huỷ, và lượt đồng bộ chạy ĐÚNG lúc GHN vừa trả lời.
+    (orders as unknown as { ghnService: unknown }).ghnService = {
+      cancelOrders: async (codes: string[]) => {
+        await theoDoi.dongBoTatCa();
+        return codes.map((c) => ({
+          order_code: c,
+          result: true,
+          message: 'OK',
+        }));
+      },
+    };
+
+    await orders.cancel(id, nguoiMua());
+
+    expect(await trangThai(id)).toBe(OrderStatus.CANCELLED);
+    expect(choAdmin()).toHaveLength(0);
+  });
+
+  it('đơn đã huỷ mà lô còn sót CREATED, GHN báo cancel → không báo admin', async () => {
+    const id = await taoDon();
+    await ds.query(`UPDATE orders SET status = 'cancelled' WHERE id = ?`, [id]);
+    await taoLoGhn(id);
+    ghnTraVe = 'cancel';
+
+    await dungTheoDoi().dongBoTatCa();
+
+    expect(choAdmin()).toHaveLength(0);
+  });
+
+  it('GHN tự huỷ vận đơn của đơn đang sống → VẪN báo admin', async () => {
+    const id = await taoDon();
+    await ds.query(`UPDATE orders SET status = 'confirmed' WHERE id = ?`, [id]);
+    await taoLoGhn(id);
+    ghnTraVe = 'cancel';
+
+    await dungTheoDoi().dongBoTatCa();
+
+    expect(choAdmin()).toHaveLength(1);
+  });
 });
