@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from '@nestjs/cache-manager';
@@ -67,6 +68,12 @@ const PRODUCT_LIST_GEN_TTL = 24 * 60 * 60_000; // 24h
 
 /** Nhớ "đời" bao lâu trong tiến trình trước khi hỏi lại cache. Xem `doiDanhSach`. */
 const DOI_NHO_MS = 1_000;
+
+/** Trạng thái ai cũng xem được chi tiết (xem `findOne`). */
+const SAN_PHAM_CONG_KHAI: ProductStatus[] = [
+  ProductStatus.ACTIVE,
+  ProductStatus.SOLD,
+];
 
 @Injectable()
 export class ProductsService {
@@ -710,10 +717,30 @@ export class ProductsService {
     };
   }
 
-  async findOne(id: number) {
+  /**
+   * Chi tiết sản phẩm. `nguoiXem` đến từ OptionalJwtAuthGuard (có thể trống).
+   *
+   * CHỈ SẢN PHẨM ĐANG BÁN (và đã bán) LÀ CÔNG KHAI. Tới 27/10 hàm này không nhìn
+   * `status`: ai đoán được id là đọc được bản nháp người bán chưa đăng, hay
+   * sản phẩm admin đã từ chối vì vi phạm. Danh sách đã lọc `active` từ lâu,
+   * chỉ trang chi tiết sót. Đo bằng `chi-tiet-san-pham-an.spec.ts`.
+   *
+   * `sold` vẫn công khai: người mua mở lại sản phẩm từ lịch sử đơn hàng, và
+   * "đã bán" là thông tin đúng để hiện, không phải thứ cần giấu.
+   *
+   * Chủ sản phẩm và admin đọc được mọi trạng thái (trang sửa của web nạp form
+   * bằng chính route này). Bản họ đọc KHÔNG vào cache: cache chi tiết là
+   * chung cho mọi người xem, ghi bản nháp vào đó là người lạ đọc ra trong 60s.
+   */
+  async findOne(
+    id: number,
+    nguoiXem: { user?: IUser | null; tokenHong?: boolean } = {},
+  ) {
     const key = this.detailKey(id);
     const cached = await this.cacheGet<Product>(key);
-    if (cached) {
+    // Cache chỉ chứa bản công khai (xem cuối hàm), nhưng vẫn kiểm lại: bản
+    // ghi từ trước bản vá này có thể là bất kỳ trạng thái nào, sống tới hết TTL.
+    if (cached && SAN_PHAM_CONG_KHAI.includes(cached.status)) {
       // ĐẾM CẢ LƯỢT TRÚNG CACHE. Tới 26/10 lời gọi đếm nằm SAU dòng này, dù
       // comment trên nó viết "bỏ trước khi kiểm cache": TTL chi tiết 60 giây
       // nên mỗi phút mỗi sản phẩm chỉ đếm được một lượt xem, và sắp xếp
@@ -736,6 +763,25 @@ export class ProductsService {
     });
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
+    }
+
+    if (!SAN_PHAM_CONG_KHAI.includes(product.status)) {
+      const u = nguoiXem.user;
+      const duocXem =
+        !!u && (u.role === 'admin' || product.seller?.id === u.id);
+      if (!duocXem) {
+        // Token hỏng: có thể chính chủ đang mở trang sửa với token hết hạn.
+        // 401 để app làm mới token rồi gọi lại; 404 thì người bán tưởng sản
+        // phẩm đã mất. Người không gửi token thì 404 y như id không tồn tại,
+        // không mách rằng có một bản nháp nằm ở id này.
+        if (nguoiXem.tokenHong) {
+          throw new UnauthorizedException('Phiên đăng nhập đã hết hạn');
+        }
+        throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
+      }
+      // Không đếm lượt xem, không ghi cache: đây là người bán xem hàng của
+      // chính mình, không phải lượt khách.
+      return product;
     }
 
     // Lượt trượt cache: đếm SAU khi biết sản phẩm có thật, để id bậy không đẻ

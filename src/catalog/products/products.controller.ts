@@ -9,6 +9,7 @@ import {
   UseGuards,
   Query,
   ParseIntPipe,
+  Req,
 } from '@nestjs/common';
 import { ApiQuery } from '@nestjs/swagger';
 import { SoTuyChonPipe } from '@common/pipes/so-tuy-chon.pipe';
@@ -17,6 +18,11 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
+import {
+  OptionalJwtAuthGuard,
+  TOKEN_HONG,
+  type RequestNguoiXem,
+} from '@identity/auth/optional-jwt-auth.guard';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
@@ -101,11 +107,19 @@ export class ProductsController {
   }
 
   // ParseIntPipe ở mọi `:id`: `+'abc'` là NaN, `WHERE id = NaN` ra 500.
+  //
+  // Công khai nhưng xác thực TUỲ CHỌN: khách chỉ thấy sản phẩm đang bán, chủ
+  // sản phẩm và admin (gửi kèm token) thấy cả bản nháp cho trang sửa. Xem
+  // OptionalJwtAuthGuard và ProductsService.findOne.
   @ResponseMessage('Lấy thông tin sản phẩm thành công!')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.productsService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @Req() req: RequestNguoiXem) {
+    return this.productsService.findOne(id, {
+      user: req.user,
+      tokenHong: req[TOKEN_HONG],
+    });
   }
 
   @UseGuards(JwtAuthGuard)
