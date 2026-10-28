@@ -19,8 +19,18 @@ export class PaginationMetaDto {
   /** Tổng số trang */
   pages: number;
 
-  /** Tổng số bản ghi khớp điều kiện lọc */
+  /**
+   * Tổng số bản ghi khớp điều kiện lọc. Danh sách công khai chỉ đếm tới trần
+   * độ sâu (`MAX_PAGINATION_DEPTH`); vượt trần thì `total` = trần và có thêm
+   * `total_capped`.
+   */
   total: number;
+
+  /**
+   * Chỉ có mặt (và luôn là `true`) khi `total` bị chặn ở trần: số thật lớn
+   * hơn. Client nên hiện "10.000+" thay vì "10.000".
+   */
+  total_capped?: boolean;
 }
 
 /** Số bản ghi mỗi trang mặc định khi client không gửi `limit`. */
@@ -99,7 +109,9 @@ export interface CatDoSau {
  * Trang ngoài trần trả DANH SÁCH RỖNG kèm meta bình thường, không trả 400.
  * Lý do: app di động cuộn vô hạn cứ gọi "trang sau" tới khi nhận mảng rỗng.
  * Mảng rỗng là tín hiệu "hết danh sách" mà mọi client đã hiểu sẵn; 400 thì
- * client cũ hiện màn lỗi giữa chừng.
+ * client cũ hiện màn lỗi giữa chừng. Và `meta.total` của các danh sách này
+ * cũng chỉ đếm tới trần (`demCoTran`), nên `meta.pages` không bao giờ chỉ tới
+ * một trang ngoài trần: chỉ ai tự gõ URL mới gặp mảng rỗng.
  *
  * Trang cuối vắt qua trần (cỡ 30, trang 334: dòng 9.991 tới 10.020) bị cắt
  * còn 10 dòng, để tổng số dòng đọc được khớp đúng `total` đã báo.

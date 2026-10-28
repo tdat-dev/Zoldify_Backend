@@ -16,12 +16,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
-import { Repository, Between, MoreThan } from 'typeorm';
+import { Repository, Between, MoreThan, SelectQueryBuilder } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
 import { formatMoney } from '@common/money';
-import { catDoSau, normalizePagination } from '@common/dto/pagination.dto';
+import { normalizePagination } from '@common/dto/pagination.dto';
+import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import Redis from 'ioredis';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
@@ -506,23 +507,29 @@ export class ProductsService {
     // Cache danh sách công khai (đọc-nhiều-đổi-ít). Key gồm ĐỦ mọi tham số ảnh
     // hưởng kết quả (pre-mortem C2: thiếu 1 tham số = trả nhầm trang cho request
     // khác). Endpoint @Public() không phụ thuộc user nên không rò dữ liệu cá nhân.
+    const doi = await this.doiDanhSach();
+    const boLoc = {
+      q: qs.q || '',
+      cat: qs.category_id || '',
+      seller: qs.seller_id || '',
+      pmin: String(qs.price_min ?? ''),
+      pmax: String(qs.price_max ?? ''),
+      // Lọc tình trạng đến từ nhánh prod, gộp vào sau khi cache đã có. Thiếu
+      // dòng này thì ?condition=new nhận nhầm danh sách chưa lọc từ cache.
+      cond: String(qs.condition ?? ''),
+    };
     const cacheKey =
-      `products:list:g${await this.doiDanhSach()}:` +
+      `products:list:g${doi}:` +
       JSON.stringify({
         page: numPage,
         size: numLimit,
         sort: qs.sort || '',
-        q: qs.q || '',
-        cat: qs.category_id || '',
-        seller: qs.seller_id || '',
-        pmin: String(qs.price_min ?? ''),
-        pmax: String(qs.price_max ?? ''),
-        // Lọc tình trạng đến từ nhánh prod, gộp vào sau khi cache đã có. Thiếu
-        // dòng này thì ?condition=new nhận nhầm danh sách chưa lọc từ cache.
-        cond: String(qs.condition ?? ''),
+        ...boLoc,
       });
+    // Khoá tổng KHÔNG có trang, cỡ trang, sắp xếp: không cái nào đổi tổng.
+    const khoaDem = `products:count:g${doi}:` + JSON.stringify(boLoc);
     return this.cacheWrap(cacheKey, PRODUCT_LIST_TTL, () =>
-      this.queryProductList(numPage, numLimit, offset, qs),
+      this.queryProductList(numPage, numLimit, offset, qs, khoaDem),
     );
   }
 
@@ -571,6 +578,7 @@ export class ProductsService {
     numLimit: number,
     offset: number,
     qs: any,
+    khoaDem: string,
   ) {
     // Đọc một lần, dùng cho cả hai nhánh truy vấn bên dưới.
     const condition = qs.condition ? String(qs.condition) : undefined;
@@ -589,10 +597,10 @@ export class ProductsService {
       order = { sold_count: 'DESC', view_count: 'DESC' };
     }
 
-    let result, totalItems;
-    // Trang ngoài trần độ sâu: không gửi câu lấy dòng nào xuống MySQL (xem
-    // `catDoSau`). Vẫn đếm tổng để meta giữ nguyên khuôn.
-    const doSau = catDoSau({ offset, size: numLimit });
+    // Hai nhánh dưới chỉ dựng câu; lấy dòng và đếm đi chung qua `trangCoTran`
+    // (trần độ sâu, đếm có trần, bỏ đếm khi trang chưa đầy).
+    let qbDem: SelectQueryBuilder<Product>;
+    let layDong: (take: number) => Promise<Product[]>;
 
     if (qs.q) {
       const rawQ = String(qs.q).trim();
@@ -648,13 +656,8 @@ export class ProductsService {
       if (qs.sort === 'featured') {
         qb.addOrderBy('product.view_count', 'DESC');
       }
-      if (doSau.ngoaiTran) {
-        result = [];
-        totalItems = await qb.getCount();
-      } else {
-        qb.skip(offset).take(doSau.take);
-        [result, totalItems] = await qb.getManyAndCount();
-      }
+      qbDem = qb;
+      layDong = (take) => qb.clone().skip(offset).take(take).getMany();
     } else {
       // CHỈ HIỆN HÀNG ĐANG MỞ BÁN.
       //
@@ -686,14 +689,20 @@ export class ProductsService {
         const max = qs.price_max ? Number(qs.price_max) : 999999999;
         where.price = Between(min, max);
       }
-      if (doSau.ngoaiTran) {
-        result = [];
-        totalItems = await this.productRepository.count({ where });
-      } else {
-        [result, totalItems] = await this.productRepository.findAndCount({
+      // Câu đếm lọc y như câu lấy dòng: cùng `where`, và JOIN đúng những quan
+      // hệ mà `where` lọc theo (lọc `category.id` qua LEFT JOIN còn loại luôn
+      // danh mục đã xoá mềm, đếm bằng `category_id` thô thì không).
+      const quanHeLoc: Record<string, boolean> = {};
+      if (qs.category_id) quanHeLoc.category = true;
+      if (qs.seller_id) quanHeLoc.seller = true;
+      qbDem = this.productRepository
+        .createQueryBuilder('product')
+        .setFindOptions({ where, relations: quanHeLoc });
+      layDong = (take) =>
+        this.productRepository.find({
           where,
           skip: offset,
-          take: doSau.take,
+          take,
           order,
           relations: { category: true, seller: true },
           /**
@@ -713,20 +722,20 @@ export class ProductsService {
             category: { id: true, name: true, slug: true },
           },
         });
-      }
     }
 
-    const totalPages = Math.ceil(totalItems / numLimit);
+    // Tổng cache theo BỘ LỌC, không theo trang: lật từ trang 1 sang trang 2
+    // không đếm lại. Cùng "đời" với cache danh sách nên đăng/sửa/xoá hàng là
+    // tổng mới ngay (xem `moiDanhSach`).
+    const { rows, ...tong } = await trangCoTran({
+      offset,
+      size: numLimit,
+      layDong,
+      dem: () =>
+        this.cacheWrap(khoaDem, PRODUCT_LIST_TTL, () => demCoTran(qbDem)),
+    });
 
-    return {
-      meta: {
-        current: numPage,
-        pageSize: numLimit,
-        pages: totalPages,
-        total: totalItems,
-      },
-      result,
-    };
+    return { meta: metaCoTran(numPage, numLimit, tong), result: rows };
   }
 
   /**

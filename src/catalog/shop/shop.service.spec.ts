@@ -65,9 +65,11 @@ describe('ShopService', () => {
         dieuKienDem.push(where);
         return Promise.resolve(3);
       },
-      findAndCount: ({ where }: { where: Record<string, unknown> }) => {
+      // getShopProducts lấy dòng bằng `find` rồi mới đếm có trần
+      // (dem-tong-co-tran.spec.ts); trang rỗng ở trang đầu thì không đếm.
+      find: ({ where }: { where: Record<string, unknown> }) => {
         dieuKienTim.push(where);
-        return Promise.resolve([[], 0]);
+        return Promise.resolve([]);
       },
     } as unknown as Repository<Product>;
 

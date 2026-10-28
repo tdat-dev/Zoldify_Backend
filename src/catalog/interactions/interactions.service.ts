@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { catDoSau, normalizePagination } from '@common/dto/pagination.dto';
+import { normalizePagination } from '@common/dto/pagination.dto';
+import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Review } from './entities/review.entity';
@@ -179,17 +180,26 @@ export class InteractionsService {
     } = normalizePagination(currentPage, limit);
 
     const where = { product: { id: productId } };
-    // Trần độ sâu: route công khai, ?current=9000 không được thành OFFSET sâu.
-    const doSau = catDoSau({ offset, size: numLimit });
-    const [result, totalItems] = doSau.ngoaiTran
-      ? [[], await this.reviewRepository.count({ where })]
-      : await this.reviewRepository.findAndCount({
+    // Trần độ sâu (route công khai, ?current=9000 không được thành OFFSET
+    // sâu) và đếm có trần, như mọi danh sách công khai khác.
+    const { rows: result, ...tong } = await trangCoTran({
+      offset,
+      size: numLimit,
+      layDong: (take) =>
+        this.reviewRepository.find({
           where,
           skip: offset,
-          take: doSau.take,
+          take,
           relations: ['user'],
           order: { created_at: 'DESC' },
-        });
+        }),
+      dem: () =>
+        demCoTran(
+          this.reviewRepository
+            .createQueryBuilder('review')
+            .setFindOptions({ where }),
+        ),
+    });
 
     const { avg } = await this.reviewRepository
       .createQueryBuilder('review')
@@ -199,10 +209,7 @@ export class InteractionsService {
 
     return {
       meta: {
-        current: numPage,
-        pageSize: numLimit,
-        pages: Math.ceil(totalItems / numLimit),
-        total: totalItems,
+        ...metaCoTran(numPage, numLimit, tong),
         average_rating: avg ? Number(Number(avg).toFixed(1)) : 0,
       },
       result: result.map((r) => withPublicUser(r)),
@@ -225,26 +232,27 @@ export class InteractionsService {
     // được đánh giá; trước đây nó tự nhớ trên máy (mất khi đổi máy, lỗi H-01).
     const where: any = mine ? { user: { id: user.id } } : {};
 
-    const doSau = catDoSau({ offset, size: numLimit });
-    const [result, totalItems] = doSau.ngoaiTran
-      ? [[], await this.reviewRepository.count({ where })]
-      : await this.reviewRepository.findAndCount({
+    const { rows: result, ...tong } = await trangCoTran({
+      offset,
+      size: numLimit,
+      layDong: (take) =>
+        this.reviewRepository.find({
           where,
           skip: offset,
-          take: doSau.take,
+          take,
           relations: ['user', 'product'],
           order: { created_at: 'DESC' },
-        });
-
-    const totalPages = Math.ceil(totalItems / numLimit);
+        }),
+      dem: () =>
+        demCoTran(
+          this.reviewRepository
+            .createQueryBuilder('review')
+            .setFindOptions({ where }),
+        ),
+    });
 
     return {
-      meta: {
-        current: numPage,
-        pageSize: numLimit,
-        pages: totalPages,
-        total: totalItems,
-      },
+      meta: metaCoTran(numPage, numLimit, tong),
       result: result.map((r) => withPublicUser(r)),
     };
   }

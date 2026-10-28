@@ -18,6 +18,7 @@ import { Cart } from '@ordering/carts/entities/cart.entity';
 import { Escrow } from '@money/escrows/entities/escrow.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
 import type { IUser } from '@identity/users/users.interface';
+import { demCoTran, metaCoTran } from '@common/dem-co-tran';
 
 /**
  * Mỗi request danh sách công khai chạy một câu COUNT KHÔNG TRẦN (rà soát
@@ -254,5 +255,28 @@ describe('meta.total không đếm cả bảng ở mỗi request', () => {
     const dem = sql.cau.filter(laCauDem);
     expect(dem.length).toBeGreaterThan(0);
     expect(dem.every(coTran)).toBe(true);
+  });
+
+  it('vượt trần: total = trần, kèm total_capped; dưới trần thì không có cờ', async () => {
+    const qb = () =>
+      ds
+        .getRepository(Product)
+        .createQueryBuilder('product')
+        .where('product.seller_id = :s', { s: sellerId })
+        .andWhere('product.status = :a', { a: ProductStatus.ACTIVE });
+
+    const vuot = await demCoTran(qb(), 3);
+    expect(vuot).toEqual({ total: 3, capped: true });
+    expect(metaCoTran(1, 2, vuot)).toEqual({
+      current: 1,
+      pageSize: 2,
+      pages: 2,
+      total: 3,
+      total_capped: true,
+    });
+
+    const duoi = await demCoTran(qb(), 10);
+    expect(duoi).toEqual({ total: SO_SP, capped: false });
+    expect(metaCoTran(1, 2, duoi)).not.toHaveProperty('total_capped');
   });
 });

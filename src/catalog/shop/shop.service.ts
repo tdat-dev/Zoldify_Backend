@@ -17,7 +17,8 @@ import {
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import type { IUser } from '@identity/users/users.interface';
-import { catDoSau, normalizePagination } from '@common/dto/pagination.dto';
+import { normalizePagination } from '@common/dto/pagination.dto';
+import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 
 @Injectable()
 export class ShopService {
@@ -155,27 +156,28 @@ export class ShopService {
       offset,
     } = normalizePagination(rawPage, rawLimit, 20);
     const where = { seller: { id: sellerId }, status: ProductStatus.ACTIVE };
-    // Trần độ sâu như /products: ?page=9000 không được thành OFFSET 179980.
-    const doSau = catDoSau({ offset, size: limit });
-    const [result, total] = doSau.ngoaiTran
-      ? [[], await this.productRepository.count({ where })]
-      : await this.productRepository.findAndCount({
+    // Trần độ sâu như /products (?page=9000 không thành OFFSET 179980), và
+    // đếm có trần: shop lớn không phải đếm hết kho ở mỗi lần lật trang.
+    const { rows, ...tong } = await trangCoTran({
+      offset,
+      size: limit,
+      layDong: (take) =>
+        this.productRepository.find({
           where,
           relations: ['category'],
           skip: offset,
-          take: doSau.take,
+          take,
           order: { created_at: 'DESC' },
-        });
+        }),
+      dem: () =>
+        demCoTran(
+          this.productRepository
+            .createQueryBuilder('product')
+            .setFindOptions({ where }),
+        ),
+    });
 
-    return {
-      meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
-        total,
-      },
-      result,
-    };
+    return { meta: metaCoTran(page, limit, tong), result: rows };
   }
 
   async getSellerOrders(

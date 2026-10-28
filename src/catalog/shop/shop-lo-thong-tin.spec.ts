@@ -56,9 +56,11 @@ function dung() {
     { findOne: () => Promise.resolve(null) } as never,
     {
       count: () => Promise.resolve(3),
-      findAndCount: (o: { skip: number; take: number }) => {
+      // getShopProducts lấy dòng bằng `find` rồi mới đếm có trần
+      // (dem-tong-co-tran.spec.ts); trang rỗng ở trang đầu thì không đếm.
+      find: (o: { skip: number; take: number }) => {
         timSanPham.push(o);
-        return Promise.resolve([[], 0]);
+        return Promise.resolve([]);
       },
     } as never,
     { count: () => Promise.resolve(5) } as never,
