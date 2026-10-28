@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull } from 'typeorm';
+import { Repository, Not, IsNull, MoreThan, Between } from 'typeorm';
 import { timingSafeEqual } from 'crypto';
 import { GhnService } from '@ordering/ghn/ghn.service';
 import {
@@ -15,6 +15,32 @@ import {
 import { Order, OrderStatus } from './entities/order.entity';
 import { KENH_THONG_BAO, type KenhThongBao } from '@common/kenh-thong-bao';
 import { ThongBaoDon } from './thong-bao-don';
+import { chayGioiHan } from './chay-gioi-han';
+
+/** Giới hạn một lượt đồng bộ GHN định kỳ (xem `dongBoTatCa`). */
+export interface GioiHanDongBo {
+  /** Số lô mỗi câu SELECT. */
+  kichLo: number;
+  /** Số lời gọi GHN cùng lúc. */
+  songSong: number;
+  /** Số nhóm tối đa mỗi lượt. */
+  toiDaLo: number;
+  /** Thời gian tối đa mỗi lượt, ms. */
+  toiDaMs: number;
+}
+
+/**
+ * 30 nhóm x 200 = 6000 lô một lượt; GHN ~300ms với 4 luồng là ~8 phút. Hạn
+ * 20 phút chặn ca GHN ốm (timeout 10s mỗi lời gọi): job chạy mỗi giờ, và sau
+ * nó còn `autoConfirmDueShipments` trong cùng job. Quá 6000 lô đang đi thì
+ * phần dư sang lượt sau (con trỏ), chậm nhất vài giờ chứ không bỏ sót.
+ */
+export const GIOI_HAN_DONG_BO: Readonly<GioiHanDongBo> = {
+  kichLo: 200,
+  songSong: 4,
+  toiDaLo: 30,
+  toiDaMs: 20 * 60_000,
+};
 
 /**
  * Trạng thái GHN nghĩa là "tài xế đã cầm hàng đi": từ `picked` trở về sau trên
@@ -124,6 +150,12 @@ const LY_DO_SU_CO: Record<NhomSuCo, string> = {
 @Injectable()
 export class ShipmentTrackingService {
   private readonly logger = new Logger(ShipmentTrackingService.name);
+
+  /** Spec thu nhỏ để thấy hạn hoạt động mà không cần dựng 6000 lô. */
+  gioiHanDongBo: GioiHanDongBo = { ...GIOI_HAN_DONG_BO };
+
+  /** `id` lô cuối mà lượt quét trước đã hỏi; lượt sau đi tiếp từ đây. */
+  private conTro = 0;
 
   constructor(
     @InjectRepository(OrderShipment)
@@ -433,34 +465,112 @@ export class ShipmentTrackingService {
    * KHÔNG giải ngân ở đây: "đã giao tới cửa" chưa phải "người mua đã nhận và
    * ưng". Việc chốt tiền để cho `autoConfirmDueShipments` (sau N ngày) hoặc
    * người mua bấm tay.
+   *
+   * VÌ SAO CHIA NHÓM, SONG SONG 4, VÀ CÓ HẠN (rà soát "1 triệu dòng" 28/10).
+   * Bản trước `find()` MỌI lô CREATED không `take`, rồi hỏi GHN từng lô một,
+   * nối tiếp. GHN trả lời ~300ms, chậm thì tới timeout 10s: 5000 lô đang đi
+   * là 25 phút khi GHN khoẻ, hàng giờ khi GHN ốm, và suốt thời gian đó cả
+   * mảng lô nằm trên heap 256MB của worker. Đo bằng `dong-bo-ghn-theo-lo.spec.ts`.
+   *
+   * Nay:
+   *   - Keyset theo `id`, `kichLo` (200) lô mỗi câu. Không OFFSET: lô đổi
+   *     trạng thái giữa chừng làm OFFSET trượt và bỏ sót lô.
+   *   - Mỗi nhóm hỏi GHN tối đa `songSong` (4) lô cùng lúc: nhanh gần 4 lần,
+   *     mà không dội GHN và không chiếm hết 5 kết nối MySQL của worker.
+   *   - Một lượt dừng sau `toiDaLo` nhóm hoặc `toiDaMs`, cái nào tới trước,
+   *     và lượt sau đi TIẾP từ `conTro` chứ không làm lại từ đầu. Không có con
+   *     trỏ thì lô cuối bảng không bao giờ tới lượt khi bảng lớn hơn hạn.
+   *
+   * Con trỏ nằm trong bộ nhớ: worker khởi động lại thì quét lại từ đầu, chỉ
+   * tốn thêm lời gọi GHN chứ không sai (mọi bước ghi đều có điều kiện).
    */
   async dongBoTatCa(): Promise<{ checked: number; delivered: number }> {
-    const ds = await this.shipments.find({
-      where: { status: ShipmentStatus.CREATED, tracking_code: Not(IsNull()) },
-    });
+    const { kichLo, songSong, toiDaLo, toiDaMs } = this.gioiHanDongBo;
+    const hanChot = Date.now() + toiDaMs;
+    const hetGio = () => Date.now() >= hanChot;
 
+    // Lượt bắt đầu giữa bảng được quay vòng MỘT lần về đầu bảng và dừng ở chỗ
+    // đã bắt đầu: bảng nhỏ hơn hạn thì một lượt vẫn phủ đủ mọi lô như bản cũ.
+    const batDau = this.conTro;
+    let tu = batDau;
+    let daVongLai = false;
+    let soNhom = 0;
+    let checked = 0;
     let delivered = 0;
-    for (const lo of ds) {
-      if (!lo.tracking_code) continue;
-      try {
-        const thuc = await this.ghn.getOrderStatus(lo.tracking_code);
-        if (thuc !== null && GHN_SU_CO.has(thuc)) {
-          await this.ghiSuCo(lo, thuc);
+
+    while (soNhom < toiDaLo && !hetGio()) {
+      const nhom = await this.shipments.find({
+        where: {
+          status: ShipmentStatus.CREATED,
+          tracking_code: Not(IsNull()),
+          id: daVongLai ? Between(tu + 1, batDau) : MoreThan(tu),
+        },
+        order: { id: 'ASC' },
+        take: kichLo,
+      });
+
+      if (!nhom.length) {
+        if (!daVongLai && batDau > 0) {
+          daVongLai = true;
+          tu = 0;
           continue;
         }
-        if (thuc !== null && GHN_DA_LAY_HANG.has(thuc)) {
-          await this.chuyenDonSangDangGiao(lo);
-        }
-        if (thuc === 'delivered') {
-          if (await this.danhDauDaGiao(lo)) delivered += 1;
-        }
-      } catch (err) {
-        // Một lô hỏng không được làm chết cả lượt — lô sau vẫn phải được xét.
-        this.logger.error(
-          `Đồng bộ trạng thái GHN lỗi (vận đơn ${lo.tracking_code}): ${(err as Error).message}`,
-        );
+        // Hết một vòng trọn: lượt sau bắt đầu lại từ đầu bảng.
+        tu = 0;
+        break;
       }
+      soNhom += 1;
+
+      const daChay = await chayGioiHan(
+        nhom,
+        songSong,
+        async (lo) => {
+          if (await this.dongBoMotLo(lo)) delivered += 1;
+        },
+        hetGio,
+      );
+      checked += daChay;
+      // Lô lấy theo đúng thứ tự `id`, nên phần đã chạy là một đoạn đầu liền
+      // mạch: con trỏ đặt ở lô cuối đã chạy, lô hết giờ chưa kịp hỏi sẽ là lô
+      // đầu của lượt sau.
+      if (daChay > 0) tu = nhom[daChay - 1].id;
+      if (daChay < nhom.length) break;
     }
-    return { checked: ds.length, delivered };
+
+    // Quay vòng xong mà chưa chạm hạn thì vòng đã trọn: lượt sau từ đầu bảng.
+    this.conTro = daVongLai && tu >= batDau ? 0 : tu;
+    if (soNhom >= toiDaLo || hetGio()) {
+      this.logger.warn(
+        `Đồng bộ GHN dừng theo hạn (${soNhom} nhóm, ${checked} lô); lượt ` +
+          `sau đi tiếp sau lô #${this.conTro}.`,
+      );
+    }
+    return { checked, delivered };
+  }
+
+  /**
+   * Một lô của lượt quét. Nuốt lỗi: một lô hỏng không được làm chết cả lượt,
+   * và nay còn không được làm chết ba lô đang chạy song song cùng nhóm.
+   */
+  private async dongBoMotLo(lo: OrderShipment): Promise<boolean> {
+    if (!lo.tracking_code) return false;
+    try {
+      const thuc = await this.ghn.getOrderStatus(lo.tracking_code);
+      if (thuc !== null && GHN_SU_CO.has(thuc)) {
+        await this.ghiSuCo(lo, thuc);
+        return false;
+      }
+      if (thuc !== null && GHN_DA_LAY_HANG.has(thuc)) {
+        await this.chuyenDonSangDangGiao(lo);
+      }
+      if (thuc === 'delivered') return await this.danhDauDaGiao(lo);
+      return false;
+    } catch (err) {
+      // Một lô hỏng không được làm chết cả lượt, lô sau vẫn phải được xét.
+      this.logger.error(
+        `Đồng bộ trạng thái GHN lỗi (vận đơn ${lo.tracking_code}): ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 }

@@ -38,6 +38,7 @@ import {
   In,
   IsNull,
   LessThan,
+  MoreThan,
   Not,
 } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -1719,42 +1720,75 @@ export class OrdersService {
     const days = Number(process.env.AUTO_CONFIRM_RECEIPT_DAYS ?? 3);
     const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
 
-    const due = await this.shipmentRepository.find({
-      where: {
-        status: ShipmentStatus.DELIVERED,
-        received_at: IsNull(),
-        delivered_at: LessThan(cutoff),
-        // Lô của đơn đã huỷ/hoàn tiền thì không tự chốt: chốt là giải ngân và
-        // đặt đơn sang delivered. Lô đó đã được đánh dấu cần xử lý tay (xem
-        // `baoVanDonMoCoi`), job không được tự quyết thay.
-        order: { status: Not(In(DA_DONG_KHONG_GIAO)) },
-      },
-      relations: ['seller', 'order'],
-    });
+    // Điều kiện "tới hạn", dùng cho CẢ câu chọn id lẫn câu nạp quan hệ: lô
+    // người mua vừa bấm nhận (hay đơn vừa huỷ) giữa hai câu thì rơi khỏi nhóm
+    // thay vì bị chốt lần hai.
+    const toiHan = {
+      status: ShipmentStatus.DELIVERED,
+      received_at: IsNull(),
+      delivered_at: LessThan(cutoff),
+      // Lô của đơn đã huỷ/hoàn tiền thì không tự chốt: chốt là giải ngân và
+      // đặt đơn sang delivered. Lô đó đã được đánh dấu cần xử lý tay (xem
+      // `baoVanDonMoCoi`), job không được tự quyết thay.
+      order: { status: Not(In(DA_DONG_KHONG_GIAO)) },
+    };
 
+    // THEO NHÓM 200, keyset theo id (rà soát "1 triệu dòng" 28/10). Bản trước
+    // nạp MỌI lô tới hạn trong một câu, kèm seller + order đầy đủ mỗi dòng:
+    // sau một đợt lễ hay vài ngày job hỏng, hàng nghìn bộ ba entity nằm trên
+    // heap 256MB của worker tới khi lô cuối giải ngân xong. Đo bằng
+    // `tu-xac-nhan-theo-lo.spec.ts` (450 lô: một câu trả 450 dòng).
+    //
+    // Keyset chứ không "lấy 200 lô tới hạn" lặp lại: lô giải ngân hỏng (escrow
+    // lỗi) vẫn tới hạn sau lượt, nên vòng "lấy nữa tới khi hết" quay mãi trên
+    // đúng những lô đó. Con trỏ id luôn tiến, lượt luôn kết thúc; lô hỏng
+    // được thử lại ở lượt sau như bản cũ.
+    const KICH_LO = 200;
+    let tu = 0;
+    let due = 0;
     let released = 0;
-    for (const s of due) {
-      const orderId = s.order?.id;
-      const sellerId = s.seller?.id;
-      if (!orderId || !sellerId) continue;
-      try {
-        await this.escrowsService.release(orderId, sellerId);
-        s.status = ShipmentStatus.RECEIVED;
-        s.received_at = new Date();
-        s.auto_received = true;
-        await this.shipmentRepository.save(s);
-        await this.reconcileOrderDelivered(orderId);
-        released += 1;
-        this.logger.log(
-          `Tự xác nhận nhận hàng sau ${days} ngày: đơn ${orderId}, người bán ${sellerId}`,
-        );
-      } catch (err) {
-        this.logger.error(
-          `Tự xác nhận lỗi (đơn ${orderId}, người bán ${sellerId}): ${(err as Error).message}`,
-        );
+    for (;;) {
+      const nhomId = await this.shipmentRepository.find({
+        select: { id: true },
+        where: { ...toiHan, id: MoreThan(tu) },
+        order: { id: 'ASC' },
+        take: KICH_LO,
+      });
+      if (!nhomId.length) break;
+      tu = nhomId[nhomId.length - 1].id;
+      due += nhomId.length;
+
+      const nhom = await this.shipmentRepository.find({
+        where: { ...toiHan, id: In(nhomId.map((s) => s.id)) },
+        relations: ['seller', 'order'],
+        order: { id: 'ASC' },
+      });
+
+      for (const s of nhom) {
+        const orderId = s.order?.id;
+        const sellerId = s.seller?.id;
+        if (!orderId || !sellerId) continue;
+        try {
+          await this.escrowsService.release(orderId, sellerId);
+          s.status = ShipmentStatus.RECEIVED;
+          s.received_at = new Date();
+          s.auto_received = true;
+          await this.shipmentRepository.save(s);
+          await this.reconcileOrderDelivered(orderId);
+          released += 1;
+          this.logger.log(
+            `Tự xác nhận nhận hàng sau ${days} ngày: đơn ${orderId}, người bán ${sellerId}`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `Tự xác nhận lỗi (đơn ${orderId}, người bán ${sellerId}): ${(err as Error).message}`,
+          );
+        }
       }
+
+      if (nhomId.length < KICH_LO) break;
     }
-    return { due: due.length, released };
+    return { due, released };
   }
 
   /**

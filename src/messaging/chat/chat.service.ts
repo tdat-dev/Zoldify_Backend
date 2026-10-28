@@ -223,17 +223,35 @@ export class ChatService {
   }
 
   /**
-   * Tin nhắn cuối của NHIỀU hội thoại trong MỘT câu.
+   * Tin nhắn cuối của NHIỀU hội thoại trong MỘT câu, và database chỉ trả đúng
+   * MỘT dòng mỗi hội thoại.
    *
-   * Dùng hàm cửa sổ `ROW_NUMBER()` của MySQL 8 thay vì `GROUP BY ... MAX()`:
-   * cách `MAX(created_at)` chỉ cho biết THỜI ĐIỂM tin cuối, muốn lấy nội dung
-   * thì phải join ngược lại bảng — và join ngược theo `created_at` sẽ trả HAI
-   * dòng nếu hai tin cùng một mốc micro-giây. `ROW_NUMBER` xếp hạng rồi lấy
-   * hạng 1, nên luôn đúng một dòng mỗi hội thoại.
+   * Bản trước dùng `ROW_NUMBER() OVER (PARTITION BY conversation_id)`: đúng,
+   * nhưng nó xếp hạng MỌI tin của cả 20 hội thoại rồi trả TẤT CẢ về Node (kèm
+   * `content` TEXT) để Node vứt hết trừ hạng 1. Đo 28/10 trên một hội thoại
+   * 2000 tin: câu đó trả 2004 dòng để giữ 3 (`chat-tin-cuoi-nhieu-tin.spec.ts`).
+   * Hai người nhắn nhau một năm là vài nghìn tin; 20 hội thoại như thế là vài
+   * chục nghìn dòng TEXT trên heap 384MB của một bản api, cho một lần mở tab.
    *
-   * Chốt thứ tự bằng cả `id` chứ không chỉ `created_at`: hai tin cùng thời
-   * điểm thì `id` lớn hơn là tin sau. Thiếu vế này thì kết quả đổi giữa các lần
-   * chạy — loại lỗi chỉ lộ ra khi tin nhắn đến dồn dập.
+   * Nay ba tầng, tầng nào cũng chỉ chạm vài mục index:
+   *   1. `x`: MAX(created_at) theo hội thoại. Trên idx_conversation_created
+   *      (conversation_id, created_at) MySQL đọc kiểu "skip scan for
+   *      grouping": MỘT mục index mỗi hội thoại, bất kể hội thoại dài bao nhiêu.
+   *   2. `y`: trong các tin đúng mốc đó, lấy MAX(id). Chính là vế chốt thứ tự
+   *      `created_at DESC, id DESC` của bản cũ: hai tin cùng mốc thì id lớn hơn
+   *      là tin sau, và join ngược theo mốc giờ không bao giờ trả HAI dòng.
+   *   3. Nạp đúng dòng đó theo khoá chính.
+   *
+   * VÌ SAO KHÔNG DÙNG `JOIN LATERAL (... ORDER BY created_at DESC, id DESC
+   * LIMIT 1)` hay subquery tương quan cùng kiểu. Đã thử trên MySQL 8.4 (bản
+   * production dùng `mysql:8`): đứng một mình thì nó đọc index ngược và dừng
+   * ở dòng đầu, nhưng khi `conversation_id` đến từ bảng ngoài thì optimizer
+   * chuyển sang "Sort ... limit input to 1 row(s) per chunk", tức đọc HẾT mục
+   * index của hội thoại rồi mới sắp xếp. Lại thành O(số tin), chỉ là trong
+   * MySQL thay vì trong Node.
+   *
+   * KHÔNG lấy thẳng MAX(id): tin chèn sau mà mang mốc giờ sớm hơn (nhập dữ
+   * liệu, đồng bộ lệch giờ) sẽ bị chọn nhầm. Bài kiểm có đúng ca đó.
    */
   private async tinNhanCuoiTheoLo(
     ids: number[],
@@ -241,25 +259,26 @@ export class ChatService {
     const m = new Map<number, Message>();
     if (!ids.length) return m;
 
-    const rows = await this.messageRepository
-      .createQueryBuilder('m')
-      .select([
-        'm.id AS id',
-        'm.conversation_id AS conversation_id',
-        'm.sender_id AS sender_id',
-        'm.content AS content',
-        'm.is_read AS is_read',
-        'm.created_at AS created_at',
-      ])
-      .addSelect(
-        'ROW_NUMBER() OVER (PARTITION BY m.conversation_id ORDER BY m.created_at DESC, m.id DESC)',
-        'rn',
-      )
-      .where('m.conversation_id IN (:...ids)', { ids })
-      .getRawMany<Record<string, unknown>>();
+    const rows = await this.messageRepository.query<
+      Array<Record<string, unknown>>
+    >(
+      `SELECT m.id, m.conversation_id, m.sender_id, m.content, m.is_read,
+              m.created_at
+         FROM messages m
+         JOIN (SELECT m1.conversation_id, MAX(m1.id) AS id
+                 FROM messages m1
+                 JOIN (SELECT conversation_id, MAX(created_at) AS t
+                         FROM messages
+                        WHERE conversation_id IN (?)
+                        GROUP BY conversation_id) x
+                   ON m1.conversation_id = x.conversation_id
+                  AND m1.created_at = x.t
+                GROUP BY m1.conversation_id) y
+           ON m.id = y.id`,
+      [ids],
+    );
 
     for (const r of rows) {
-      if (Number(r.rn) !== 1) continue;
       m.set(Number(r.conversation_id), r as unknown as Message);
     }
     return m;
@@ -460,16 +479,27 @@ export class ChatService {
    * trong SQL. Không dòng nào của bảng hội thoại đi qua Node.
    */
   async getUnreadCount(user: IUser) {
-    const count = await this.messageRepository
+    // COUNT(*) tự viết chứ không `getCount()`: `getCount()` của TypeORM sinh
+    // COUNT(DISTINCT m.id), bắt MySQL dựng bảng tạm băm MỌI id tin chưa đọc chỉ
+    // để khử trùng lặp không thể có (mỗi tin thuộc đúng một hội thoại, join
+    // sang conversations là n-1). Với người có vài nghìn tin chưa đọc, đó là
+    // vài nghìn mục băm cho mỗi lần app vẽ chấm đỏ.
+    //
+    // Phần việc còn lại tỉ lệ với số tin trong các hội thoại của user (lọc
+    // is_read/sender_id trên dòng). Index (conversation_id, is_read, sender_id)
+    // cho messages do nhánh index riêng thêm; câu này giữ đúng hình dạng để
+    // dùng được nó mà không cần sửa lại.
+    const row = await this.messageRepository
       .createQueryBuilder('m')
+      .select('COUNT(*)', 'so')
       .innerJoin('conversations', 'c', 'c.id = m.conversation_id')
       .where('(c.buyer_id = :userId OR c.seller_id = :userId)', {
         userId: user.id,
       })
       .andWhere('m.is_read = 0')
       .andWhere('m.sender_id <> :userId', { userId: user.id })
-      .getCount();
+      .getRawOne<{ so: string | number }>();
 
-    return { unread_count: count };
+    return { unread_count: Number(row?.so ?? 0) };
   }
 }
