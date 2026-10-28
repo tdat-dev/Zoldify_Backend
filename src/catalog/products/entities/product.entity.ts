@@ -39,10 +39,23 @@ export enum ProductStatus {
 @Index('idx_status_price', ['status', 'price'])
 @Index('idx_status_sold', ['status', 'sold_count'])
 @Index('idx_status_view', ['status', 'view_count'])
-// Danh sách theo danh mục, kiểu sắp mặc định. idx_category_id VẪN giữ dù là
-// tiền tố trái của cái này: xem chú thích cuối danh sách XOA trong migration
-// 1788500000000 (synchronize lúc test xoá trước tạo sau, khoá ngoại chặn).
-@Index('idx_category_status_created', ['category', 'status', 'created_at'])
+// Danh sách theo danh mục, kiểu sắp mặc định, VÀ product_count của
+// GET /categories. idx_category_id VẪN giữ dù là tiền tố trái của cái này: xem
+// chú thích cuối danh sách XOA trong migration 1788500000000 (synchronize lúc
+// test xoá trước tạo sau, khoá ngoại chặn).
+//
+// `deleted_at` đứng trước `created_at` (migration 1788600000000): TypeORM thêm
+// `deleted_at IS NULL` vào mọi câu, thiếu cột này thì đếm sản phẩm theo danh
+// mục phải về bảng đọc từng dòng, 15.136 ms trên 941k hàng đang bán.
+@Index('idx_category_status_deleted_created', [
+  'category',
+  'status',
+  'deleted_at',
+  'created_at',
+])
+// COUNT(*) WHERE deleted_at IS NULL của thống kê admin: đọc trong index này
+// thay vì quét cả bảng (2.052 ms trên 1 triệu dòng). Migration 1788600000000.
+@Index('idx_deleted_at', ['deleted_at'])
 @Index('idx_created_at', ['created_at'])
 @Index('idx_price', ['price'])
 // Phủ cả WHERE (seller, status) LẪN ORDER BY created_at của gian hàng người

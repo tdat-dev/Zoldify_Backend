@@ -282,9 +282,10 @@ export class AdminService {
         // `orders.getStats` đã sửa theo hướng này ở BUG-21; để hai bảng điều
         // khiển tính khác nhau là hai con số "doanh thu" cùng tồn tại.
         //
-        // Thứ tự điều kiện khớp với index `idx_paid_status_amount`
-        // (is_paid, status, final_amount) — có `final_amount` ở cuối nên MySQL
-        // đọc xong ngay trong index. Đo trên 1.000 đơn:
+        // Thứ tự điều kiện khớp với index `idx_paid_status_deleted_amount`
+        // (is_paid, status, deleted_at, final_amount): TypeORM tự thêm
+        // `deleted_at IS NULL`, có `final_amount` ở cuối nên MySQL đọc xong
+        // ngay trong index. Đo trên 1.000 đơn (bản index chưa có deleted_at):
         //   trước: type=ALL key=NULL              rows=1000
         //   sau:   type=ref key=idx_paid_status_amount rows=681  Using index
         this.orderRepository

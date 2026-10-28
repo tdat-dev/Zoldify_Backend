@@ -32,9 +32,18 @@ export enum OrderStatus {
 @Index('idx_status_created', ['status', 'created_at'])
 // Index PHỦ cho hai câu cộng doanh thu của bảng điều khiển (admin.getStats và
 // orders.getStats). Có `final_amount` ở cuối để MySQL đọc xong ngay trong
-// index, khỏi lần về bảng. Đo: type=ALL rows=1000 -> type=ref rows=681,
-// "Using index". Migration 1788000000000.
-@Index('idx_paid_status_amount', ['is_paid', 'status', 'final_amount'])
+// index, khỏi lần về bảng. Migration 1788000000000 dựng (is_paid, status,
+// final_amount); migration 1788600000000 chèn `deleted_at` vào: TypeORM thêm
+// `deleted_at IS NULL` nên bản cũ vẫn về bảng từng dòng, 9.618 ms cho 722.526
+// đơn đã trả trên 1 triệu đơn, quá trần max_execution_time 5 s.
+@Index('idx_paid_status_deleted_amount', [
+  'is_paid',
+  'status',
+  'deleted_at',
+  'final_amount',
+])
+// COUNT(*) WHERE deleted_at IS NULL của thống kê. Migration 1788600000000.
+@Index('idx_deleted_at', ['deleted_at'])
 // Header Idempotency-Key của POST /orders, duy nhất THEO NGƯỜI DÙNG.
 // Migration 1788200000000 giải thích vì sao là cột riêng.
 @Index('uq_order_user_client_key', ['user', 'client_idempotency_key'], {

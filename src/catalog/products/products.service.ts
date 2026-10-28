@@ -620,7 +620,7 @@ export class ProductsService {
    * CÁCH LÀM. Khớp ĐẦU TỪ: `name LIKE 'áo%' OR name LIKE '% áo%'`, và chỉ
    * trong `cuaSoTuNgan` món đang bán mới nhất. Cửa sổ là một MỐC created_at:
    * created_at của món thứ K tính từ mới nhất, đọc ngược K mục của
-   * `idx_status_created` (status, created_at), hoặc `idx_category_status_created`
+   * `idx_status_created` (status, created_at), hoặc `idx_category_status_deleted_created`
    * khi có danh mục, không đụng dòng. Câu chính thêm `created_at >= mốc`: một
    * khoảng của cùng index đó, không lớn dần theo bảng.
    *

@@ -22,6 +22,9 @@ export enum UserRole {
 @Index('idx_role', ['role'])
 // Danh sách người dùng của admin, mới đăng ký trước. Migration 1788500000000.
 @Index('idx_created_at', ['created_at'])
+// COUNT(*) WHERE deleted_at IS NULL của thống kê admin và tổng của danh sách
+// người dùng: 1.053 ms quét cả bảng trên 1 triệu dòng. Migration 1788600000000.
+@Index('idx_deleted_at', ['deleted_at'])
 @Entity('users') // Tên bảng trong MySQL
 export class User {
   // Định danh tự tăng - INT PK
