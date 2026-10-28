@@ -618,20 +618,25 @@ export class ProductsService {
    * `tim-kiem-tu-ngan.spec.ts`).
    *
    * CÁCH LÀM. Khớp ĐẦU TỪ: `name LIKE 'áo%' OR name LIKE '% áo%'`, và chỉ
-   * trong `cuaSoTuNgan` món đang bán mới nhất. Cửa sổ là một MỐC id: id của
-   * món thứ K tính từ mới nhất (`idx_status` của InnoDB ngầm sắp theo
-   * (status, id) nên đọc ngược K mục index là ra, không đụng dòng). Câu chính
-   * thêm `id >= mốc`: một khoảng khoá chính, không lớn dần theo bảng.
+   * trong `cuaSoTuNgan` món đang bán mới nhất. Cửa sổ là một MỐC created_at:
+   * created_at của món thứ K tính từ mới nhất, đọc ngược K mục của
+   * `idx_status_created` (status, created_at), hoặc `idx_category_status_created`
+   * khi có danh mục, không đụng dòng. Câu chính thêm `created_at >= mốc`: một
+   * khoảng của cùng index đó, không lớn dần theo bảng.
    *
-   * LƯU Ý KHI GỘP: nhánh index (rà soát 28/10) bỏ `idx_status` để thay bằng
-   * (status, created_at). Khi đó câu mốc đọc ngược khoá chính và lọc
-   * `status`: vẫn có trần, cỡ K / tỉ lệ hàng đang bán dòng (đa số là hàng đang
-   * bán nên gần K). Đo lại bằng EXPLAIN sau khi gộp.
+   * VÌ SAO MỐC LÀ created_at CHỨ KHÔNG PHẢI id (bản đầu dùng id). Mốc id cần
+   * `idx_status` (InnoDB ngầm sắp (status, id)) để đọc ngược; nhánh index của
+   * rà soát 28/10 bỏ index đó. Sau khi gộp, đo trên 1.001.015 sản phẩm
+   * (zoldify_1mall): `WHERE status = 'active' ORDER BY id DESC LIMIT 1 OFFSET
+   * 19999` đi `idx_status_sold`, đọc 941.015 mục rồi Sort cả tập: 2.641 ms mỗi
+   * lần trượt cache. Mốc created_at đọc ngược đúng 20.000 mục: 45 ms (có danh
+   * mục: 80 ms). Mốc lấy dạng chuỗi đủ micro-giây (DATE_FORMAT %f): ép qua
+   * `Date` của JS là cắt còn mili-giây, mốc lùi xuống và cửa sổ lọt thêm món.
    *
    * Đo trên 256k sản phẩm (zoldify_1mc, 28/10), câu "áo":
    *   cũ  LIKE '%áo%' + COUNT(DISTINCT)            3.352 ms (COUNT quét cả bảng)
    *   bảng con JOIN (SELECT id ... LIMIT 20000)     446 + 413 ms (dựng bảng tạm)
-   *   mốc id (bản này)              mốc 50 + dòng 6 + đếm 140 ms
+   *   mốc id (bản đầu)              mốc 50 + dòng 6 + đếm 140 ms
    *
    * ĐÁNH ĐỔI, NÓI RÕ. Món cũ hơn cửa sổ không hiện ra với câu chỉ gồm từ
    * ngắn. Người tìm "áo" trên sàn một triệu món vẫn thấy hàng nghìn món áo mới
@@ -648,20 +653,20 @@ export class ProductsService {
     // chính, nên cửa sổ là "K món đang bán mới nhất (của danh mục)", lọc tiếp.
     const moc = this.productRepository
       .createQueryBuilder('p2')
-      .select('p2.id', 'id')
+      .select("DATE_FORMAT(p2.created_at, '%Y-%m-%d %H:%i:%s.%f')", 'moc')
       .where('p2.status = :st', { st: ProductStatus.ACTIVE })
       .withDeleted();
     if (qs.category_id) {
       moc.andWhere('p2.category_id = :dm', { dm: Number(qs.category_id) });
     }
     const dong = await moc
-      .orderBy('p2.id', 'DESC')
+      .orderBy('p2.created_at', 'DESC')
       .offset(GIOI_HAN_TIM_KIEM.cuaSoTuNgan - 1)
       .limit(1)
-      .getRawOne<{ id: number }>();
+      .getRawOne<{ moc: string }>();
     // Chưa tới K món thì không cần mốc: cả tập đã nhỏ hơn cửa sổ.
-    if (dong) {
-      qb.andWhere('product.id >= :mocTuNgan', { mocTuNgan: Number(dong.id) });
+    if (dong?.moc) {
+      qb.andWhere('product.created_at >= :mocTuNgan', { mocTuNgan: dong.moc });
     }
     tu.forEach((w, i) => {
       qb.andWhere(

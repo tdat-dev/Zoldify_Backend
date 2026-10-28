@@ -165,11 +165,13 @@ describe('Tìm kiếm từ ngắn có trần, không quét cả bảng', () => {
       .filter((x) => typeof x === 'string');
     expect(mau.filter((x) => /^%[^ %]/.test(String(x)))).toEqual([]);
     // Câu có LIKE phải có trần: hoặc đi qua bảng con có LIMIT, hoặc bị chặn
-    // bằng mốc id của cửa sổ (`id >= ?`).
+    // bằng mốc của cửa sổ (`created_at >= ?`; bản đầu là `id >= ?`).
     const coLike = sql.cau.filter((x) => /\bLIKE\b/i.test(x.q));
     expect(coLike.length).toBeGreaterThan(0);
     for (const c of coLike) {
-      expect(c.q).toMatch(/JOIN\s*\(\s*SELECT[\s\S]*LIMIT|`id`\s*>=\s*\?/i);
+      expect(c.q).toMatch(
+        /JOIN\s*\(\s*SELECT[\s\S]*LIMIT|`(id|created_at)`\s*>=\s*\?/i,
+      );
     }
   });
 
