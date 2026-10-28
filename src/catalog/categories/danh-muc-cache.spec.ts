@@ -2,7 +2,6 @@ import { DataSource, Logger as TypeOrmLogger } from 'typeorm';
 import { createCache } from 'cache-manager';
 import { CategoriesService } from './categories.service';
 import { Category } from './entities/category.entity';
-import type { TranslationService } from './translation.service';
 import {
   Product,
   ProductStatus,
@@ -62,11 +61,11 @@ describe('Danh sách danh mục có cache', () => {
   // Tham số thứ ba là cache; ép kiểu để bài biên dịch được cả trước khi
   // service nhận nó (đỏ vì hành vi, không vì TypeScript).
   const dung = () =>
-    new (
-      CategoriesService as unknown as new (...a: unknown[]) => CategoriesService
-    )(
+    new (CategoriesService as unknown as new (
+      ...a: unknown[]
+    ) => CategoriesService)(
       ds.getRepository(Category),
-      { viToEn: () => Promise.resolve(null) } as unknown as TranslationService,
+      { viToEn: () => Promise.resolve(null) },
       createCache({ ttl: 60_000 }),
     );
 

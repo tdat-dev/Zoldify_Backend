@@ -143,10 +143,10 @@ describe('Tìm kiếm từ ngắn có trần, không quét cả bảng', () => {
     if (g) g.cuaSoTuNgan = 4;
     let kq: Ket;
     try {
-      kq = (await moi().findAll('1', '10', {
+      kq = await moi().findAll('1', '10', {
         q: 'áo',
         category_id: String(catId),
-      })) as Ket;
+      });
     } finally {
       if (g && cu !== undefined) g.cuaSoTuNgan = cu;
     }
@@ -163,7 +163,7 @@ describe('Tìm kiếm từ ngắn có trần, không quét cả bảng', () => {
     const mau = sql.cau
       .flatMap((c) => c.p)
       .filter((x) => typeof x === 'string');
-    expect(mau.filter((x) => /^%[^ %]/.test(x as string))).toEqual([]);
+    expect(mau.filter((x) => /^%[^ %]/.test(String(x)))).toEqual([]);
     // Câu có LIKE phải có trần: hoặc đi qua bảng con có LIMIT, hoặc bị chặn
     // bằng mốc id của cửa sổ (`id >= ?`).
     const coLike = sql.cau.filter((x) => /\bLIKE\b/i.test(x.q));

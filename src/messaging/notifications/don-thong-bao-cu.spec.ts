@@ -63,12 +63,12 @@ describe('Dọn thông báo cũ theo lô', () => {
     return rows.map((r) => Number(r.id));
   }
 
-  const don = (o?: TuyChon) => {
-    const f = (svc as unknown as CoDon).donThongBaoCu;
-    if (typeof f !== 'function') {
+  const don = (o?: TuyChon): Promise<KetQuaDon> => {
+    const coDon = svc as unknown as CoDon;
+    if (typeof coDon.donThongBaoCu !== 'function') {
       throw new Error('NotificationsService chưa có donThongBaoCu');
     }
-    return f.call(svc, o);
+    return coDon.donThongBaoCu(o);
   };
 
   beforeAll(async () => {

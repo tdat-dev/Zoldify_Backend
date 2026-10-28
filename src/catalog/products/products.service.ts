@@ -85,6 +85,17 @@ const FT_TU_TOI_THIEU = 3;
  */
 export const GIOI_HAN_TIM_KIEM = { cuaSoTuNgan: 20_000 };
 
+/** Tham số lọc của `GET /products` (chuỗi thô từ query string). */
+interface BoLocSanPham {
+  q?: string;
+  category_id?: string;
+  seller_id?: string;
+  price_min?: string;
+  price_max?: string;
+  condition?: string;
+  sort?: string;
+}
+
 /** Trạng thái ai cũng xem được chi tiết (xem `findOne`). */
 export const SAN_PHAM_CONG_KHAI: ProductStatus[] = [
   ProductStatus.ACTIVE,
@@ -523,22 +534,23 @@ export class ProductsService {
     // hưởng kết quả (pre-mortem C2: thiếu 1 tham số = trả nhầm trang cho request
     // khác). Endpoint @Public() không phụ thuộc user nên không rò dữ liệu cá nhân.
     const doi = await this.doiDanhSach();
+    const loc = qs as BoLocSanPham;
     const boLoc = {
-      q: qs.q || '',
-      cat: qs.category_id || '',
-      seller: qs.seller_id || '',
-      pmin: String(qs.price_min ?? ''),
-      pmax: String(qs.price_max ?? ''),
+      q: loc.q || '',
+      cat: loc.category_id || '',
+      seller: loc.seller_id || '',
+      pmin: String(loc.price_min ?? ''),
+      pmax: String(loc.price_max ?? ''),
       // Lọc tình trạng đến từ nhánh prod, gộp vào sau khi cache đã có. Thiếu
       // dòng này thì ?condition=new nhận nhầm danh sách chưa lọc từ cache.
-      cond: String(qs.condition ?? ''),
+      cond: String(loc.condition ?? ''),
     };
     const cacheKey =
       `products:list:g${doi}:` +
       JSON.stringify({
         page: numPage,
         size: numLimit,
-        sort: qs.sort || '',
+        sort: loc.sort || '',
         ...boLoc,
       });
     // Khoá tổng KHÔNG có trang, cỡ trang, sắp xếp: không cái nào đổi tổng.
@@ -629,7 +641,7 @@ export class ProductsService {
   private async timTuNgan(
     qb: SelectQueryBuilder<Product>,
     tu: string[],
-    qs: any,
+    qs: BoLocSanPham,
   ): Promise<void> {
     // Mốc chỉ lọc trạng thái (và danh mục nếu có), những cột nằm trong index:
     // thêm tình trạng/giá là phải đọc từng dòng. Hai bộ lọc đó vẫn áp ở câu
@@ -719,7 +731,7 @@ export class ProductsService {
           { q: safeQ },
         );
       } else if (tu.length) {
-        await this.timTuNgan(qb, tu, qs);
+        await this.timTuNgan(qb, tu, qs as BoLocSanPham);
       } else {
         // Chỉ toàn ký tự đặc biệt ("%%", "+-"): không có gì để tìm.
         qb.where('1 = 0');

@@ -12,8 +12,8 @@ import { VAI_TRO_DAT_DUOC } from './dto/change-role.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { Product } from '@catalog/products/entities/product.entity';
-import { ILike, Repository } from 'typeorm';
-import { User } from '@identity/users/entities/user.entity';
+import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
 import {
   Withdrawal,
@@ -53,10 +53,12 @@ export class AdminService {
     role?: string,
     is_locked?: string,
   ) {
-    const where: any = {};
+    const where: FindOptionsWhere<User> = {};
     if (q) where.full_name = ILike(`%${q}%`);
-    if (role) where.role = role;
-    if (is_locked !== undefined) where.is_locked = is_locked === 'true' ? 1 : 0;
+    if (role) where.role = role as UserRole;
+    // Cột boolean: TypeORM ghi true/false thành 1/0 cho MySQL, y như bản cũ
+    // tự viết 1/0.
+    if (is_locked !== undefined) where.is_locked = is_locked === 'true';
 
     // Trang admin cũng là một danh sách: `?limit=1000000` nạp cả bảng users,
     // `?page=-5` ra skip âm và 500. Khuôn chung (rà soát 26/10 mục 3).

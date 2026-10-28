@@ -9,7 +9,7 @@ import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Review } from './entities/review.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
@@ -230,7 +230,9 @@ export class InteractionsService {
 
     // `mine`: đánh giá của chính người gọi. App cần biết món nào trong đơn đã
     // được đánh giá; trước đây nó tự nhớ trên máy (mất khi đổi máy, lỗi H-01).
-    const where: any = mine ? { user: { id: user.id } } : {};
+    const where: FindOptionsWhere<Review> = mine
+      ? { user: { id: user.id } }
+      : {};
 
     const { rows: result, ...tong } = await trangCoTran({
       offset,
