@@ -47,7 +47,9 @@ describe('tuyChonTruyVanCham', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     const dong = String(warn.mock.calls[0][0]);
     expect(dong).toContain('1234ms');
-    expect(dong).toContain('UPDATE `users` SET `refresh_token` = ? WHERE `id` = ?');
+    expect(dong).toContain(
+      'UPDATE `users` SET `refresh_token` = ? WHERE `id` = ?',
+    );
     expect(dong).not.toContain('bi-mat-khong-duoc-in');
   });
 
@@ -56,7 +58,10 @@ describe('tuyChonTruyVanCham', () => {
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
     const { logger } = tuyChonTruyVanCham();
-    logger.logQuerySlow(2000, 'SELECT 1 FROM t WHERE id IN (' + '1,'.repeat(5000) + '1)');
+    logger.logQuerySlow(
+      2000,
+      'SELECT 1 FROM t WHERE id IN (' + '1,'.repeat(5000) + '1)',
+    );
     expect(String(warn.mock.calls[0][0]).length).toBeLessThan(700);
   });
 });

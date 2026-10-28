@@ -165,13 +165,13 @@ async function coIndexKhacPhu(
   cols: string[],
   tru: string,
 ): Promise<boolean> {
-  const rows: Array<{ INDEX_NAME: string; cols: string }> = await q.query(
+  const rows = (await q.query(
     `SELECT INDEX_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS cols
        FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME <> ?
       GROUP BY INDEX_NAME`,
     [table, tru],
-  );
+  )) as Array<{ INDEX_NAME: string; cols: string }>;
   const can = cols.join(',');
   return rows.some((r) => r.cols === can || r.cols.startsWith(can + ','));
 }
@@ -181,12 +181,12 @@ async function dangCo(
   table: string,
   name: string,
 ): Promise<boolean> {
-  const rows: unknown[] = await q.query(
+  const rows = (await q.query(
     `SELECT 1 FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
       LIMIT 1`,
     [table, name],
-  );
+  )) as unknown[];
   return rows.length > 0;
 }
 
@@ -208,9 +208,9 @@ async function voiHanChoKhoa(
   q: QueryRunner,
   viec: () => Promise<void>,
 ): Promise<void> {
-  const [{ cu }]: Array<{ cu: number }> = await q.query(
+  const [{ cu }] = (await q.query(
     'SELECT @@SESSION.lock_wait_timeout AS cu',
-  );
+  )) as Array<{ cu: number }>;
   await q.query('SET SESSION lock_wait_timeout = 10');
   try {
     await viec();
