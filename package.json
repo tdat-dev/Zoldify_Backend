@@ -40,6 +40,7 @@
     "diagrams:check": "node scripts/export-diagrams.mjs --check",
     "drawio:check": "node scripts/check-drawio.mjs",
     "drawio:shoot": "node scripts/shoot-drawio.mjs",
+    "anh:bu-thumb": "node -r ts-node/register -r tsconfig-paths/register scripts/tao-anh-nho.ts",
     "categories:relink": "node -r ts-node/register -r tsconfig-paths/register scripts/relink-category-images.ts",
     "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-catalog.ts",
     "seed:orders": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-orders.ts",
