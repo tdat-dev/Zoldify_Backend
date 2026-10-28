@@ -33,10 +33,14 @@ export interface TongCoTran {
 export async function demCoTran<T extends ObjectLiteral>(
   qb: SelectQueryBuilder<T>,
   tran: number = MAX_PAGINATION_DEPTH,
+  // Đếm theo cột khác id của bảng chính, kèm DISTINCT: vd đơn của người bán
+  // đi từ `order_items` (nhiều món một đơn) nhưng cần đếm số ĐƠN.
+  theo?: { cot: string },
 ): Promise<TongCoTran> {
   const con = qb
     .clone()
-    .select(`${qb.alias}.id`, 'id')
+    .select(theo?.cot ?? `${qb.alias}.id`, 'id')
+    .distinct(Boolean(theo))
     .orderBy()
     .skip(undefined)
     .take(undefined)

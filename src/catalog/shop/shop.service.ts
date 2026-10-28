@@ -225,21 +225,33 @@ export class ShopService {
       return qb;
     };
 
-    const dem = await locDon()
-      .select('COUNT(DISTINCT o.id)', 'n')
-      .getRawOne<{ n: string }>();
-    const total = Number(dem?.n ?? 0);
-
+    // Trần độ sâu và đếm có trần như mọi danh sách khác (rà soát 28/10 mục
+    // 6): người bán lớn có hàng trăm nghìn dòng hàng, `COUNT(DISTINCT)` không
+    // trần và `?page=9000` đều bắt MySQL gom hết rồi mới trả 20 đơn.
+    //
+    // KHÔNG đi qua `order_shipments.seller_id` dù bảng đó có index và một
+    // dòng mỗi (đơn, người bán): dòng vận đơn chỉ được tạo lúc người bán bấm
+    // giao, nên đơn `pending`/`confirmed` chưa có dòng nào và sẽ biến mất
+    // khỏi màn của người bán (đo bằng `don-nguoi-ban-doi-chieu.spec.ts`).
+    // Muốn nhanh hơn nữa cần một cột/bảng (đơn, người bán) ghi lúc ĐẶT hàng.
+    //
     // Mới nhất trước theo id đơn (id tăng dần theo thời gian tạo), thay cho
     // `id DESC` của dòng hàng bản cũ: cùng thứ tự với người dùng nhìn thấy.
-    const idRows = await locDon()
-      .select('o.id', 'id')
-      .groupBy('o.id')
-      .orderBy('o.id', 'DESC')
-      .offset(offset)
-      .limit(limit)
-      .getRawMany<{ id: number }>();
-    const pageIds = idRows.map((r) => Number(r.id));
+    const { rows: pageIds, ...tong } = await trangCoTran({
+      offset,
+      size: limit,
+      layDong: async (take) => {
+        const idRows = await locDon()
+          .select('o.id', 'id')
+          .groupBy('o.id')
+          .orderBy('o.id', 'DESC')
+          .offset(offset)
+          .limit(take)
+          .getRawMany<{ id: number }>();
+        return idRows.map((r) => Number(r.id));
+      },
+      dem: () => demCoTran(locDon(), undefined, { cot: 'o.id' }),
+    });
 
     // Chỉ món của CHÍNH người bán này: đơn nhiều người bán thì món của người
     // khác không thuộc về màn này (cùng luật với OrdersService.findOne).
@@ -278,14 +290,6 @@ export class ShopService {
 
     const result = Array.from(orderMap.values());
 
-    return {
-      meta: {
-        current: page,
-        pageSize: limit,
-        pages: Math.ceil(total / limit),
-        total,
-      },
-      result,
-    };
+    return { meta: metaCoTran(page, limit, tong), result };
   }
 }
