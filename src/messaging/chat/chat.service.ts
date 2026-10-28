@@ -479,16 +479,27 @@ export class ChatService {
    * trong SQL. Không dòng nào của bảng hội thoại đi qua Node.
    */
   async getUnreadCount(user: IUser) {
-    const count = await this.messageRepository
+    // COUNT(*) tự viết chứ không `getCount()`: `getCount()` của TypeORM sinh
+    // COUNT(DISTINCT m.id), bắt MySQL dựng bảng tạm băm MỌI id tin chưa đọc chỉ
+    // để khử trùng lặp không thể có (mỗi tin thuộc đúng một hội thoại, join
+    // sang conversations là n-1). Với người có vài nghìn tin chưa đọc, đó là
+    // vài nghìn mục băm cho mỗi lần app vẽ chấm đỏ.
+    //
+    // Phần việc còn lại tỉ lệ với số tin trong các hội thoại của user (lọc
+    // is_read/sender_id trên dòng). Index (conversation_id, is_read, sender_id)
+    // cho messages do nhánh index riêng thêm; câu này giữ đúng hình dạng để
+    // dùng được nó mà không cần sửa lại.
+    const row = await this.messageRepository
       .createQueryBuilder('m')
+      .select('COUNT(*)', 'so')
       .innerJoin('conversations', 'c', 'c.id = m.conversation_id')
       .where('(c.buyer_id = :userId OR c.seller_id = :userId)', {
         userId: user.id,
       })
       .andWhere('m.is_read = 0')
       .andWhere('m.sender_id <> :userId', { userId: user.id })
-      .getCount();
+      .getRawOne<{ so: string | number }>();
 
-    return { unread_count: count };
+    return { unread_count: Number(row?.so ?? 0) };
   }
 }
