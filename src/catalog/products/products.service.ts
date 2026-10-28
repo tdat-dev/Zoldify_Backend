@@ -70,6 +70,21 @@ const PRODUCT_LIST_GEN_TTL = 24 * 60 * 60_000; // 24h
 /** Nhớ "đời" bao lâu trong tiến trình trước khi hỏi lại cache. Xem `doiDanhSach`. */
 const DOI_NHO_MS = 1_000;
 
+/**
+ * Độ dài từ nhỏ nhất FULLTEXT index được: `innodb_ft_min_token_size`, mặc
+ * định 3 (đo trên MySQL 8.4 của môi trường test; compose không đổi nó). Câu
+ * không có từ nào dài tới mức này thì đi `timTuNgan`.
+ */
+const FT_TU_TOI_THIEU = 3;
+
+/**
+ * Trần của tìm kiếm từ ngắn: chỉ quét bấy nhiêu món mới nhất (xem
+ * `timTuNgan`). 20.000 dòng index + đọc tên là cỡ chục mili-giây; một triệu
+ * dòng LIKE '%x%' là cỡ giây. Để là đối tượng (không phải hằng) cho bài kiểm
+ * thu nhỏ cửa sổ mà không phải chèn hai vạn dòng.
+ */
+export const GIOI_HAN_TIM_KIEM = { cuaSoTuNgan: 20_000 };
+
 /** Trạng thái ai cũng xem được chi tiết (xem `findOne`). */
 export const SAN_PHAM_CONG_KHAI: ProductStatus[] = [
   ProductStatus.ACTIVE,
@@ -571,6 +586,73 @@ export class ProductsService {
     };
   }
 
+  /**
+   * Tìm câu CHỈ GỒM TỪ NGẮN ("áo", "tủ", "xe", "tv"): khớp ĐẦU TỪ trong tên,
+   * và chỉ trong `cuaSoTuNgan` món mới nhất khớp bộ lọc.
+   *
+   * VÌ SAO KHÔNG DÙNG FULLTEXT. `innodb_ft_min_token_size` = 3 (mặc định, đo
+   * trên MySQL 8.4 của môi trường test): từ hai chữ cái KHÔNG có trong index,
+   * nên `MATCH ... AGAINST ('áo*')` không ra gì. Đổi sang parser ngram là đổi
+   * lược đồ (dựng lại index), ngoài phạm vi bản vá này.
+   *
+   * VÌ SAO KHÔNG CHẶN CÂU NGẮN. Tiếng Việt có rất nhiều từ hai chữ cái có
+   * nghĩa và hay được tìm nhất: áo, tủ, xe, tv, ổ, ví.
+   *
+   * VÌ SAO KHÔNG `LIKE '%áo%'` NHƯ CŨ. Đại diện ở đầu nên không index nào
+   * dùng được: một triệu dòng là một triệu lần so chuỗi mỗi request, cộng
+   * thêm COUNT cả tập khớp. Lại còn sai: collation `utf8mb4_0900_ai_ci` bỏ
+   * dấu, nên "%áo%" khớp cả "Giày thể THAO" và "BẢO hiểm" (đo bằng
+   * `tim-kiem-tu-ngan.spec.ts`).
+   *
+   * CÁCH LÀM. Khớp ĐẦU TỪ: `name LIKE 'áo%' OR name LIKE '% áo%'`, và chỉ
+   * trong `cuaSoTuNgan` món đang bán mới nhất. Cửa sổ là một MỐC id: id của
+   * món thứ K tính từ mới nhất (`idx_status` của InnoDB ngầm sắp theo
+   * (status, id) nên đọc ngược K mục index là ra, không đụng dòng). Câu chính
+   * thêm `id >= mốc`: một khoảng khoá chính, không lớn dần theo bảng.
+   *
+   * Đo trên 256k sản phẩm (zoldify_1mc, 28/10), câu "áo":
+   *   cũ  LIKE '%áo%' + COUNT(DISTINCT)            3.352 ms (COUNT quét cả bảng)
+   *   bảng con JOIN (SELECT id ... LIMIT 20000)     446 + 413 ms (dựng bảng tạm)
+   *   mốc id (bản này)              mốc 50 + dòng 6 + đếm 140 ms
+   *
+   * ĐÁNH ĐỔI, NÓI RÕ. Món cũ hơn cửa sổ không hiện ra với câu chỉ gồm từ
+   * ngắn. Người tìm "áo" trên sàn một triệu món vẫn thấy hàng nghìn món áo mới
+   * nhất; ai cần đúng một món cũ thì gõ thêm một từ dài ("áo khoác") là đi
+   * FULLTEXT trên cả bảng. Gỡ đánh đổi này: index FULLTEXT WITH PARSER ngram.
+   */
+  private async timTuNgan(
+    qb: SelectQueryBuilder<Product>,
+    tu: string[],
+    qs: any,
+  ): Promise<void> {
+    // Mốc chỉ lọc trạng thái (và danh mục nếu có), những cột nằm trong index:
+    // thêm tình trạng/giá là phải đọc từng dòng. Hai bộ lọc đó vẫn áp ở câu
+    // chính, nên cửa sổ là "K món đang bán mới nhất (của danh mục)", lọc tiếp.
+    const moc = this.productRepository
+      .createQueryBuilder('p2')
+      .select('p2.id', 'id')
+      .where('p2.status = :st', { st: ProductStatus.ACTIVE })
+      .withDeleted();
+    if (qs.category_id) {
+      moc.andWhere('p2.category_id = :dm', { dm: Number(qs.category_id) });
+    }
+    const dong = await moc
+      .orderBy('p2.id', 'DESC')
+      .offset(GIOI_HAN_TIM_KIEM.cuaSoTuNgan - 1)
+      .limit(1)
+      .getRawOne<{ id: number }>();
+    // Chưa tới K món thì không cần mốc: cả tập đã nhỏ hơn cửa sổ.
+    if (dong) {
+      qb.andWhere('product.id >= :mocTuNgan', { mocTuNgan: Number(dong.id) });
+    }
+    tu.forEach((w, i) => {
+      qb.andWhere(
+        `(product.name LIKE :dau${i} OR product.name LIKE :giua${i})`,
+        { [`dau${i}`]: `${w}%`, [`giua${i}`]: `% ${w}%` },
+      );
+    });
+  }
+
   // Truy vấn DANH SÁCH thực sự (phần nặng: filter + phân trang + đếm tổng). Tách
   // riêng để findAll bọc cache single-flight quanh đúng phần này.
   private async queryProductList(
@@ -608,24 +690,33 @@ export class ProductsService {
         .createQueryBuilder('product')
         .leftJoinAndSelect('product.category', 'category');
 
-      if (rawQ.length >= 4) {
-        const safeQ = rawQ
-          .replace(/[+\-><()~*"@]/g, ' ')
-          .trim()
-          .split(/\s+/)
-          .filter((w) => w.length >= 2)
+      // Tách từ, bỏ toán tử của BOOLEAN MODE và ký tự đại diện của LIKE.
+      // NFC: "tủ" gõ từ bàn phím tổ hợp (t + u + dấu hỏi rời) dài 4 điểm mã,
+      // dựng sẵn thì 2; không chuẩn hoá thì cùng một từ lúc đi đường này lúc
+      // đi đường kia.
+      const tu = rawQ
+        .normalize('NFC')
+        .replace(/[+\-><()~*"@%_\\]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+      const coTuDai = tu.some((w) => [...w].length >= FT_TU_TOI_THIEU);
+
+      if (coTuDai) {
+        // Có ít nhất một từ FULLTEXT index được: đi index như trước. Từ ngắn
+        // đi kèm vẫn gửi (InnoDB tự bỏ qua), để câu tìm giống hệt bản cũ.
+        const safeQ = tu
+          .filter((w) => [...w].length >= 2)
           .map((w) => `${w}*`)
           .join(' ');
-        if (safeQ) {
-          qb.where(
-            'MATCH(product.name, product.description) AGAINST (:q IN BOOLEAN MODE)',
-            { q: safeQ },
-          );
-        } else {
-          qb.where('product.name LIKE :q', { q: `%${rawQ}%` });
-        }
+        qb.where(
+          'MATCH(product.name, product.description) AGAINST (:q IN BOOLEAN MODE)',
+          { q: safeQ },
+        );
+      } else if (tu.length) {
+        await this.timTuNgan(qb, tu, qs);
       } else {
-        qb.where('product.name LIKE :q', { q: `%${rawQ}%` });
+        // Chỉ toàn ký tự đặc biệt ("%%", "+-"): không có gì để tìm.
+        qb.where('1 = 0');
       }
 
       if (qs.category_id) {

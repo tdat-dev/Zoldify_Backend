@@ -136,10 +136,20 @@ describe('Tìm kiếm từ ngắn có trần, không quét cả bảng', () => {
     await them('Bảo hiểm màn hình');
     sql.cau = [];
 
-    const kq = (await moi().findAll('1', '10', {
-      q: 'áo',
-      category_id: String(catId),
-    })) as Ket;
+    // Cửa sổ đúng 4 món: danh mục có đủ 4 món nên câu chính PHẢI mang mốc
+    // (danh mục ít hơn cửa sổ thì không cần mốc, bài sẽ không đo được gì).
+    const g = gioiHan();
+    const cu = g?.cuaSoTuNgan;
+    if (g) g.cuaSoTuNgan = 4;
+    let kq: Ket;
+    try {
+      kq = (await moi().findAll('1', '10', {
+        q: 'áo',
+        category_id: String(catId),
+      })) as Ket;
+    } finally {
+      if (g && cu !== undefined) g.cuaSoTuNgan = cu;
+    }
 
     expect(kq.result.map((p) => p.name).sort()).toEqual([
       'Combo áo khoác gió',
@@ -154,9 +164,12 @@ describe('Tìm kiếm từ ngắn có trần, không quét cả bảng', () => {
       .flatMap((c) => c.p)
       .filter((x) => typeof x === 'string');
     expect(mau.filter((x) => /^%[^ %]/.test(x as string))).toEqual([]);
-    for (const c of sql.cau.filter((x) => /\bLIKE\b/i.test(x.q))) {
-      // Câu có LIKE phải đi qua bảng con có LIMIT (cửa sổ).
-      expect(c.q).toMatch(/JOIN\s*\(\s*SELECT[\s\S]*LIMIT/i);
+    // Câu có LIKE phải có trần: hoặc đi qua bảng con có LIMIT, hoặc bị chặn
+    // bằng mốc id của cửa sổ (`id >= ?`).
+    const coLike = sql.cau.filter((x) => /\bLIKE\b/i.test(x.q));
+    expect(coLike.length).toBeGreaterThan(0);
+    for (const c of coLike) {
+      expect(c.q).toMatch(/JOIN\s*\(\s*SELECT[\s\S]*LIMIT|`id`\s*>=\s*\?/i);
     }
   });
 
