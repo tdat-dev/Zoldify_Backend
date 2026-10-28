@@ -81,8 +81,10 @@ import { cacheConfig } from './common/cache.config';
         extra: {
           // 5, không phải 50 như api.
           //
-          // Worker chạy MỘT job một lúc (concurrency: 1 trong JobsRunner) và
-          // chỉ mỗi giờ một lần. Nó không cần hồ kết nối bằng api. Mà chỗ này
+          // Worker chạy MỘT job một lúc trên mỗi hàng đợi (concurrency: 1 trong
+          // JobsRunner, hai hàng đợi từ 28/10) và chỉ mỗi giờ một lần. Nhu cầu
+          // đỉnh: 1 (hàng đợi chính) + 4 (chốt vận đơn hỏi GHN song song) = 5,
+          // vừa khít. Nó không cần hồ kết nối bằng api. Mà chỗ này
           // đáng tiếc từng máu: MySQL mặc định `max_connections=151`; api để 50
           // nên ba bản api đã là 150 — chạm trần. Thêm worker vào cụm mà cũng
           // xin 50 nữa thì tiến trình dựng sau bị từ chối kết nối, và tiến

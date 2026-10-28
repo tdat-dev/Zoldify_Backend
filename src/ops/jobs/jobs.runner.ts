@@ -8,7 +8,12 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { TasksService } from '@ops/tasks/tasks.service';
 import { ProductsService } from '@catalog/products/products.service';
-import { LICH_LAP, TEN_HANG_DOI } from './jobs.constants';
+import {
+  LICH_LAP,
+  TEN_HANG_DOI,
+  TEN_HANG_DOI_VAN_DON,
+  lichCuaHangDoi,
+} from './jobs.constants';
 import { taoBoXuLy } from './jobs.processor';
 import { dangKyLichLap, donLichThua, GIU_JOB_LICH_LAP } from './jobs.schedule';
 
@@ -29,8 +34,9 @@ import { dangKyLichLap, donLichThua, GIU_JOB_LICH_LAP } from './jobs.schedule';
 export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(JobsRunner.name);
   private conn?: IORedis;
-  private queue?: Queue;
-  private worker?: Worker;
+  private readonly queues: Queue[] = [];
+  private readonly workers: Worker[] = [];
+  private readonly connsWorker: IORedis[] = [];
 
   constructor(
     private readonly tasks: TasksService,
@@ -66,56 +72,83 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
       this.logger.error(`Kết nối Redis lỗi: ${e.message}`),
     );
 
-    // Mặc định cho job xếp bằng CHÍNH hàng đợi này (không qua lịch lặp), cùng
-    // giới hạn với lịch lặp: thiếu thì job xong nằm lại Redis mãi (xem
-    // GIU_JOB_LICH_LAP trong jobs.schedule.ts).
-    this.queue = new Queue(TEN_HANG_DOI, {
-      connection: this.conn,
-      defaultJobOptions: GIU_JOB_LICH_LAP,
-    });
-
     // Ghép hai nguồn việc: ba job lịch lặp của TasksService và job "báo hàng
     // mới" của ProductsService (rà soát 26/10 mục 6). Ghép ở đây thay vì nhét
     // ProductsService vào TasksService: TasksService được dựng bằng tay trong
     // spec, thêm tham số là sửa cả loạt spec không liên quan.
+    //
+    // MỘT bộ xử lý cho CẢ HAI hàng đợi, nhận mọi tên job: job "chot-van-don"
+    // đã nằm sẵn trong hàng đợi chính lúc deploy bản tách hàng đợi vẫn có
+    // người nhận, thay vì failed vì "không có bộ xử lý".
     const boXuLy = taoBoXuLy({
       autoCancelOrders: () => this.tasks.autoCancelOrders(),
       settleDeliveredShipments: () => this.tasks.settleDeliveredShipments(),
       flushViewCount: () => this.tasks.flushViewCount(),
       phatThongBaoHangMoi: (d) => this.products.phatThongBaoHangMoi(d),
     });
-    this.worker = new Worker(TEN_HANG_DOI, (job) => boXuLy(job), {
-      connection: this.conn.duplicate(),
-      // MỘT job một lúc trong mỗi tiến trình. Hai job tiền này quét bảng orders
-      // và gọi GHN; chạy chồng lên nhau không nhanh hơn, chỉ tranh kết nối.
-      concurrency: 1,
-    });
-    this.worker.on('failed', (job, err) =>
-      this.logger.error(`Job ${job?.name ?? '?'} hỏng: ${err.message}`),
-    );
-    this.worker.on('completed', (job) =>
-      this.logger.log(`Job ${job.name} xong.`),
-    );
 
-    const thua = await donLichThua(this.queue);
-    if (thua.length) {
-      this.logger.warn(`Đã xoá ${thua.length} lịch cũ: ${thua.join(', ')}`);
-    }
-    await dangKyLichLap(this.queue);
-
-    // In ra lịch ĐỌC TỪ REDIS chứ không in lại hằng số vừa gửi đi.
+    // HAI hàng đợi, mỗi hàng đợi một Worker concurrency 1 (rà soát "1 triệu
+    // dòng" 28/10, xem TEN_HANG_DOI_VAN_DON). Chốt vận đơn chạy tới 20 phút khi
+    // GHN chậm; chung một hàng đợi thì huỷ đơn quá hạn và đổ view count chờ
+    // suốt quãng đó. Tách ra thì hai loại job chạy song song, nhưng MỖI loại
+    // vẫn chỉ một lượt một lúc: hai lượt huỷ đơn chồng nhau không nhanh hơn,
+    // chỉ tranh khoá dòng và kết nối.
     //
-    // In hằng số thì log luôn đúng kể cả khi việc ghi thất bại — đúng kiểu
-    // "báo cáo thành công vì đã gọi hàm". Đọc ngược lại thì dòng log này là
-    // bằng chứng lịch có thật trong Redis.
-    for (const s of await this.queue.getJobSchedulers()) {
-      this.logger.log(
-        `Lịch: ${String(s.key ?? s.id)} — ${s.pattern} — kế tiếp ` +
-          (s.next ? new Date(s.next).toISOString() : 'chưa tính'),
+    // Kết nối MySQL: worker có 5. Hàng đợi chính dùng 1, chốt vận đơn tối đa 4
+    // (4 lô hỏi GHN song song, xem GIOI_HAN_DONG_BO), vừa đủ, không ai chờ.
+    for (const ten of [TEN_HANG_DOI, TEN_HANG_DOI_VAN_DON]) {
+      // Mặc định cho job xếp bằng CHÍNH hàng đợi này (không qua lịch lặp),
+      // cùng giới hạn với lịch lặp: thiếu thì job xong nằm lại Redis mãi (xem
+      // GIU_JOB_LICH_LAP trong jobs.schedule.ts).
+      const queue = new Queue(ten, {
+        connection: this.conn,
+        defaultJobOptions: GIU_JOB_LICH_LAP,
+      });
+      this.queues.push(queue);
+
+      // Giữ kết nối duplicate() để tự đóng: BullMQ không đóng kết nối người
+      // gọi truyền vào. Bỏ sót thì tiến trình không thoát sau shutdown (bài
+      // hang-doi-van-don.spec.ts treo jest đúng vì thế).
+      const connWorker = this.conn.duplicate();
+      this.connsWorker.push(connWorker);
+      const worker = new Worker(ten, (job) => boXuLy(job), {
+        connection: connWorker,
+        concurrency: 1,
+      });
+      worker.on('failed', (job, err) =>
+        this.logger.error(`Job ${job?.name ?? '?'} hỏng: ${err.message}`),
       );
+      worker.on('completed', (job) => this.logger.log(`Job ${job.name} xong.`));
+      this.workers.push(worker);
+
+      // Dọn lịch thừa THEO TỪNG hàng đợi: lần deploy đầu sau khi tách, lịch
+      // "chot-van-don" cũ còn trên hàng đợi chính. Không xoá thì nó vẫn đẻ job
+      // ở đó mỗi giờ, cộng với lịch mới bên hàng đợi vận đơn: chốt vận đơn
+      // chạy HAI lần mỗi giờ, đúng con bệnh task #14 đi chữa.
+      const lich = lichCuaHangDoi(ten);
+      const thua = await donLichThua(queue, lich);
+      if (thua.length) {
+        this.logger.warn(
+          `Đã xoá ${thua.length} lịch cũ trên "${ten}": ${thua.join(', ')}`,
+        );
+      }
+      await dangKyLichLap(queue, lich);
+
+      // In ra lịch ĐỌC TỪ REDIS chứ không in lại hằng số vừa gửi đi.
+      //
+      // In hằng số thì log luôn đúng kể cả khi việc ghi thất bại — đúng kiểu
+      // "báo cáo thành công vì đã gọi hàm". Đọc ngược lại thì dòng log này là
+      // bằng chứng lịch có thật trong Redis.
+      for (const s of await queue.getJobSchedulers()) {
+        this.logger.log(
+          `Lịch [${ten}]: ${String(s.key ?? s.id)} — ${s.pattern} — kế tiếp ` +
+            (s.next ? new Date(s.next).toISOString() : 'chưa tính'),
+        );
+      }
     }
     this.logger.log(
-      `Worker sẵn sàng trên hàng đợi "${TEN_HANG_DOI}" (${LICH_LAP.length} lịch).`,
+      `Worker sẵn sàng trên ${this.queues.length} hàng đợi ` +
+        `(${LICH_LAP.length} lịch).`,
     );
   }
 
@@ -126,8 +159,9 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
    * cắt ngang một lượt huỷ đơn giữa chừng — mà lượt đó đang đụng tiền.
    */
   async onApplicationShutdown(): Promise<void> {
-    await this.worker?.close();
-    await this.queue?.close();
+    await Promise.all(this.workers.map((w) => w.close()));
+    await Promise.all(this.queues.map((q) => q.close()));
+    for (const c of this.connsWorker) c.disconnect();
     this.conn?.disconnect();
   }
 }

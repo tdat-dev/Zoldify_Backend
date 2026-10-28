@@ -52,6 +52,7 @@ import { WorkerModule } from '../src/worker.module';
 
 import {
   TEN_HANG_DOI,
+  TEN_HANG_DOI_VAN_DON,
   LICH_LAP,
   JOB_HUY_DON_QUA_HAN,
   JOB_CHOT_VAN_DON,
@@ -230,7 +231,10 @@ kiem(
 // ── CI ─────────────────────────────────────────────────────────────────────
 const ci = doc('.github/workflows/ci.yml');
 kiem(/npm run check:worker/.test(ci), 'ci.yml chạy npm run check:worker');
-kiem(/image:\s*redis/.test(ci), 'ci.yml khai service redis (bài test cần Redis thật)');
+kiem(
+  /image:\s*redis/.test(ci),
+  'ci.yml khai service redis (bài test cần Redis thật)',
+);
 kiem(
   /selfcheck-worker/.test(doc('scripts/selfcheck-all.ts')),
   'selfcheck-all.ts có gọi suite worker',
@@ -449,11 +453,17 @@ async function phanDong() {
   //
   // Xoá đúng những id mình biết chứ không `obliterate` cả hàng đợi: lỡ ai đó
   // trỏ TEST_REDIS_URL vào Redis thật thì obliterate là xoá sạch job đang chờ.
-  const qThat = new Queue(TEN_HANG_DOI, { connection: conn });
-  for (const l of LICH_LAP) {
-    await qThat.removeJobScheduler(l.id).catch(() => undefined);
+  //
+  // Từ 28/10 lịch nằm trên HAI hàng đợi (chốt vận đơn tách riêng, xem
+  // TEN_HANG_DOI_VAN_DON): dọn cả hai, kể cả id không thuộc hàng đợi đó cho
+  // chắc, vì `removeJobScheduler` id không có là vô hại.
+  for (const ten of [TEN_HANG_DOI, TEN_HANG_DOI_VAN_DON]) {
+    const qThat = new Queue(ten, { connection: conn });
+    for (const l of LICH_LAP) {
+      await qThat.removeJobScheduler(l.id).catch(() => undefined);
+    }
+    await qThat.close();
   }
-  await qThat.close();
 
   // Tên job lạ phải NÉM, không được im lặng bỏ qua.
   //
