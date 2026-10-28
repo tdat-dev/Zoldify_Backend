@@ -65,7 +65,8 @@
     "check:constraints": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-constraints.ts",
     "check:drift": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-schema-drift.ts",
     "check:stock": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-stock.ts",
-    "log:summary": "node scripts/log-summary.mjs"
+    "log:summary": "node scripts/log-summary.mjs",
+    "notifications:purge": "node -r ts-node/register -r tsconfig-paths/register scripts/don-thong-bao-cu.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",

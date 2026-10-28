@@ -19,8 +19,18 @@ export class PaginationMetaDto {
   /** Tổng số trang */
   pages: number;
 
-  /** Tổng số bản ghi khớp điều kiện lọc */
+  /**
+   * Tổng số bản ghi khớp điều kiện lọc. Danh sách công khai chỉ đếm tới trần
+   * độ sâu (`MAX_PAGINATION_DEPTH`); vượt trần thì `total` = trần và có thêm
+   * `total_capped`.
+   */
   total: number;
+
+  /**
+   * Chỉ có mặt (và luôn là `true`) khi `total` bị chặn ở trần: số thật lớn
+   * hơn. Client nên hiện "10.000+" thay vì "10.000".
+   */
+  total_capped?: boolean;
 }
 
 /** Số bản ghi mỗi trang mặc định khi client không gửi `limit`. */
@@ -68,6 +78,50 @@ export function normalizePagination(
   if (size > MAX_PAGE_SIZE) size = MAX_PAGE_SIZE;
 
   return { page, size, offset: (page - 1) * size };
+}
+
+/**
+ * Trần ĐỘ SÂU của danh sách công khai phân trang bằng OFFSET: chỉ với tới
+ * 10.000 dòng đầu (trang × cỡ trang ≤ 10.000).
+ *
+ * `normalizePagination` chặn CỠ trang nhưng không chặn SỐ trang:
+ * `?current=9000&pageSize=100` thành `LIMIT 100 OFFSET 899900`. OFFSET không
+ * nhảy cóc được: MySQL vẫn đọc 899.900 dòng rồi vứt đi mới trả 100 dòng, đo ở
+ * bảng đơn ~2,8 giây (xem `encodeCursor`). Route công khai nên ai gõ URL cũng
+ * gọi được, vài chục request như thế đủ chiếm hết pool kết nối.
+ *
+ * Vì sao 10.000: Elasticsearch chọn đúng số này cho `max_result_window`, và
+ * không người thật nào bấm "trang sau" tới trang 500 (cỡ 20). Ai cần đi hết
+ * dữ liệu thì dùng bộ lọc, hoặc đường keyset như `/orders`.
+ */
+export const MAX_PAGINATION_DEPTH = 10_000;
+
+export interface CatDoSau {
+  /** Trang nằm trọn ngoài trần: KHÔNG được truy vấn dòng nào. */
+  ngoaiTran: boolean;
+  /** Số dòng được lấy ở trang này (trang cuối trong trần có thể bị cắt bớt). */
+  take: number;
+}
+
+/**
+ * Áp trần độ sâu cho một trang đã chuẩn hoá.
+ *
+ * Trang ngoài trần trả DANH SÁCH RỖNG kèm meta bình thường, không trả 400.
+ * Lý do: app di động cuộn vô hạn cứ gọi "trang sau" tới khi nhận mảng rỗng.
+ * Mảng rỗng là tín hiệu "hết danh sách" mà mọi client đã hiểu sẵn; 400 thì
+ * client cũ hiện màn lỗi giữa chừng. Và `meta.total` của các danh sách này
+ * cũng chỉ đếm tới trần (`demCoTran`), nên `meta.pages` không bao giờ chỉ tới
+ * một trang ngoài trần: chỉ ai tự gõ URL mới gặp mảng rỗng.
+ *
+ * Trang cuối vắt qua trần (cỡ 30, trang 334: dòng 9.991 tới 10.020) bị cắt
+ * còn 10 dòng, để tổng số dòng đọc được khớp đúng `total` đã báo.
+ */
+export function catDoSau(
+  p: Pick<NormalizedPagination, 'offset' | 'size'>,
+  tran: number = MAX_PAGINATION_DEPTH,
+): CatDoSau {
+  if (p.offset >= tran) return { ngoaiTran: true, take: 0 };
+  return { ngoaiTran: false, take: Math.min(p.size, tran - p.offset) };
 }
 
 // ───────────────────────── Con trỏ keyset (phân trang trang sâu) ─────────────────────────

@@ -1,12 +1,16 @@
 import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-  ConflictException,
   Optional,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from '@nestjs/cache-manager';
+import { nhoNgan } from '@common/nho-ngan';
 import { createHash, randomBytes } from 'node:crypto';
 import {
   DANG_HUY_VAN_DON,
@@ -101,6 +105,9 @@ export class OrdersService {
     // TTL (60s chi tiết, 30s danh sách), không sai dữ liệu nào trong DB. Bộ
     // tiêm phụ thuộc luôn có nó vì OrdersModule nhập ProductsModule.
     @Optional() private readonly productsService?: ProductsService,
+    // Cache cho `getStats` (thống kê đếm cả bảng). @Optional cùng lý do với
+    // productsService: thiếu thì thống kê chạy thẳng DB, không sai gì.
+    @Optional() @Inject(CACHE_MANAGER) private readonly cache?: Cache,
   ) {}
 
   /**
@@ -135,7 +142,18 @@ export class OrdersService {
     ).bao(orderId, suKien);
   }
 
+  /**
+   * Thống kê tổng, nhớ 60 giây: ba COUNT cả bảng + một SUM doanh thu ở mỗi
+   * lần gọi là đọc cả triệu mục index khi bảng lớn (cùng lý do với
+   * `AdminService.getDashboardStats`).
+   */
   async getStats() {
+    return nhoNgan(this.cache, 'orders:stats', 60_000, () =>
+      this.tinhThongKe(),
+    );
+  }
+
+  private async tinhThongKe() {
     const total_users = await this.userRepository.count();
     const total_products = await this.productRepository.count();
     const total_orders = await this.orderRepository.count();

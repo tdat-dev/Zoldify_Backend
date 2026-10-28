@@ -7,6 +7,11 @@ import { Notification } from './entities/notification.entity';
 import { PushToken } from './entities/push-token.entity';
 import { FirebaseService } from '@messaging/firebase/firebase.service';
 import { IUser } from '@identity/users/users.interface';
+import {
+  donThongBaoCu,
+  KetQuaDonThongBao,
+  TuyChonDonThongBao,
+} from './don-thong-bao-cu';
 
 @Injectable()
 export class NotificationsService {
@@ -19,6 +24,23 @@ export class NotificationsService {
     private readonly pushRepository: Repository<PushToken>,
     private readonly firebaseService: FirebaseService,
   ) {}
+
+  /**
+   * Dọn thông báo cũ theo lô (đã đọc > 90 ngày, mọi thứ > 180 ngày). Lý do
+   * và các con số: xem `don-thong-bao-cu.ts`.
+   *
+   * Chạy tay: `npm run notifications:purge` (scripts/don-thong-bao-cu.ts).
+   *
+   * TODO(đăng ký job sau khi gộp nhánh jobs runner, việc của agent khác):
+   * thêm `JOB_DON_THONG_BAO_CU = 'don-thong-bao-cu'` vào `LICH_LAP` trong
+   * src/ops/jobs/jobs.constants.ts với pattern `41 3 * * *` (3:41 sáng, tránh
+   * phút 0 của backup), một nhánh `case JOB_DON_THONG_BAO_CU: await
+   * tasks.donThongBaoCu(); return;` trong jobs.processor.ts (kèm khai trong
+   * `CongViecNen`), và `TasksService.donThongBaoCu()` gọi đúng hàm này.
+   */
+  donThongBaoCu(o?: TuyChonDonThongBao): Promise<KetQuaDonThongBao> {
+    return donThongBaoCu(this.notiRepository, o);
+  }
 
   /**
    * `tuyChon.choDayPush`: CHỜ lần đẩy FCM xong rồi mới trả về (lỗi đẩy vẫn

@@ -7524,7 +7524,11 @@
           },
           "total": {
             "type": "number",
-            "description": "Tổng số bản ghi khớp điều kiện lọc"
+            "description": "Tổng số bản ghi khớp điều kiện lọc. Danh sách công khai chỉ đếm tới trần\nđộ sâu (`MAX_PAGINATION_DEPTH`); vượt trần thì `total` = trần và có thêm\n`total_capped`."
+          },
+          "total_capped": {
+            "type": "boolean",
+            "description": "Chỉ có mặt (và luôn là `true`) khi `total` bị chặn ở trần: số thật lớn\nhơn. Client nên hiện \"10.000+\" thay vì \"10.000\"."
           }
         },
         "required": [

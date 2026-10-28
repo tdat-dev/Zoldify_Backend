@@ -1,14 +1,19 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from '@nestjs/cache-manager';
+import { nhoNgan } from '@common/nho-ngan';
 import { VAI_TRO_DAT_DUOC } from './dto/change-role.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
 import { Product } from '@catalog/products/entities/product.entity';
-import { ILike, Repository } from 'typeorm';
-import { User } from '@identity/users/entities/user.entity';
+import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Setting } from '@ops/settings/entities/setting.entity';
 import {
   Withdrawal,
@@ -19,6 +24,7 @@ import { OrdersService } from '@ordering/orders/orders.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 import { normalizePagination } from '@common/dto/pagination.dto';
+import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 
 @Injectable()
 export class AdminService {
@@ -36,6 +42,9 @@ export class AdminService {
     private readonly withdrawalsService: WithdrawalsService,
     private readonly ordersService: OrdersService,
     private readonly productsService: ProductsService,
+    // @Optional: spec dựng AdminService bằng tay với tám tham số; thiếu cache
+    // thì thống kê chạy thẳng DB như trước.
+    @Optional() @Inject(CACHE_MANAGER) private readonly cache?: Cache,
   ) {}
   async getUsers(
     page: number,
@@ -44,31 +53,61 @@ export class AdminService {
     role?: string,
     is_locked?: string,
   ) {
-    const where: any = {};
+    const where: FindOptionsWhere<User> = {};
     if (q) where.full_name = ILike(`%${q}%`);
-    if (role) where.role = role;
-    if (is_locked !== undefined) where.is_locked = is_locked === 'true' ? 1 : 0;
+    if (role) where.role = role as UserRole;
+    // Cột boolean: TypeORM ghi true/false thành 1/0 cho MySQL, y như bản cũ
+    // tự viết 1/0.
+    if (is_locked !== undefined) where.is_locked = is_locked === 'true';
 
     // Trang admin cũng là một danh sách: `?limit=1000000` nạp cả bảng users,
     // `?page=-5` ra skip âm và 500. Khuôn chung (rà soát 26/10 mục 3).
     const { page: trang, size, offset } = normalizePagination(page, limit, 20);
 
-    const [result, total] = await this.userRepository.findAndCount({
-      where,
-      skip: offset,
-      take: size,
-      order: { created_at: 'DESC' },
-    });
+    // SẮP THEO `id DESC`, không theo `created_at`. Hai thứ tự là MỘT: `id` tự
+    // tăng và `created_at` lấy giờ lúc INSERT, nên tài khoản tạo sau luôn có
+    // id lớn hơn (trừ dữ liệu nhập tay kèm `created_at` cũ, không có đường nào
+    // trong app làm vậy). Khác nhau ở chi phí: `created_at` không có index nên
+    // MySQL gom MỌI dòng khớp rồi filesort; `id` là khoá chính nên đọc ngược và
+    // dừng ngay khi đủ một trang. Còn sửa luôn một lỗi nhỏ: tài khoản tạo cùng
+    // một giây (seed, import) trước đây ra thứ tự không ổn định giữa các trang.
+    const order = { id: 'DESC' as const };
 
-    return {
-      meta: {
-        current: trang,
-        pageSize: size,
-        pages: Math.ceil(total / size),
-        total,
-      },
-      result,
-    };
+    if (!q) {
+      // Không tìm chữ: lọc theo vai trò/khoá có index, đếm thật như cũ.
+      const [result, total] = await this.userRepository.findAndCount({
+        where,
+        skip: offset,
+        take: size,
+        order,
+      });
+      return {
+        meta: {
+          current: trang,
+          pageSize: size,
+          pages: Math.ceil(total / size),
+          total,
+        },
+        result,
+      };
+    }
+
+    // CÓ `q`: `full_name LIKE '%q%'` không index nào dùng được, và giữ nguyên
+    // (admin phải tìm được cả tài khoản cũ). Nhưng `findAndCount` thì đếm hết
+    // mọi dòng khớp, tức LUÔN quét cả bảng một triệu tài khoản dù trang chỉ cần
+    // 20 dòng. Nay: lấy trang trước (dừng khi đủ dòng), đếm có trần 10.001
+    // (`total_capped` khi vượt), và trần độ sâu như danh sách công khai.
+    const { rows, ...tong } = await trangCoTran({
+      offset,
+      size,
+      layDong: (take) =>
+        this.userRepository.find({ where, skip: offset, take, order }),
+      dem: () =>
+        demCoTran(
+          this.userRepository.createQueryBuilder('u').setFindOptions({ where }),
+        ),
+    });
+    return { meta: metaCoTran(trang, size, tong), result: rows };
   }
 
   async getUserDetail(id: number) {
@@ -216,7 +255,21 @@ export class AdminService {
     };
   }
 
+  /**
+   * Số liệu dashboard admin, nhớ 60 giây.
+   *
+   * Bốn câu dưới là COUNT/SUM trên cả bảng: InnoDB không giữ sẵn số dòng,
+   * nên một triệu đơn là đọc cả triệu mục index MỖI lần admin mở dashboard
+   * (và trang này tự làm mới). Số tổng trên dashboard trễ tối đa một phút là
+   * chấp nhận được; nhiều admin mở cùng lúc thì `nhoNgan` gộp thành một lượt.
+   */
   async getDashboardStats() {
+    return nhoNgan(this.cache, 'admin:dashboard-stats', 60_000, () =>
+      this.tinhThongKe(),
+    );
+  }
+
+  private async tinhThongKe() {
     const [totalUsers, totalProducts, totalOrders, revenueResult] =
       await Promise.all([
         this.userRepository.count(),
