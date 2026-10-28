@@ -58,6 +58,32 @@ services:
       # utf8mb4 để tên sản phẩm tiếng Việt và emoji không thành dấu hỏi.
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # Buffer pool 512M trên trần 1G (đợt rà 1 triệu dòng, 28/10).
+      #
+      # Đo trên zoldify_1mb (scripts/explain-1m.ts): 200k sản phẩm = 22M dữ
+      # liệu + 50M index, 100k đơn = 12M + 24M. Ở 1 triệu dòng thì riêng hai
+      # bảng đó ~700M: 128M mặc định là gần như mỗi trang danh sách đọc đĩa.
+      # 512M không chứa hết, nhưng chứa được phần NÓNG (các index status_* của
+      # products ~5M mỗi cái ở 200k, ~25M ở 1M, cộng trang mới nhất). Không lên cao hơn
+      # ~50%: phần còn lại của 1G là chỗ cho bộ đệm theo từng kết nối (sort,
+      # join, ~45 kết nối của api x3 + worker + backup), performance_schema
+      # (~150-200M ở MySQL 8) và redo log. Đặt 700M+ là đẩy container chạm trần
+      # và bị OOM-killer chọn đúng lúc tải cao. Đổi MYSQL_MEM thì đổi số này theo.
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-512M}
+      # Trần 5 giây cho SELECT. CHỈ có tác dụng với SELECT chỉ-đọc ở cấp câu
+      # lệnh; INSERT/UPDATE/DELETE, INSERT ... SELECT và ALTER của migration
+      # KHÔNG bị cắt. SELECT nằm trong transaction thì VẪN bị cắt như thường.
+      #
+      # Vì sao cần: ở cỡ triệu dòng, một câu quét bảng (vd đếm tổng không có
+      # index) chạy hàng chục giây, giữ một trong 15 kết nối của hồ api suốt
+      # thời gian đó dù client đã bỏ đi từ lâu. Vài request như vậy là cạn hồ,
+      # và lúc đó mọi route đều treo chứ không chỉ route chậm. Cắt ở 5s thì câu
+      # chậm lỗi 500 (ER_QUERY_TIMEOUT 3024) và kết nối được trả lại.
+      #
+      # BẪY ĐÃ KIỂM: mysqldump cũng chỉ là một chuỗi SELECT, nên dump bảng lớn
+      # quá 5s sẽ bị cắt và bản sao lưu hỏng. scripts/backup-db.sh vì vậy tự
+      # đặt `max_execution_time=0` cho phiên của nó (init-command).
+      - --max-execution-time=${MYSQL_MAX_EXECUTION_MS:-5000}
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -115,6 +141,55 @@ services:
     # Không mở cổng ra máy chủ: chỉ container trong mạng compose gọi được.
     # ports:
     #   - '6379:6379'
+
+  # Redis RIÊNG cho hàng đợi BullMQ (đợt rà 1 triệu dòng, 28/10).
+  #
+  # VÌ SAO KHÔNG DÙNG CHUNG `redis` Ở TRÊN. `redis` là cache: allkeys-lru, đầy
+  # thì đuổi khoá ít dùng. Với cache đó là đúng. Với BullMQ thì không: job, lịch
+  # lặp (`bull:zoldify-jobs:repeat:*`) và khoá chống chạy trùng cũng chỉ là khoá
+  # Redis, và LRU không phân biệt. Ở cỡ triệu sản phẩm, cache danh sách lấp đầy
+  # 192M là chuyện bình thường; lúc đó khoá lịch huỷ đơn / giải ngân là thứ ít
+  # được đọc nhất (mỗi giờ một lần) nên bị đuổi TRƯỚC. Job tiền biến mất, không
+  # lỗi, không log.
+  #
+  # Nên ở đây ngược lại hoàn toàn:
+  #   - noeviction: đầy thì Redis TỪ CHỐI ghi (bên xếp `them()` fail-open trả
+  #     false, worker log lỗi) chứ không âm thầm xoá job.
+  #   - AOF everysec + volume: khởi động lại container thì job đang chờ và lịch
+  #     lặp còn nguyên. Worker chỉ đăng ký lại lịch lúc CHÍNH NÓ khởi động, nên
+  #     không có AOF thì `redis-queue` khởi động lại một mình là mất lịch tới
+  #     lần deploy sau. Mất tối đa ~1 giây ghi khi mất điện.
+  #   - 64M là thừa: hàng đợi giữ tối đa 500 job lịch xong + 2000 hỏng
+  #     (GIU_JOB_LICH_LAP) và 1000 + 5000 job báo hàng mới (hang-doi.ts), mỗi
+  #     job vài trăm byte, tức cỡ vài MB.
+  #
+  # Cache và throttler VẪN ở `redis`; chỉ BullMQ đọc QUEUE_REDIS_URL.
+  redis-queue:
+    image: redis:7
+    restart: unless-stopped
+    mem_limit: ${REDIS_QUEUE_MEM:-96m}
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --appendfsync
+      - everysec
+      - --save
+      - ''
+      # Chừa ~1/3 trần cho phân mảnh, bộ đệm client và lúc AOF viết lại (fork).
+      - --maxmemory
+      - ${REDIS_QUEUE_MAXMEMORY:-64mb}
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-queue-data:/data
+    logging: *default-logging
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
 
   # Sao lưu database mỗi ngày vào ./backups trên VPS (xem scripts/backup-db.sh).
   #
@@ -241,6 +316,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redis-queue:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -254,6 +331,9 @@ services:
       # Trỏ cache vào service `redis` trong mạng nội bộ. Trong .env dev biến này
       # để trống (in-memory); ở đây bật Redis thật cho cụm nhiều-instance.
       REDIS_URL: redis://redis:6379
+      # Bên XẾP job (HangDoiViecNen) đi vào redis-queue (noeviction), không vào
+      # cache LRU ở trên. Thiếu biến này thì mã rơi về REDIS_URL như trước.
+      QUEUE_REDIS_URL: redis://redis-queue:6379
       # Nói cho V8 biết cái trần mà Docker đang giữ.
       #
       # Node KHÔNG đọc `mem_limit`; nó tự chọn kích thước heap theo RAM của cả
@@ -336,13 +416,23 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redis-queue:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       DB_HOST: mysql
       DB_PORT: '3306'
       DB_USERNAME: root
+      # REDIS_URL vẫn cần: worker dựng cùng ProductsService (đếm view_count) và
+      # cache như api. Riêng Queue/Worker của BullMQ đọc QUEUE_REDIS_URL.
       REDIS_URL: redis://redis:6379
+      QUEUE_REDIS_URL: redis://redis-queue:6379
+      # Cùng lý do với api: Node chọn heap theo RAM cả máy chứ không theo
+      # mem_limit, nên trên VPS 4GB nó để rác dồn tới ~2GB trong khi Docker
+      # giết container ở 256M (mã 137, log trống). 192 chừa ~64M cho stack,
+      # buffer của mysql2/ioredis và bản thân runtime.
+      NODE_OPTIONS: --max-old-space-size=${WORKER_HEAP_MB:-192}
     command: ['node', 'dist/worker']
     # TẮT healthcheck thừa hưởng từ Dockerfile.
     #
@@ -417,6 +507,7 @@ services:
 
 volumes:
   mysql-data:
+  redis-queue-data:
   product-images:
   caddy-data:
   caddy-config:

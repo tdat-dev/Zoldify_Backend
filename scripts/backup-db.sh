@@ -33,7 +33,15 @@ CNF="$(mktemp)"
 trap 'rm -f "$CNF"' EXIT
 chmod 600 "$CNF"
 PW_QUOTED="$(printf '%s' "$DB_PASSWORD" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-printf '[client]\nuser=root\npassword="%s"\nhost=%s\n' "$PW_QUOTED" "$DB_HOST" > "$CNF"
+# init-command gỡ trần `max_execution_time` (docker-compose.yml đặt 5000ms cho
+# cả server) RIÊNG cho phiên dump. mysqldump chỉ là một chuỗi SELECT nên cũng
+# bị cắt: đo 28/10 trên bảng 200k sản phẩm với trần 1ms, dump chết ở dòng 147
+# với "Error 3024: maximum statement execution time exceeded" (exit 3), đặt 0
+# thì exit 0. Bảng triệu dòng dump quá 5s là chuyện thường, và dump hỏng thì
+# vòng này mất bản sao lưu. mysqldump 8.4 không có cờ --init-command, nhưng
+# thư viện client đọc khoá này từ file cấu hình.
+printf '[client]\nuser=root\npassword="%s"\nhost=%s\ninit-command="SET SESSION max_execution_time=0"\n' \
+  "$PW_QUOTED" "$DB_HOST" > "$CNF"
 
 backup_once() {
   stamp="$(date -u +%Y%m%d-%H%M%S)"
