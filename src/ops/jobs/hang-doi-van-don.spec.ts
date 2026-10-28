@@ -13,7 +13,7 @@ import type { ProductsService } from '@catalog/products/products.service';
 
 /**
  * Lượt chốt vận đơn dài không được chặn huỷ đơn quá hạn và đổ view count
- * (rà soát "1 triệu dòng" 28/10) — bài kiểm viết TRƯỚC.
+ * (rà soát "1 triệu dòng" 28/10): bài kiểm viết TRƯỚC.
  *
  * Worker chạy MỘT hàng đợi với concurrency 1. Lượt chốt vận đơn (đồng bộ GHN
  * + tự xác nhận) có thể chạy hàng chục phút khi GHN chậm; trong lúc đó job huỷ

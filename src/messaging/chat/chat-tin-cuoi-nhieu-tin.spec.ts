@@ -9,7 +9,7 @@ import { User } from '@identity/users/entities/user.entity';
 import { IUser } from '@identity/users/users.interface';
 
 /**
- * Tab Chat với hội thoại DÀI (rà soát "1 triệu dòng" 28/10) — bài kiểm viết TRƯỚC.
+ * Tab Chat với hội thoại DÀI (rà soát "1 triệu dòng" 28/10): bài kiểm viết TRƯỚC.
  *
  * `tinNhanCuoiTheoLo` dùng `ROW_NUMBER() OVER (PARTITION BY conversation_id)`
  * trên MỌI tin của tối đa 20 hội thoại, kéo TẤT CẢ các dòng (kèm `content`

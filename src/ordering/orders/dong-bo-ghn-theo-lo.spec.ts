@@ -10,7 +10,7 @@ import { Category } from '@catalog/categories/entities/category.entity';
 import { GhnService } from '@ordering/ghn/ghn.service';
 
 /**
- * Lượt đồng bộ GHN với NHIỀU lô (rà soát "1 triệu dòng" 28/10) — bài kiểm
+ * Lượt đồng bộ GHN với NHIỀU lô (rà soát "1 triệu dòng" 28/10): bài kiểm
  * viết TRƯỚC.
  *
  * `dongBoTatCa` nạp MỌI lô CREATED bằng `find()` không `take`, rồi hỏi GHN

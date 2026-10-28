@@ -26,8 +26,8 @@ import { User } from '@identity/users/entities/user.entity';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
 
 /**
- * Tự xác nhận nhận hàng với NHIỀU lô tới hạn (rà soát "1 triệu dòng" 28/10)
- * — bài kiểm viết TRƯỚC.
+ * Tự xác nhận nhận hàng với NHIỀU lô tới hạn (rà soát "1 triệu dòng"
+ * 28/10): bài kiểm viết TRƯỚC.
  *
  * `autoConfirmDueShipments` nạp MỌI lô tới hạn bằng `find()` không `take`,
  * kèm hai quan hệ (seller, order: mỗi dòng là ba entity đầy đủ). Sau một đợt

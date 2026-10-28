@@ -136,12 +136,12 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
 
       // In ra lịch ĐỌC TỪ REDIS chứ không in lại hằng số vừa gửi đi.
       //
-      // In hằng số thì log luôn đúng kể cả khi việc ghi thất bại — đúng kiểu
+      // In hằng số thì log luôn đúng kể cả khi việc ghi thất bại, đúng kiểu
       // "báo cáo thành công vì đã gọi hàm". Đọc ngược lại thì dòng log này là
       // bằng chứng lịch có thật trong Redis.
       for (const s of await queue.getJobSchedulers()) {
         this.logger.log(
-          `Lịch [${ten}]: ${String(s.key ?? s.id)} — ${s.pattern} — kế tiếp ` +
+          `Lịch [${ten}]: ${String(s.key ?? s.id)}: ${s.pattern}, kế tiếp ` +
             (s.next ? new Date(s.next).toISOString() : 'chưa tính'),
         );
       }

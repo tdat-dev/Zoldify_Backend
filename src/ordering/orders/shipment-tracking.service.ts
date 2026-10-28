@@ -566,7 +566,7 @@ export class ShipmentTrackingService {
       if (thuc === 'delivered') return await this.danhDauDaGiao(lo);
       return false;
     } catch (err) {
-      // Một lô hỏng không được làm chết cả lượt — lô sau vẫn phải được xét.
+      // Một lô hỏng không được làm chết cả lượt, lô sau vẫn phải được xét.
       this.logger.error(
         `Đồng bộ trạng thái GHN lỗi (vận đơn ${lo.tracking_code}): ${(err as Error).message}`,
       );
