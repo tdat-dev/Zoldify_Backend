@@ -600,8 +600,9 @@ export class ProductsService {
    *
    * VÌ SAO KHÔNG `LIKE '%áo%'` NHƯ CŨ. Đại diện ở đầu nên không index nào
    * dùng được: một triệu dòng là một triệu lần so chuỗi mỗi request, cộng
-   * thêm COUNT cả tập khớp. Lại còn sai: collation `utf8mb4_0900_ai_ci` bỏ
-   * dấu, nên "%áo%" khớp cả "Giày thể THAO" và "BẢO hiểm" (đo bằng
+   * thêm COUNT cả tập khớp. Lại còn sai: collation `utf8mb4_unicode_ci` (đặt
+   * trong docker-compose) so không phân biệt dấu, nên "%áo%" khớp cả "Giày
+   * thể THAO" và "BẢO hiểm" (đo bằng
    * `tim-kiem-tu-ngan.spec.ts`).
    *
    * CÁCH LÀM. Khớp ĐẦU TỪ: `name LIKE 'áo%' OR name LIKE '% áo%'`, và chỉ
