@@ -6,6 +6,7 @@ import { JobsModule } from '@ops/jobs/jobs.module';
 import { StockEventsModule } from '@catalog/stock/stock-events.module';
 import { FirebaseModule } from '@messaging/firebase/firebase.module';
 import { cacheConfig } from './common/cache.config';
+import { tuyChonTruyVanCham } from './common/log-truy-van-cham';
 
 /**
  * Module gốc của TIẾN TRÌNH WORKER. Song song với AppModule, không phải con nó.
@@ -77,6 +78,10 @@ import { cacheConfig } from './common/cache.config';
         // 9 giây, thoát mã 1, `restart: unless-stopped` dựng lại.
         retryAttempts: 3,
         retryDelay: 3000,
+
+        // Cùng ngưỡng và cùng định dạng báo câu chậm với api (AppModule). Job
+        // quét bảng orders là chỗ đầu tiên chậm đi khi bảng lớn lên.
+        ...tuyChonTruyVanCham(),
 
         extra: {
           // 5, không phải 50 như api.

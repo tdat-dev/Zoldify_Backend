@@ -72,7 +72,9 @@ function doiRaByte(v: unknown): number | null {
   const m = /^(\d+(?:\.\d+)?)\s*([kmgKMG])?[bB]?$/.exec(noiSuy(v).trim());
   if (!m) return null;
   const so = parseFloat(m[1]);
-  const heSo = { k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[(m[2] ?? '').toLowerCase()];
+  const heSo = { k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[
+    (m[2] ?? '').toLowerCase()
+  ];
   return heSo ? so * heSo : so;
 }
 
@@ -129,7 +131,9 @@ const soBan = (d: Dich | undefined): number => {
 function congHost(d: Dich | undefined): string[] {
   return (d?.ports ?? []).map((p) => {
     const s = noiSuy(
-      String(typeof p === 'object' ? (p as { published?: unknown }).published : p),
+      String(
+        typeof p === 'object' ? (p as { published?: unknown }).published : p,
+      ),
     );
     const phan = s.split(':');
     return phan.length > 1 ? phan[phan.length - 2] : s;
@@ -158,7 +162,11 @@ kiem(
 // ─── 2. Caddy ───────────────────────────────────────────────────────────────
 console.log('\n\x1b[2m2) Caddy — TLS và đường vào duy nhất\x1b[0m');
 const caddy = S.caddy;
-kiem(!!caddy, 'có dịch vụ `caddy`', 'thêm service caddy vào docker-compose.yml');
+kiem(
+  !!caddy,
+  'có dịch vụ `caddy`',
+  'thêm service caddy vào docker-compose.yml',
+);
 
 kiem(
   congHost(caddy).length >= 2,
@@ -187,8 +195,9 @@ if (coCaddyfile) {
   // Hai dạng khai upstream, và chúng KHÔNG tương đương khi có nhiều bản api.
   const tinh = /reverse_proxy\s+[^\n{]*\bapi:3000\b/.test(cf);
   const dong =
-    /dynamic\s+a\s*\{[^}]*\bname\s+api\b[^}]*\bport\s+3000\b[^}]*\}/s.test(cf) ||
-    /dynamic\s+a\s+api\s+3000\b/.test(cf);
+    /dynamic\s+a\s*\{[^}]*\bname\s+api\b[^}]*\bport\s+3000\b[^}]*\}/s.test(
+      cf,
+    ) || /dynamic\s+a\s+api\s+3000\b/.test(cf);
 
   kiem(
     tinh || dong,
@@ -271,7 +280,9 @@ for (const [ten, d] of Object.entries(S)) {
 
   ok(
     `\`${ten}\` mem_limit ${doiRaMB(b)}M × ${soBan(d)} bản` +
-      (chayMotLan ? ' \x1b[2m(chạy một lần rồi thoát — ngoài đỉnh)\x1b[0m' : ''),
+      (chayMotLan
+        ? ' \x1b[2m(chạy một lần rồi thoát — ngoài đỉnh)\x1b[0m'
+        : ''),
   );
 }
 
@@ -282,6 +293,80 @@ if (duHet) {
     'đặt VPS_MEM_BUDGET đúng RAM máy thật, hoặc hạ API_REPLICAS — vượt là OOM-kill',
   );
 }
+
+// ─── 5b. Cỡ 1 triệu dòng (đợt rà 28/10) ─────────────────────────────────────
+console.log(
+  '\n\x1b[2m5b) Cỡ 1 triệu dòng: buffer pool, trần SELECT, hàng đợi không bị đuổi\x1b[0m',
+);
+/** Đọc giá trị của cờ `--ten=gia-tri` trong `command` (sau nội suy). */
+function co_(d: Dich | undefined, ten: string): string | undefined {
+  const c = d?.command;
+  const cmd: unknown[] = Array.isArray(c) ? c : [];
+  const dong = cmd.map((x) => noiSuy(String(x)));
+  for (let i = 0; i < dong.length; i++) {
+    if (dong[i].startsWith(`--${ten}=`)) return dong[i].slice(ten.length + 3);
+    // Kiểu redis: cờ và giá trị là hai phần tử liền nhau.
+    if (dong[i] === `--${ten}`) return dong[i + 1];
+  }
+  return undefined;
+}
+
+const tranMysql = doiRaByte(S.mysql?.mem_limit);
+const pool = doiRaByte(co_(S.mysql, 'innodb-buffer-pool-size') ?? '');
+kiem(
+  pool !== null &&
+    tranMysql !== null &&
+    pool > 128 * 1024 ** 2 &&
+    pool <= 0.6 * tranMysql,
+  `mysql innodb_buffer_pool_size > 128M mặc định và ≤ 60% mem_limit (đang ${pool === null ? 'không đặt' : doiRaMB(pool) + 'M'})`,
+  '128M mặc định chứa không nổi index của 200k sản phẩm; quá 60% thì bộ đệm mỗi kết nối đẩy container chạm trần 1G',
+);
+const maxExec = Number(co_(S.mysql, 'max-execution-time') ?? NaN);
+kiem(
+  Number.isFinite(maxExec) && maxExec > 0,
+  `mysql max_execution_time đặt trần cho SELECT (đang ${Number.isFinite(maxExec) ? maxExec + 'ms' : 'không đặt'})`,
+  'không trần thì một SELECT quét bảng triệu dòng giữ kết nối tới khi client bỏ cuộc, hồ 15 kết nối cạn dần',
+);
+
+const rq = S['redis-queue'];
+kiem(!!rq, 'có dịch vụ `redis-queue` riêng cho BullMQ');
+kiem(
+  co_(rq, 'maxmemory-policy') === 'noeviction',
+  '`redis-queue` dùng maxmemory-policy noeviction',
+  'allkeys-lru được phép đuổi khoá job và khoá lịch lặp: job huỷ đơn/giải ngân biến mất không một dòng log',
+);
+const rqMax = doiRaByte(co_(rq, 'maxmemory') ?? '');
+const rqTran = doiRaByte(rq?.mem_limit);
+kiem(
+  rqMax !== null && rqTran !== null && rqMax < rqTran,
+  '`redis-queue` có maxmemory nhỏ hơn mem_limit',
+);
+kiem(
+  co_(S.redis, 'maxmemory-policy') === 'allkeys-lru',
+  'redis cache VẪN là allkeys-lru (cache/throttler không chuyển sang hàng đợi) [đối chứng]',
+);
+for (const ten of ['api', 'worker']) {
+  kiem(
+    /redis-queue/.test(env(S[ten], 'QUEUE_REDIS_URL') ?? ''),
+    `${ten} có QUEUE_REDIS_URL trỏ vào redis-queue`,
+  );
+  const dep = S[ten]?.depends_on as Record<string, unknown> | undefined;
+  kiem(
+    !!dep && Object.prototype.hasOwnProperty.call(dep, 'redis-queue'),
+    `${ten} depends_on redis-queue`,
+  );
+}
+const heapWorker = /--max-old-space-size=(\d+)/.exec(
+  noiSuy(env(S.worker, 'NODE_OPTIONS') ?? ''),
+);
+const tranWorker = doiRaByte(S.worker?.mem_limit);
+kiem(
+  !!heapWorker &&
+    tranWorker !== null &&
+    Number(heapWorker[1]) * 1024 ** 2 < tranWorker,
+  `worker có trần heap V8 dưới mem_limit (đang ${heapWorker ? heapWorker[1] + 'M' : 'không đặt'})`,
+  'Node tự chọn heap theo RAM cả máy; container 256M bị giết mã 137 trước khi V8 kịp dọn rác',
+);
 
 // ─── 6. Đối chiếu với compose THẬT (bỏ qua khi máy không có Docker) ─────────
 console.log(
@@ -307,7 +392,9 @@ const coDocker = (() => {
 })();
 
 const boQua = (lyDo: string) =>
-  console.log(`  \x1b[33m– BỎ QUA\x1b[0m  ${lyDo}; năm mục trên đã đủ gác hình dạng`);
+  console.log(
+    `  \x1b[33m– BỎ QUA\x1b[0m  ${lyDo}; năm mục trên đã đủ gác hình dạng`,
+  );
 
 if (!coDocker) {
   boQua('máy này không gọi được Docker');
@@ -318,7 +405,9 @@ if (!coDocker) {
   // đứng giữa một lần deploy và một cụm chạy với secret rỗng. Sửa compose cho
   // vừa lòng bộ tự kiểm là đổi hành vi production để bài kiểm dễ xanh, tức là
   // lấy cái đuôi vẫy con chó. Ở đây nói thẳng lý do bỏ qua và để nguyên cửa.
-  boQua('máy này chưa có `.env` (bị gitignore) nên compose từ chối trước khi đọc tới cú pháp');
+  boQua(
+    'máy này chưa có `.env` (bị gitignore) nên compose từ chối trước khi đọc tới cú pháp',
+  );
 } else {
   try {
     cp.execSync('docker compose config -q', {
@@ -326,7 +415,10 @@ if (!coDocker) {
       stdio: 'pipe',
       // DB_PASSWORD viết bằng cú pháp `:?` nên compose DỪNG khi nó trống. Ở
       // đây chỉ kiểm cú pháp, không dựng gì, nên mồi một giá trị cho qua cửa đó.
-      env: { ...process.env, DB_PASSWORD: process.env.DB_PASSWORD || 'kiem-tra' },
+      env: {
+        ...process.env,
+        DB_PASSWORD: process.env.DB_PASSWORD || 'kiem-tra',
+      },
     });
     ok('`docker compose config` phân tích được file (không lỗi cú pháp)');
   } catch (e) {

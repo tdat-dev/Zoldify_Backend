@@ -33,20 +33,32 @@ interface Pattern {
   explainSql: string; //   câu SQL thật để EXPLAIN minh hoạ
   params: any[];
   control?: boolean; //    true = kỳ vọng ĐÃ XANH (chứng minh test không phải lúc nào cũng đỏ)
+  // Dãy cột index phải bắt đầu bằng, khi câu KHÔNG có dạng "lọc rồi sắp".
+  // Vd đếm tin chưa đọc: (conversation_id, is_read, sender_id), cột cuối là
+  // điều kiện `<>` chứ không phải ORDER BY. Bỏ trống thì = filter + orderCol.
+  cot?: string[];
 }
 
 // Lấy leftmost-prefix các cột của mọi index trên 1 bảng.
-async function indexPrefixes(ds: typeof AppDataSource, table: string): Promise<string[][]> {
-  const rows: Array<{ INDEX_NAME: string; COLUMN_NAME: string; SEQ_IN_INDEX: number }> =
-    await ds.query(
-      `SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX
+async function indexPrefixes(
+  ds: typeof AppDataSource,
+  table: string,
+  boQua?: string, // tên index không tính (khi hỏi "còn cái nào KHÁC phủ không")
+): Promise<string[][]> {
+  const rows: Array<{
+    INDEX_NAME: string;
+    COLUMN_NAME: string;
+    SEQ_IN_INDEX: number;
+  }> = await ds.query(
+    `SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX
          FROM information_schema.STATISTICS
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
         ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
-      [table],
-    );
+    [table],
+  );
   const byName = new Map<string, string[]>();
   for (const r of rows) {
+    if (r.INDEX_NAME === boQua) continue;
     if (!byName.has(r.INDEX_NAME)) byName.set(r.INDEX_NAME, []);
     byName.get(r.INDEX_NAME)!.push(r.COLUMN_NAME);
   }
@@ -58,8 +70,7 @@ async function indexPrefixes(ds: typeof AppDataSource, table: string): Promise<s
 function hasCoveringIndex(indexes: string[][], required: string[]): boolean {
   return indexes.some(
     (cols) =>
-      cols.length >= required.length &&
-      required.every((c, i) => cols[i] === c),
+      cols.length >= required.length && required.every((c, i) => cols[i] === c),
   );
 }
 
@@ -75,7 +86,8 @@ async function main() {
       table: 'notifications',
       filter: ['user_id'],
       orderCol: 'created_at',
-      explainSql: 'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+      explainSql:
+        'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
       params: [59022],
     },
     {
@@ -83,7 +95,8 @@ async function main() {
       table: 'reviews',
       filter: ['product_id'],
       orderCol: 'created_at',
-      explainSql: 'SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC LIMIT 20',
+      explainSql:
+        'SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC LIMIT 20',
       params: [342127],
     },
     {
@@ -147,13 +160,117 @@ async function main() {
       explainSql: 'SELECT * FROM reviews ORDER BY created_at DESC LIMIT 20',
       params: [],
     },
+    // ─── Đợt 1 triệu dòng (28/10) ────────────────────────────────────────────
+    //
+    // Câu hỏi của đợt rà: nạp ~1 triệu dòng vào thì API có trụ không. Các mẫu
+    // dưới đây là những câu NÓNG nhất (trang chủ, bảng quản trị, job tự chốt)
+    // mà index hiện có chỉ phủ được nửa: có `idx_status` để lọc nhưng không có
+    // cột sắp xếp đi kèm, nên MySQL lọc ra ~80% bảng (hàng `active`) rồi
+    // filesort cả đống đó chỉ để lấy 20 dòng đầu. Số đo trước/sau ở
+    // `scripts/explain-1m.ts`.
+    {
+      name: 'products.findAll trang chủ (WHERE status ORDER BY created_at)',
+      table: 'products',
+      filter: ['status'],
+      orderCol: 'created_at',
+      explainSql:
+        "SELECT id FROM products WHERE status = 'active' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20",
+      params: [],
+    },
+    {
+      name: 'products.findAll sort=price_asc/desc (WHERE status ORDER BY price)',
+      table: 'products',
+      filter: ['status'],
+      orderCol: 'price',
+      explainSql:
+        "SELECT id FROM products WHERE status = 'active' AND deleted_at IS NULL ORDER BY price ASC LIMIT 20",
+      params: [],
+    },
+    {
+      name: 'products.findAll sort=best_selling/featured (WHERE status ORDER BY sold_count)',
+      table: 'products',
+      filter: ['status'],
+      orderCol: 'sold_count',
+      explainSql:
+        "SELECT id FROM products WHERE status = 'active' AND deleted_at IS NULL ORDER BY sold_count DESC LIMIT 20",
+      params: [],
+    },
+    {
+      name: 'products.findAll sort=most_viewed (WHERE status ORDER BY view_count)',
+      table: 'products',
+      filter: ['status'],
+      orderCol: 'view_count',
+      explainSql:
+        "SELECT id FROM products WHERE status = 'active' AND deleted_at IS NULL ORDER BY view_count DESC LIMIT 20",
+      params: [],
+    },
+    {
+      name: 'products.findAll theo danh mục (WHERE category_id + status ORDER BY created_at)',
+      table: 'products',
+      filter: ['category_id', 'status'],
+      orderCol: 'created_at',
+      explainSql:
+        "SELECT id FROM products WHERE category_id = ? AND status = 'active' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20",
+      params: [1],
+    },
+    {
+      name: 'orders.findAll admin lọc trạng thái (WHERE status ORDER BY created_at)',
+      table: 'orders',
+      filter: ['status'],
+      orderCol: 'created_at',
+      explainSql:
+        "SELECT id FROM orders WHERE status = 'pending' ORDER BY created_at DESC LIMIT 20",
+      params: [],
+    },
+    {
+      // Không phải "lọc rồi sắp" mà là "hai bằng + một khoảng": status =
+      // 'delivered' AND received_at IS NULL AND delivered_at < mốc. MySQL coi
+      // `IS NULL` như một phép bằng khi đi index, nên cột khoảng (delivered_at)
+      // phải đứng CUỐI thì cả ba cột mới cùng được dùng.
+      name: 'orders.autoConfirmDueShipments (status + received_at IS NULL + delivered_at < mốc)',
+      table: 'order_shipments',
+      filter: ['status', 'received_at'],
+      orderCol: 'delivered_at',
+      explainSql:
+        "SELECT id FROM order_shipments WHERE status = 'delivered' AND received_at IS NULL AND delivered_at < NOW() - INTERVAL 3 DAY",
+      params: [],
+    },
+    {
+      name: 'chat.demChuaDocTheoLo (conversation_id IN … AND is_read = 0 AND sender_id <> ?)',
+      table: 'messages',
+      filter: ['conversation_id', 'is_read'],
+      orderCol: 'sender_id',
+      cot: ['conversation_id', 'is_read', 'sender_id'],
+      explainSql:
+        'SELECT conversation_id, COUNT(*) FROM messages WHERE conversation_id IN (1, 2, 3) AND is_read = 0 AND sender_id <> ? GROUP BY conversation_id',
+      params: [1],
+    },
+    {
+      name: 'admin.findAllUsers (users toàn bảng ORDER BY created_at)',
+      table: 'users',
+      filter: [],
+      orderCol: 'created_at',
+      explainSql:
+        'SELECT id FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 20',
+      params: [],
+    },
+    {
+      name: 'escrows.findAll admin (WHERE status ORDER BY created_at)',
+      table: 'escrows',
+      filter: ['status'],
+      orderCol: 'created_at',
+      explainSql:
+        "SELECT id FROM escrows WHERE status = 'holding' ORDER BY created_at DESC LIMIT 20",
+      params: [],
+    },
     // ─── Kỳ vọng XANH (control — chứng minh test biết phân biệt) ──────────────
     {
       name: 'orders.findAll admin (keyset ORDER BY created_at, id) — Epic 2',
       table: 'orders',
       filter: [],
       orderCol: 'created_at',
-      explainSql: 'SELECT id FROM orders ORDER BY created_at DESC, id DESC LIMIT 20',
+      explainSql:
+        'SELECT id FROM orders ORDER BY created_at DESC, id DESC LIMIT 20',
       params: [],
       control: true,
     },
@@ -162,7 +279,8 @@ async function main() {
       table: 'orders',
       filter: ['user_id'],
       orderCol: 'created_at',
-      explainSql: 'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
+      explainSql:
+        'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
       params: [3],
       control: true,
     },
@@ -186,7 +304,7 @@ async function main() {
 
   const missing: string[] = [];
   for (const p of patterns) {
-    const required = [...p.filter, p.orderCol];
+    const required = p.cot ?? [...p.filter, p.orderCol];
     const idxs = await indexPrefixes(ds, p.table);
     const covered = hasCoveringIndex(idxs, required);
 
@@ -199,7 +317,9 @@ async function main() {
     console.log(`  cần index ghép: (${required.join(', ')})`);
     console.log(`  EXPLAIN thật:   ${diag}`);
     if (covered) {
-      ok(`đã có index phủ (${required.join(', ')})${p.control ? ' [control]' : ''}`);
+      ok(
+        `đã có index phủ (${required.join(', ')})${p.control ? ' [control]' : ''}`,
+      );
     } else {
       bad(
         `THIẾU index (${required.join(', ')}) → ORDER BY sẽ filesort khi khoá có nhiều dòng`,
@@ -217,7 +337,9 @@ async function main() {
   // tốn thêm ghi + dung lượng. Test ĐỎ khi index thừa còn đó, XANH sau khi drop.
   // CHỐT AN TOÀN: chỉ drop khi CHẮC CHẮN có composite phủ (nếu không, drop = làm
   // khoá ngoại mất index đỡ → chậm cascade/insert).
-  console.log('\x1b[1m── Index 1-cột thừa (prefix con của composite) ──\x1b[0m');
+  console.log(
+    '\x1b[1m── Index 1-cột thừa (prefix con của composite) ──\x1b[0m',
+  );
   const redundants: Array<{ table: string; col: string }> = [
     { table: 'reviews', col: 'product_id' },
     { table: 'messages', col: 'conversation_id' },
@@ -229,8 +351,12 @@ async function main() {
   ];
   for (const r of redundants) {
     const idxs = await indexPrefixes(ds, r.table);
-    const hasComposite = idxs.some((cols) => cols.length > 1 && cols[0] === r.col);
-    const hasSingle = idxs.some((cols) => cols.length === 1 && cols[0] === r.col);
+    const hasComposite = idxs.some(
+      (cols) => cols.length > 1 && cols[0] === r.col,
+    );
+    const hasSingle = idxs.some(
+      (cols) => cols.length === 1 && cols[0] === r.col,
+    );
     console.log(`\x1b[1m${r.table}.(${r.col})\x1b[0m`);
     if (!hasComposite) {
       bad(
@@ -241,7 +367,68 @@ async function main() {
         `${r.table}: index 1-cột (${r.col}) THỪA — đã có composite phủ; nên drop`,
       );
     } else {
-      ok(`${r.table}: đã dọn index 1-cột (${r.col}); composite vẫn phủ FK + truy vấn`);
+      ok(
+        `${r.table}: đã dọn index 1-cột (${r.col}); composite vẫn phủ FK + truy vấn`,
+      );
+    }
+    console.log('');
+  }
+
+  // ─── Phần 3: index THỪA có tên cụ thể (đợt 1M, 28/10) ─────────────────────
+  // Khác phần 2 ở chỗ cái phủ nó không nhất thiết là composite: `users.email`
+  // đã có UNIQUE riêng (TypeORM sinh từ `unique: true`), vậy mà `idx_email`
+  // thường vẫn nằm cạnh, cùng đúng một cột. Mỗi lần INSERT/UPDATE email là ghi
+  // hai B-tree giống hệt nhau. Ở 1 triệu dòng đó là ~40MB buffer pool cho một
+  // thứ không câu nào chọn (optimizer luôn ưu tiên UNIQUE).
+  //
+  // `phu` là index PHẢI còn lại sau khi xoá; mất nó thì không được xoá.
+  console.log('\x1b[1m── Index thừa có tên (đợt 1M) ──\x1b[0m');
+  const thuaCoTen: Array<{
+    table: string;
+    idx: string;
+    phu: string[];
+    lyDo: string;
+  }> = [
+    {
+      table: 'users',
+      idx: 'idx_email',
+      phu: ['email'],
+      lyDo: 'trùng hẳn index UNIQUE của cột email',
+    },
+    {
+      table: 'wallet_transactions',
+      idx: 'idx_wallet',
+      phu: ['wallet_id', 'created_at'],
+      lyDo: 'là tiền tố trái của idx_wallet_created, cái đó đỡ luôn khoá ngoại wallet_id',
+    },
+    {
+      table: 'products',
+      idx: 'idx_status',
+      phu: ['status', 'created_at'],
+      lyDo: 'là tiền tố trái của (status, created_at) mới; status không có khoá ngoại',
+    },
+  ];
+  for (const t of thuaCoTen) {
+    const tenIdx: Array<{ INDEX_NAME: string }> = await ds.query(
+      `SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+      [t.table, t.idx],
+    );
+    // Tìm cái phủ trong các index KHÁC chính nó: `idx_email` tự phủ (email)
+    // thì đương nhiên, nhưng đó không phải lý do để được xoá nó.
+    const conPhu = hasCoveringIndex(
+      await indexPrefixes(ds, t.table, t.idx),
+      t.phu,
+    );
+    console.log(`\x1b[1m${t.table}.${t.idx}\x1b[0m`);
+    if (!conPhu) {
+      bad(
+        `${t.table}: chưa có index phủ (${t.phu.join(', ')}), CHƯA được xoá ${t.idx}`,
+      );
+    } else if (tenIdx.length > 0) {
+      bad(`${t.table}.${t.idx} THỪA (${t.lyDo}); nên drop`);
+    } else {
+      ok(`${t.table}: đã dọn ${t.idx}; (${t.phu.join(', ')}) vẫn còn`);
     }
     console.log('');
   }

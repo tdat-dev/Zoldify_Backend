@@ -45,6 +45,14 @@ export enum ShipmentStatus {
 // leftmost-prefix và đỡ luôn khoá ngoại order_id.
 @Index('idx_shipment_seller', ['seller'])
 @Index('uq_shipment_order_seller', ['order', 'seller'], { unique: true })
+// Job tự xác nhận nhận hàng: status='delivered' AND received_at IS NULL AND
+// delivered_at < mốc. Hai cột bằng trước (IS NULL tính là bằng), cột khoảng
+// cuối cùng, nên cả ba cột cùng được dùng. Migration 1788500000000.
+@Index('idx_status_received_delivered', [
+  'status',
+  'received_at',
+  'delivered_at',
+])
 export class OrderShipment {
   @PrimaryGeneratedColumn()
   id: number;

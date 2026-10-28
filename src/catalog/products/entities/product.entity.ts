@@ -28,7 +28,21 @@ export enum ProductStatus {
 // idx_seller_status (seller_id, status) phủ nó theo quy tắc leftmost-prefix và
 // đỡ luôn khoá ngoại seller_id. Không khai lại — khai lại là bảo TypeORM dựng
 // lại đúng cái index vừa cố ý xoá.
-@Index('idx_status', ['status'])
+// idx_status (1 cột) ĐÃ BỎ ở migration 1788500000000: tiền tố trái của
+// idx_status_created bên dưới, và `status` không có khoá ngoại cần đỡ.
+//
+// Bốn index (status, <cột sắp>) cho danh sách công khai: WHERE status='active'
+// ORDER BY created_at | price | sold_count | view_count. Thiếu cột sắp đi kèm
+// thì MySQL gom ~80% bảng (hàng active) rồi filesort để lấy 20 dòng. Số đo
+// trước/sau: scripts/explain-1m.ts. Migration 1788500000000.
+@Index('idx_status_created', ['status', 'created_at'])
+@Index('idx_status_price', ['status', 'price'])
+@Index('idx_status_sold', ['status', 'sold_count'])
+@Index('idx_status_view', ['status', 'view_count'])
+// Danh sách theo danh mục, kiểu sắp mặc định. idx_category_id VẪN giữ dù là
+// tiền tố trái của cái này: xem chú thích cuối danh sách XOA trong migration
+// 1788500000000 (synchronize lúc test xoá trước tạo sau, khoá ngoại chặn).
+@Index('idx_category_status_created', ['category', 'status', 'created_at'])
 @Index('idx_created_at', ['created_at'])
 @Index('idx_price', ['price'])
 // Phủ cả WHERE (seller, status) LẪN ORDER BY created_at của gian hàng người

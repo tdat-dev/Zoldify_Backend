@@ -17,7 +17,8 @@ export enum TransactionType {
 }
 
 @Entity('wallet_transactions')
-@Index('idx_wallet', ['wallet'])
+// idx_wallet (1 cột) ĐÃ BỎ ở migration 1788500000000: tiền tố trái của
+// idx_wallet_created bên dưới, cái đó cũng đỡ luôn khoá ngoại wallet_id.
 // Index ghép cho danh sách "của tôi, mới nhất trước" — do migration
 // AddListOrderingIndexes/Round2 tạo. Khai lại ở đây vì entity mới là nguồn mà
 // `migration:generate` và `synchronize` đọc: thiếu dòng này thì lần sinh
