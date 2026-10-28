@@ -1,8 +1,13 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from '@nestjs/cache-manager';
+import { docNho, ghiNho, nhoNgan } from '@common/nho-ngan';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -12,13 +17,38 @@ import { Repository } from 'typeorm';
 import { TranslationService } from './translation.service';
 import { ProductStatus } from '@catalog/products/entities/product.entity';
 
+/**
+ * Cache danh sách danh mục (kèm `product_count`) 60 giây.
+ *
+ * VÌ SAO. Mỗi lần trang chủ và thanh điều hướng nạp danh mục, `findAll` LEFT
+ * JOIN `products` rồi COUNT theo từng danh mục: với một triệu sản phẩm đang
+ * bán là đọc cả triệu mục index ở MỖI request, trên route gọi nhiều nhất.
+ *
+ * VÌ SAO KHÔNG GẮN VÀO "ĐỜI" DANH SÁCH SẢN PHẨM (`products:list:gen`). Đời đó
+ * đổi ở MỌI lần ghi sản phẩm, kể cả mỗi đơn đặt hàng đổi kho
+ * (`lamMoiCacheSanPham`). Sàn có vài đơn mỗi giây là cache danh mục không bao
+ * giờ trúng. Số "Điện thoại (120)" lệch vài món trong một phút là chấp nhận
+ * được; tên/ảnh danh mục thì không, nên sửa danh mục có đời riêng bên dưới.
+ */
+const DANH_MUC_TTL = 60_000;
+const DANH_MUC_DOI = 'categories:list:gen';
+const DANH_MUC_DOI_TTL = 24 * 60 * 60_000; // dài hơn hẳn TTL, xem PRODUCT_LIST_GEN_TTL
+
 @Injectable()
 export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
     private readonly translation: TranslationService,
+    // @Optional: các spec dựng service bằng tay với hai tham số; thiếu cache
+    // thì `nhoNgan` chạy thẳng truy vấn như trước.
+    @Optional() @Inject(CACHE_MANAGER) private readonly cache?: Cache,
   ) {}
+
+  /** Đổi đời: mọi khoá danh sách cũ không ai với tới nữa, tự hết hạn. */
+  private async moiDanhSach(): Promise<void> {
+    await ghiNho(this.cache, DANH_MUC_DOI, Date.now(), DANH_MUC_DOI_TTL);
+  }
   async create(createCategoryDto: CreateCategoryDto) {
     const { name } = createCategoryDto;
     const isName = await this.categoryRepository.findOne({ where: { name } });
@@ -31,6 +61,7 @@ export class CategoriesService {
       ...createCategoryDto,
       ...(name_en ? { name_en } : {}),
     });
+    await this.moiDanhSach();
     return this.findOne(saved.id);
   }
 
@@ -41,6 +72,20 @@ export class CategoriesService {
       offset,
     } = normalizePagination(currentPage, limit);
 
+    const doi = (await docNho<number>(this.cache, DANH_MUC_DOI)) ?? 0;
+    return nhoNgan(
+      this.cache,
+      `categories:list:g${doi}:${numPage}:${numLimit}`,
+      DANH_MUC_TTL,
+      () => this.truyVanDanhSach(numPage, numLimit, offset),
+    );
+  }
+
+  private async truyVanDanhSach(
+    numPage: number,
+    numLimit: number,
+    offset: number,
+  ) {
     const raw = await this.categoryRepository
       .createQueryBuilder('category')
       // Chỉ đếm sản phẩm khách thật sự thấy được khi bấm vào danh mục: đang
@@ -124,6 +169,7 @@ export class CategoriesService {
       if (name_en) patch.name_en = name_en;
     }
     await this.categoryRepository.update({ id }, patch);
+    await this.moiDanhSach();
     return await this.categoryRepository.findOne({ where: { id } });
   }
 
@@ -133,6 +179,7 @@ export class CategoriesService {
       throw new BadRequestException(`Không tìm thấy danh mục cần xóa`);
     }
     await this.categoryRepository.softDelete(id);
+    await this.moiDanhSach();
     return await this.categoryRepository.find();
   }
 }
