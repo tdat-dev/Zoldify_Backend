@@ -94,7 +94,11 @@ describe('ChatService: tin cuối của hội thoại dài', () => {
   function batSpy() {
     soDong = [];
     cauSql = [];
-    const goc = MysqlQueryRunner.prototype.query;
+    // Reflect.get: giữ hàm gốc để gọi lại với `this` của từng QueryRunner.
+    const goc = Reflect.get(MysqlQueryRunner.prototype, 'query') as (
+      this: MysqlQueryRunner,
+      ...a: Parameters<MysqlQueryRunner['query']>
+    ) => Promise<unknown>;
     spy = jest
       .spyOn(MysqlQueryRunner.prototype, 'query')
       .mockImplementation(async function (

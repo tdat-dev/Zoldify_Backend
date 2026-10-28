@@ -152,7 +152,11 @@ describe('ShipmentTrackingService.dongBoTatCa với nhiều lô', () => {
 
   it('không câu SELECT lô nào trả quá 200 dòng, GHN tối đa 4 lời gọi cùng lúc', async () => {
     const soDong: number[] = [];
-    const goc = MysqlQueryRunner.prototype.query;
+    // Reflect.get: giữ hàm gốc để gọi lại với `this` của từng QueryRunner.
+    const goc = Reflect.get(MysqlQueryRunner.prototype, 'query') as (
+      this: MysqlQueryRunner,
+      ...a: Parameters<MysqlQueryRunner['query']>
+    ) => Promise<unknown>;
     const spy = jest
       .spyOn(MysqlQueryRunner.prototype, 'query')
       .mockImplementation(async function (

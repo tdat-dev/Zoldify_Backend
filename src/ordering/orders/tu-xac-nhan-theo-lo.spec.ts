@@ -182,7 +182,11 @@ describe('OrdersService.autoConfirmDueShipments với nhiều lô', () => {
 
   it('giải ngân đủ, không câu SELECT lô nào quá 200 dòng, lô hỏng không làm treo lượt', async () => {
     const soDong: number[] = [];
-    const goc = MysqlQueryRunner.prototype.query;
+    // Reflect.get: giữ hàm gốc để gọi lại với `this` của từng QueryRunner.
+    const goc = Reflect.get(MysqlQueryRunner.prototype, 'query') as (
+      this: MysqlQueryRunner,
+      ...a: Parameters<MysqlQueryRunner['query']>
+    ) => Promise<unknown>;
     const spy = jest
       .spyOn(MysqlQueryRunner.prototype, 'query')
       .mockImplementation(async function (
