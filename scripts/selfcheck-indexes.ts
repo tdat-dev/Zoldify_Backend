@@ -205,9 +205,14 @@ async function main() {
       params: [],
     },
     {
-      name: 'products.findAll theo danh mục (WHERE category_id + status ORDER BY created_at)',
+      // deleted_at đứng trước created_at (đợt đo thật 1 triệu dòng, 28/10):
+      // cùng index này đếm `product_count` của GET /categories ngay trong
+      // index. Thiếu deleted_at thì đếm phải về bảng đọc từng dòng: 15.136 ms
+      // cho 941k hàng đang bán, quá trần max_execution_time 5 s, route trả 500
+      // mãi vì cache không bao giờ được ghi.
+      name: 'products.findAll theo danh mục + đếm danh mục (category_id + status + deleted_at, ORDER BY created_at)',
       table: 'products',
-      filter: ['category_id', 'status'],
+      filter: ['category_id', 'status', 'deleted_at'],
       orderCol: 'created_at',
       explainSql:
         "SELECT id FROM products WHERE category_id = ? AND status = 'active' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 20",
@@ -261,6 +266,51 @@ async function main() {
       orderCol: 'created_at',
       explainSql:
         "SELECT id FROM escrows WHERE status = 'holding' ORDER BY created_at DESC LIMIT 20",
+      params: [],
+    },
+    // ─── Đợt đo thật 1 triệu dòng (28/10, zoldify_1mall) ─────────────────────
+    //
+    // Thống kê của admin (`admin.getDashboardStats`, `orders.getStats`) đã
+    // nhớ 60 giây, nhưng chính câu đếm vượt trần max_execution_time 5 s nên
+    // không bao giờ ghi được vào cache: route trả 500 ở MỌI lần gọi. Gốc rễ
+    // chung: TypeORM thêm `deleted_at IS NULL` (xoá mềm) vào mọi câu, mà cột
+    // đó không nằm trong index nào, nên COUNT/SUM phải về bảng đọc từng dòng.
+    // Đo không tải: COUNT products 2.052 ms, COUNT users 1.053 ms, SUM doanh
+    // thu 9.618 ms (722.526 lần về bảng); dưới tải 20 kết nối cả ba quá 5 s.
+    {
+      name: 'admin/orders stats: COUNT(products) WHERE deleted_at IS NULL',
+      table: 'products',
+      filter: [],
+      orderCol: 'deleted_at',
+      cot: ['deleted_at'],
+      explainSql: 'SELECT COUNT(1) FROM products WHERE deleted_at IS NULL',
+      params: [],
+    },
+    {
+      name: 'admin stats + admin.findAllUsers: COUNT(users) WHERE deleted_at IS NULL',
+      table: 'users',
+      filter: [],
+      orderCol: 'deleted_at',
+      cot: ['deleted_at'],
+      explainSql: 'SELECT COUNT(1) FROM users WHERE deleted_at IS NULL',
+      params: [],
+    },
+    {
+      name: 'admin/orders stats: COUNT(orders) WHERE deleted_at IS NULL',
+      table: 'orders',
+      filter: [],
+      orderCol: 'deleted_at',
+      cot: ['deleted_at'],
+      explainSql: 'SELECT COUNT(1) FROM orders WHERE deleted_at IS NULL',
+      params: [],
+    },
+    {
+      name: 'doanh thu: SUM(final_amount) WHERE is_paid + status + deleted_at IS NULL',
+      table: 'orders',
+      filter: ['is_paid', 'status', 'deleted_at'],
+      orderCol: 'final_amount',
+      explainSql:
+        "SELECT COALESCE(SUM(final_amount), 0) FROM orders WHERE is_paid = 1 AND status = 'delivered' AND deleted_at IS NULL",
       params: [],
     },
     // ─── Kỳ vọng XANH (control — chứng minh test biết phân biệt) ──────────────
