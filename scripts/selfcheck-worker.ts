@@ -345,6 +345,11 @@ async function phanDong() {
     phatThongBaoHangMoi: async () => {
       await doi(1);
     },
+    // Lịch dọn thông báo cũ mỗi đêm (rà soát "1 triệu dòng" 28/10): bài này
+    // không xếp job đó, chỉ cần có để khớp kiểu CongViecNen.
+    donThongBaoCu: async () => {
+      await doi(1);
+    },
   };
 
   const xuLy = taoBoXuLy(tasksGia);

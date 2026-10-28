@@ -10,6 +10,7 @@ import {
 } from './jobs.constants';
 import type { TasksService } from '@ops/tasks/tasks.service';
 import type { ProductsService } from '@catalog/products/products.service';
+import type { NotificationsService } from '@messaging/notifications/notifications.service';
 
 /**
  * Lượt chốt vận đơn dài không được chặn huỷ đơn quá hạn và đổ view count
@@ -96,7 +97,9 @@ describe('Hàng đợi riêng cho chốt vận đơn', () => {
     } as unknown as ProductsService;
 
     process.env.REDIS_URL = REDIS_URL;
-    runner = new JobsRunner(tasks, products);
+    runner = new JobsRunner(tasks, products, {
+      donThongBaoCu: () => Promise.resolve({}),
+    } as unknown as NotificationsService);
     await runner.onModuleInit();
   });
 

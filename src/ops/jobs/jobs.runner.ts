@@ -9,6 +9,7 @@ import IORedis from 'ioredis';
 import { urlHangDoi } from '@common/hang-doi';
 import { TasksService } from '@ops/tasks/tasks.service';
 import { ProductsService } from '@catalog/products/products.service';
+import { NotificationsService } from '@messaging/notifications/notifications.service';
 import {
   LICH_LAP,
   TEN_HANG_DOI,
@@ -42,6 +43,7 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
   constructor(
     private readonly tasks: TasksService,
     private readonly products: ProductsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -88,6 +90,14 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
       settleDeliveredShipments: () => this.tasks.settleDeliveredShipments(),
       flushViewCount: () => this.tasks.flushViewCount(),
       phatThongBaoHangMoi: (d) => this.products.phatThongBaoHangMoi(d),
+      // Gọi thẳng NotificationsService thay vì qua TasksService: TasksService
+      // được `new` bằng tay trong nhiều spec, thêm tham số là sửa cả loạt.
+      // In kết quả để biết tồn đọng còn bao nhiêu (cham_tran = còn dòng chờ).
+      donThongBaoCu: async () => {
+        const kq = await this.notifications.donThongBaoCu();
+        this.logger.log(`Dọn thông báo cũ: ${JSON.stringify(kq)}`);
+        return kq;
+      },
     });
 
     // HAI hàng đợi, mỗi hàng đợi một Worker concurrency 1 (rà soát "1 triệu

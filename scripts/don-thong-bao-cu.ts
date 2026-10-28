@@ -1,8 +1,8 @@
 /**
  * Dọn thông báo cũ một lần, chạy tay: `npm run notifications:purge`.
  *
- * Cùng hàm với job hằng đêm (khi job được đăng ký, xem TODO ở
- * `NotificationsService.donThongBaoCu`). Nối database theo DB_* trong .env
+ * Cùng hàm với job hằng đêm 3:41 (`JOB_DON_THONG_BAO_CU`, xem
+ * src/ops/jobs/jobs.constants.ts). Nối database theo DB_* trong .env
  * như các script seed. In kết quả dạng JSON; mã thoát 0 khi chạy xong, kể cả
  * khi chạm trần (phần còn lại để lần sau).
  *

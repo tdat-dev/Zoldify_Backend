@@ -39,7 +39,7 @@ export async function dangKyLichLap(
 /**
  * Giữ bao nhiêu job lịch lặp đã xong / đã hỏng trong Redis.
  *
- * BullMQ mặc định giữ TẤT CẢ. Ba lịch đẻ 24 + 24 + 288 = 336 job mỗi ngày,
+ * BullMQ mặc định giữ TẤT CẢ. Các lịch đẻ 24 + 24 + 288 + 1 = 337 job mỗi ngày,
  * hơn 120 nghìn bản ghi một năm không ai đọc, trong khi Redis còn gánh
  * throttler và cache: đầy bộ nhớ là ba thứ chết cùng lúc. Đo bằng
  * `jobs.schedule.spec.ts`.

@@ -34,6 +34,8 @@ export const TEN_HANG_DOI_VAN_DON = 'zoldify-jobs-van-don';
 export const JOB_HUY_DON_QUA_HAN = 'huy-don-qua-han';
 export const JOB_CHOT_VAN_DON = 'chot-van-don';
 export const JOB_FLUSH_VIEW_COUNT = 'flush-view-count';
+/** Dọn thông báo cũ (đã đọc > 90 ngày, mọi thứ > 180 ngày), mỗi đêm một lần. */
+export const JOB_DON_THONG_BAO_CU = 'don-thong-bao-cu';
 
 export interface LichLap {
   /** Khoá của bản ghi lịch trong Redis. ĐỔI id = tạo lịch mới, không phải sửa. */
@@ -74,6 +76,19 @@ export const LICH_LAP: readonly LichLap[] = [
     id: JOB_FLUSH_VIEW_COUNT,
     ten: JOB_FLUSH_VIEW_COUNT,
     pattern: '*/5 * * * *', // Mỗi 5 phút
+    hangDoi: TEN_HANG_DOI,
+  },
+  // Rà soát "1 triệu dòng" 28/10 mục 7: không gì xoá thông báo, bảng và
+  // index idx_user_created phình mãi. MỖI ĐÊM một lần là đủ: một lượt dọn tối
+  // đa 100.000 dòng (trần trong don-thong-bao-cu.ts), lớn hơn lượng sinh ra mỗi
+  // ngày. 3:41 sáng: sau bản dump backup lúc 3:00 (dump cỡ triệu dòng mất vài
+  // phút, không muốn DELETE theo lô chen vào), tránh phút 0 và phút 30 mà
+  // người ta hay hẹn giờ. Hàng đợi CHÍNH, không phải hàng đợi vận đơn: lượt
+  // dọn ngắn và không gọi ra ngoài, không chặn huỷ đơn quá hạn quá vài giây.
+  {
+    id: JOB_DON_THONG_BAO_CU,
+    ten: JOB_DON_THONG_BAO_CU,
+    pattern: '41 3 * * *',
     hangDoi: TEN_HANG_DOI,
   },
 ];

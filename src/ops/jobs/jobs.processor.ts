@@ -1,6 +1,7 @@
 import {
   JOB_BAO_HANG_MOI,
   JOB_CHOT_VAN_DON,
+  JOB_DON_THONG_BAO_CU,
   JOB_HUY_DON_QUA_HAN,
   JOB_FLUSH_VIEW_COUNT,
 } from './jobs.constants';
@@ -19,6 +20,8 @@ export interface CongViecNen {
   flushViewCount(): Promise<unknown>;
   /** Job một lần, mang dữ liệu (khác ba job lịch lặp ở trên). */
   phatThongBaoHangMoi(d: DuLieuBaoHangMoi): Promise<unknown>;
+  /** Lịch hằng đêm, xem JOB_DON_THONG_BAO_CU. */
+  donThongBaoCu(): Promise<unknown>;
 }
 
 /**
@@ -44,6 +47,9 @@ export function taoBoXuLy(tasks: CongViecNen) {
         return;
       case JOB_FLUSH_VIEW_COUNT:
         await tasks.flushViewCount();
+        return;
+      case JOB_DON_THONG_BAO_CU:
+        await tasks.donThongBaoCu();
         return;
       case JOB_BAO_HANG_MOI:
         await tasks.phatThongBaoHangMoi(job.data as DuLieuBaoHangMoi);

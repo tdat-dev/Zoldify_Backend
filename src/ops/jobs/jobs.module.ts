@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TasksModule } from '@ops/tasks/tasks.module';
 import { ProductsModule } from '@catalog/products/products.module';
+import { NotificationsModule } from '@messaging/notifications/notifications.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -15,7 +16,8 @@ import { JobsRunner } from './jobs.runner';
  */
 @Module({
   // ProductsModule: worker xử lý job "báo hàng mới" bằng ProductsService.
-  imports: [TasksModule, ProductsModule],
+  // NotificationsModule: job dọn thông báo cũ mỗi đêm.
+  imports: [TasksModule, ProductsModule, NotificationsModule],
   providers: [JobsRunner],
 })
 export class JobsModule {}

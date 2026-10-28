@@ -31,12 +31,8 @@ export class NotificationsService {
    *
    * Chạy tay: `npm run notifications:purge` (scripts/don-thong-bao-cu.ts).
    *
-   * TODO(đăng ký job sau khi gộp nhánh jobs runner, việc của agent khác):
-   * thêm `JOB_DON_THONG_BAO_CU = 'don-thong-bao-cu'` vào `LICH_LAP` trong
-   * src/ops/jobs/jobs.constants.ts với pattern `41 3 * * *` (3:41 sáng, tránh
-   * phút 0 của backup), một nhánh `case JOB_DON_THONG_BAO_CU: await
-   * tasks.donThongBaoCu(); return;` trong jobs.processor.ts (kèm khai trong
-   * `CongViecNen`), và `TasksService.donThongBaoCu()` gọi đúng hàm này.
+   * Chạy tự động mỗi đêm 3:41 trên worker: lịch `JOB_DON_THONG_BAO_CU` trong
+   * src/ops/jobs/jobs.constants.ts, `JobsRunner` gọi thẳng hàm này.
    */
   donThongBaoCu(o?: TuyChonDonThongBao): Promise<KetQuaDonThongBao> {
     return donThongBaoCu(this.notiRepository, o);
