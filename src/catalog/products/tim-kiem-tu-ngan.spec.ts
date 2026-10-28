@@ -209,6 +209,45 @@ describe('Tìm kiếm từ ngắn có trần, không quét cả bảng', () => {
     }
   });
 
+  // Đo 28/10 trên 1.001.015 sản phẩm (zoldify_1mall) sau khi gộp nhánh index:
+  // nhánh đó bỏ `idx_status`, câu mốc `WHERE status = 'active' ORDER BY id
+  // DESC LIMIT 1 OFFSET 19999` mất đường đọc ngược (status, id). MySQL chọn
+  // `idx_status_sold`, đọc 941.015 mục rồi SẮP XẾP cả tập: 2.641 ms MỖI lần
+  // tìm từ ngắn (cache trượt), tức cửa sổ "có trần" thành quét cả tập hàng
+  // đang bán. Câu mốc phải đi một index đọc ngược được, không có bước Sort.
+  it('câu mốc đọc ngược một index, không sắp xếp cả tập hàng đang bán', async () => {
+    // Vài nghìn món để planner chọn như ở cỡ thật (bảng vài dòng thì đọc
+    // khoá chính cũng rẻ, bài không phân biệt được gì).
+    await ds.query(
+      `INSERT INTO products (name, slug, price, stock, status, category_id, seller_id)
+       WITH RECURSIVE s (n) AS (SELECT 0 UNION ALL SELECT n + 1 FROM s WHERE n < 59)
+       SELECT CONCAT('Hàng ', n), CONCAT('tkn-${R}-n-', n), 1000 + n, 5,
+              IF(n % 10 = 0, 'sold', 'active'), ?, ?
+         FROM (SELECT a.n * 60 + b.n AS n FROM s a, s b) t`,
+      [catId, sellerId],
+    );
+    await ds.query('ANALYZE TABLE products');
+    const g = gioiHan();
+    const cu = g!.cuaSoTuNgan;
+    g!.cuaSoTuNgan = 1000;
+    sql.cau = [];
+    try {
+      await moi().findAll('1', '10', { q: 'áo' });
+    } finally {
+      g!.cuaSoTuNgan = cu;
+    }
+    const moc = sql.cau.find(
+      (c) => /\bOFFSET\b/i.test(c.q) && !/\bLIKE\b/i.test(c.q),
+    );
+    expect(moc).toBeDefined();
+    const plan = await ds.query<Array<Record<string, string>>>(
+      `EXPLAIN FORMAT=TREE ${moc!.q}`,
+      moc!.p,
+    );
+    const cay = Object.values(plan[0]).join('\n');
+    expect(cay).not.toMatch(/\bSort\b/);
+  });
+
   it('câu có từ dài vẫn đi FULLTEXT như cũ', async () => {
     await them('Áo khoác dù');
     sql.cau = [];
