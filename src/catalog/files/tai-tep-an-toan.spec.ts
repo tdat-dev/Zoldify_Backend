@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import * as fs from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import sharp from 'sharp';
 import { MulterConfigService } from './multer.config';
 import { FilesController } from './files.controller';
@@ -263,12 +265,10 @@ describe('Upload chỉ nhận ảnh thật, nhỏ', () => {
       { create } as never,
       { isEnabled: () => false, upload: jest.fn() } as never,
     );
-    const mkdir = jest
-      .spyOn(fs, 'mkdirSync')
-      .mockImplementation(() => undefined);
-    const ghi = jest
-      .spyOn(fs, 'writeFileSync')
-      .mockImplementation(() => undefined);
+    // Ghi thật vào một thư mục tạm (không spyOn fs: `import * as fs` cho ra
+    // thuộc tính chỉ đọc, jest không thay được), rồi đọc lại thư mục.
+    const tam = fs.mkdtempSync(join(tmpdir(), 'zoldify-upload-'));
+    const cwd = jest.spyOn(process, 'cwd').mockReturnValue(tam);
 
     try {
       await controller.uploadFile(
@@ -277,17 +277,19 @@ describe('Upload chỉ nhận ảnh thật, nhỏ', () => {
         NGUOI,
       );
 
-      const tenFile = ghi.mock.calls.map((c) => String(c[0]));
+      const tenFile = fs
+        .readdirSync(join(tam, 'public', 'images', 'products'))
+        .sort();
       expect(tenFile).toHaveLength(2);
-      expect(tenFile[0]).toMatch(/photo-1-\d+\.webp$/);
+      expect(tenFile[0]).toMatch(/^photo-1-\d+\.webp$/);
       expect(tenFile[1]).toBe(tenFile[0].replace(/\.webp$/, '_480.webp'));
       expect(create).toHaveBeenCalledTimes(1);
       expect((create.mock.calls[0][0] as { url: string }).url).toMatch(
-        /photo-1-\d+\.webp$/,
+        new RegExp(`/${tenFile[0]}$`),
       );
     } finally {
-      mkdir.mockRestore();
-      ghi.mockRestore();
+      cwd.mockRestore();
+      fs.rmSync(tam, { recursive: true, force: true });
     }
   });
 });
