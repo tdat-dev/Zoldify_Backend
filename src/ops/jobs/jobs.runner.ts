@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
+import { urlHangDoi } from '@common/hang-doi';
 import { TasksService } from '@ops/tasks/tasks.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { LICH_LAP, TEN_HANG_DOI } from './jobs.constants';
@@ -38,7 +39,9 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const url = process.env.REDIS_URL;
+    // QUEUE_REDIS_URL (redis-queue, noeviction), thiếu thì REDIS_URL. Cùng
+    // một hàm với bên xếp ở api, xem `urlHangDoi`.
+    const url = urlHangDoi();
 
     // KHÔNG fail-open, và đây là ngoại lệ có chủ đích của cả repo.
     //
@@ -53,8 +56,8 @@ export class JobsRunner implements OnModuleInit, OnApplicationShutdown {
     // dựng lại, và log có một dòng đọc được thay vì im lặng.
     if (!url) {
       throw new Error(
-        'REDIS_URL trống. Worker KHÔNG chạy được nếu thiếu hàng đợi — ' +
-          'đặt REDIS_URL rồi khởi động lại.',
+        'QUEUE_REDIS_URL và REDIS_URL đều trống. Worker KHÔNG chạy được ' +
+          'nếu thiếu hàng đợi: đặt một trong hai rồi khởi động lại.',
       );
     }
 

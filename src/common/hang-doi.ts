@@ -26,6 +26,25 @@ export interface DuLieuBaoHangMoi {
   currency?: string;
 }
 
+/**
+ * Redis của hàng đợi: QUEUE_REDIS_URL, chưa đặt (hoặc rỗng) thì REDIS_URL.
+ *
+ * VÌ SAO TÁCH. REDIS_URL là Redis CACHE, chạy `allkeys-lru`: đầy thì đuổi
+ * khoá ít dùng nhất, và khoá job / lịch lặp của BullMQ (đọc mỗi giờ một lần)
+ * bị đuổi trước tiên. Job huỷ đơn, giải ngân biến mất mà không có lỗi nào.
+ * docker-compose.yml dựng `redis-queue` (noeviction, AOF) cho riêng hàng đợi.
+ *
+ * VÌ SAO RƠI VỀ REDIS_URL. Máy nào chưa có biến mới (dev, staging trước lần
+ * deploy kế) vẫn chạy y như hôm qua thay vì worker chết vì thiếu biến.
+ *
+ * Cả bên xếp (dưới đây) lẫn bên nhận (`ops/jobs/jobs.runner.ts`) đều phải đọc
+ * qua hàm này: lệch một bên là api xếp job vào một Redis còn worker chờ ở Redis
+ * kia, và job nằm đó không ai nhận.
+ */
+export function urlHangDoi(): string | undefined {
+  return process.env.QUEUE_REDIS_URL || process.env.REDIS_URL || undefined;
+}
+
 /** Chờ Redis nhận job tối đa bấy nhiêu, quá thì coi như không xếp được. */
 const HET_GIO_XEP_MS = 2_000;
 
@@ -33,7 +52,7 @@ const HET_GIO_XEP_MS = 2_000;
  * Bên XẾP job vào hàng đợi. Api dùng; worker cũng có bản này (qua
  * ProductsModule) nhưng không gọi tới nên không mở kết nối nào.
  *
- * FAIL-OPEN như cache và throttler: không có REDIS_URL, Redis chết, hay Redis
+ * FAIL-OPEN như cache và throttler: không có Redis hàng đợi (`urlHangDoi`), Redis chết, hay Redis
  * chậm quá 2 giây thì `them()` trả `false` chứ KHÔNG ném. Người gọi tự quyết
  * đường lùi; request của người dùng không được hỏng vì việc phụ chạy nền.
  *
@@ -49,7 +68,7 @@ export class HangDoiViecNen implements OnApplicationShutdown {
 
   private layHangDoi(): Queue | null {
     if (this.queue) return this.queue;
-    const url = process.env.REDIS_URL;
+    const url = urlHangDoi();
     if (!url) return null;
     // Không xếp lệnh khi mất kết nối, thử lại một lần: bên XẾP phải hỏng
     // nhanh để người gọi còn kịp đi đường lùi, khác hẳn Worker (bắt buộc
