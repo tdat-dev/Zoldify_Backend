@@ -24,6 +24,7 @@ import { OrdersService } from '@ordering/orders/orders.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { UpdateUserByAdminDto } from './dto/update-user-by-admin.dto';
 import { normalizePagination } from '@common/dto/pagination.dto';
+import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 
 @Injectable()
 export class AdminService {
@@ -61,22 +62,50 @@ export class AdminService {
     // `?page=-5` ra skip âm và 500. Khuôn chung (rà soát 26/10 mục 3).
     const { page: trang, size, offset } = normalizePagination(page, limit, 20);
 
-    const [result, total] = await this.userRepository.findAndCount({
-      where,
-      skip: offset,
-      take: size,
-      order: { created_at: 'DESC' },
-    });
+    // SẮP THEO `id DESC`, không theo `created_at`. Hai thứ tự là MỘT: `id` tự
+    // tăng và `created_at` lấy giờ lúc INSERT, nên tài khoản tạo sau luôn có
+    // id lớn hơn (trừ dữ liệu nhập tay kèm `created_at` cũ, không có đường nào
+    // trong app làm vậy). Khác nhau ở chi phí: `created_at` không có index nên
+    // MySQL gom MỌI dòng khớp rồi filesort; `id` là khoá chính nên đọc ngược và
+    // dừng ngay khi đủ một trang. Còn sửa luôn một lỗi nhỏ: tài khoản tạo cùng
+    // một giây (seed, import) trước đây ra thứ tự không ổn định giữa các trang.
+    const order = { id: 'DESC' as const };
 
-    return {
-      meta: {
-        current: trang,
-        pageSize: size,
-        pages: Math.ceil(total / size),
-        total,
-      },
-      result,
-    };
+    if (!q) {
+      // Không tìm chữ: lọc theo vai trò/khoá có index, đếm thật như cũ.
+      const [result, total] = await this.userRepository.findAndCount({
+        where,
+        skip: offset,
+        take: size,
+        order,
+      });
+      return {
+        meta: {
+          current: trang,
+          pageSize: size,
+          pages: Math.ceil(total / size),
+          total,
+        },
+        result,
+      };
+    }
+
+    // CÓ `q`: `full_name LIKE '%q%'` không index nào dùng được, và giữ nguyên
+    // (admin phải tìm được cả tài khoản cũ). Nhưng `findAndCount` thì đếm hết
+    // mọi dòng khớp, tức LUÔN quét cả bảng một triệu tài khoản dù trang chỉ cần
+    // 20 dòng. Nay: lấy trang trước (dừng khi đủ dòng), đếm có trần 10.001
+    // (`total_capped` khi vượt), và trần độ sâu như danh sách công khai.
+    const { rows, ...tong } = await trangCoTran({
+      offset,
+      size,
+      layDong: (take) =>
+        this.userRepository.find({ where, skip: offset, take, order }),
+      dem: () =>
+        demCoTran(
+          this.userRepository.createQueryBuilder('u').setFindOptions({ where }),
+        ),
+    });
+    return { meta: metaCoTran(trang, size, tong), result: rows };
   }
 
   async getUserDetail(id: number) {
