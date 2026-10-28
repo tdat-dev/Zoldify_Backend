@@ -1,6 +1,7 @@
 import {
   JOB_BAO_HANG_MOI,
   JOB_CHOT_VAN_DON,
+  JOB_DON_THONG_BAO_CU,
   JOB_HUY_DON_QUA_HAN,
 } from './jobs.constants';
 import { taoBoXuLy, type CongViecNen } from './jobs.processor';
@@ -48,6 +49,10 @@ describe('taoBoXuLy — ánh xạ tên job sang việc', () => {
         daChay.push(`hang-moi:${d.product_id}`);
         return Promise.resolve();
       },
+      donThongBaoCu: () => {
+        daChay.push('don-thong-bao');
+        return Promise.resolve();
+      },
     };
     return { tasks, daChay };
   }
@@ -73,6 +78,14 @@ describe('taoBoXuLy — ánh xạ tên job sang việc', () => {
     const { tasks, daChay } = tasksGia();
     await taoBoXuLy(tasks)({ name: JOB_CHOT_VAN_DON });
     expect(daChay).toEqual(['chot']);
+  });
+
+  // Rà soát "1 triệu dòng" 28/10 mục 7: lịch hằng đêm sinh job này; thiếu
+  // nhánh thì job nào cũng failed vì "không có bộ xử lý", bảng vẫn phình.
+  it(`"${JOB_DON_THONG_BAO_CU}" gọi donThongBaoCu`, async () => {
+    const { tasks, daChay } = tasksGia();
+    await taoBoXuLy(tasks)({ name: JOB_DON_THONG_BAO_CU });
+    expect(daChay).toEqual(['don-thong-bao']);
   });
 
   it('mỗi tên chỉ gọi ĐÚNG một việc, không gọi nhầm việc kia', async () => {
