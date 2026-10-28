@@ -1,8 +1,13 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from '@nestjs/cache-manager';
+import { nhoNgan } from '@common/nho-ngan';
 import { VAI_TRO_DAT_DUOC } from './dto/change-role.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order, OrderStatus } from '@ordering/orders/entities/order.entity';
@@ -36,6 +41,9 @@ export class AdminService {
     private readonly withdrawalsService: WithdrawalsService,
     private readonly ordersService: OrdersService,
     private readonly productsService: ProductsService,
+    // @Optional: spec dựng AdminService bằng tay với tám tham số; thiếu cache
+    // thì thống kê chạy thẳng DB như trước.
+    @Optional() @Inject(CACHE_MANAGER) private readonly cache?: Cache,
   ) {}
   async getUsers(
     page: number,
@@ -216,7 +224,21 @@ export class AdminService {
     };
   }
 
+  /**
+   * Số liệu dashboard admin, nhớ 60 giây.
+   *
+   * Bốn câu dưới là COUNT/SUM trên cả bảng: InnoDB không giữ sẵn số dòng,
+   * nên một triệu đơn là đọc cả triệu mục index MỖI lần admin mở dashboard
+   * (và trang này tự làm mới). Số tổng trên dashboard trễ tối đa một phút là
+   * chấp nhận được; nhiều admin mở cùng lúc thì `nhoNgan` gộp thành một lượt.
+   */
   async getDashboardStats() {
+    return nhoNgan(this.cache, 'admin:dashboard-stats', 60_000, () =>
+      this.tinhThongKe(),
+    );
+  }
+
+  private async tinhThongKe() {
     const [totalUsers, totalProducts, totalOrders, revenueResult] =
       await Promise.all([
         this.userRepository.count(),
