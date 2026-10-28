@@ -17,7 +17,7 @@ import {
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import type { IUser } from '@identity/users/users.interface';
-import { normalizePagination } from '@common/dto/pagination.dto';
+import { catDoSau, normalizePagination } from '@common/dto/pagination.dto';
 
 @Injectable()
 export class ShopService {
@@ -154,13 +154,18 @@ export class ShopService {
       size: limit,
       offset,
     } = normalizePagination(rawPage, rawLimit, 20);
-    const [result, total] = await this.productRepository.findAndCount({
-      where: { seller: { id: sellerId }, status: ProductStatus.ACTIVE },
-      relations: ['category'],
-      skip: offset,
-      take: limit,
-      order: { created_at: 'DESC' },
-    });
+    const where = { seller: { id: sellerId }, status: ProductStatus.ACTIVE };
+    // Trần độ sâu như /products: ?page=9000 không được thành OFFSET 179980.
+    const doSau = catDoSau({ offset, size: limit });
+    const [result, total] = doSau.ngoaiTran
+      ? [[], await this.productRepository.count({ where })]
+      : await this.productRepository.findAndCount({
+          where,
+          relations: ['category'],
+          skip: offset,
+          take: doSau.take,
+          order: { created_at: 'DESC' },
+        });
 
     return {
       meta: {

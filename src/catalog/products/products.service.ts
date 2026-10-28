@@ -21,7 +21,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
 import { formatMoney } from '@common/money';
-import { normalizePagination } from '@common/dto/pagination.dto';
+import { catDoSau, normalizePagination } from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import Redis from 'ioredis';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
@@ -590,6 +590,9 @@ export class ProductsService {
     }
 
     let result, totalItems;
+    // Trang ngoài trần độ sâu: không gửi câu lấy dòng nào xuống MySQL (xem
+    // `catDoSau`). Vẫn đếm tổng để meta giữ nguyên khuôn.
+    const doSau = catDoSau({ offset, size: numLimit });
 
     if (qs.q) {
       const rawQ = String(qs.q).trim();
@@ -645,9 +648,13 @@ export class ProductsService {
       if (qs.sort === 'featured') {
         qb.addOrderBy('product.view_count', 'DESC');
       }
-      qb.skip(offset).take(numLimit);
-
-      [result, totalItems] = await qb.getManyAndCount();
+      if (doSau.ngoaiTran) {
+        result = [];
+        totalItems = await qb.getCount();
+      } else {
+        qb.skip(offset).take(doSau.take);
+        [result, totalItems] = await qb.getManyAndCount();
+      }
     } else {
       // CHỈ HIỆN HÀNG ĐANG MỞ BÁN.
       //
@@ -679,29 +686,34 @@ export class ProductsService {
         const max = qs.price_max ? Number(qs.price_max) : 999999999;
         where.price = Between(min, max);
       }
-      [result, totalItems] = await this.productRepository.findAndCount({
-        where,
-        skip: offset,
-        take: numLimit,
-        order,
-        relations: { category: true, seller: true },
-        /**
-         * CHỈ lấy vài cột của người bán và danh mục.
-         *
-         * Trước đây nạp nguyên bản ghi users cho MỖI sản phẩm, trên một endpoint
-         * công khai không cần đăng nhập. Đo được: email và số điện thoại người
-         * bán lộ ra với bất kỳ ai gọi API, và riêng đối tượng seller chiếm 43%
-         * gói tin (532 byte/sản phẩm trong gói 24,6 KB).
-         *
-         * Ô hàng trong lưới chỉ cần tên và ảnh đại diện người bán. Không liệt kê
-         * cột nào của chính sản phẩm ở đây — bỏ trống thì TypeORM lấy đủ, nên
-         * thêm cột mới cho products sau này không phải sửa lại chỗ này.
-         */
-        select: {
-          seller: { id: true, full_name: true, avatar: true },
-          category: { id: true, name: true, slug: true },
-        },
-      });
+      if (doSau.ngoaiTran) {
+        result = [];
+        totalItems = await this.productRepository.count({ where });
+      } else {
+        [result, totalItems] = await this.productRepository.findAndCount({
+          where,
+          skip: offset,
+          take: doSau.take,
+          order,
+          relations: { category: true, seller: true },
+          /**
+           * CHỈ lấy vài cột của người bán và danh mục.
+           *
+           * Trước đây nạp nguyên bản ghi users cho MỖI sản phẩm, trên một endpoint
+           * công khai không cần đăng nhập. Đo được: email và số điện thoại người
+           * bán lộ ra với bất kỳ ai gọi API, và riêng đối tượng seller chiếm 43%
+           * gói tin (532 byte/sản phẩm trong gói 24,6 KB).
+           *
+           * Ô hàng trong lưới chỉ cần tên và ảnh đại diện người bán. Không liệt kê
+           * cột nào của chính sản phẩm ở đây — bỏ trống thì TypeORM lấy đủ, nên
+           * thêm cột mới cho products sau này không phải sửa lại chỗ này.
+           */
+          select: {
+            seller: { id: true, full_name: true, avatar: true },
+            category: { id: true, name: true, slug: true },
+          },
+        });
+      }
     }
 
     const totalPages = Math.ceil(totalItems / numLimit);

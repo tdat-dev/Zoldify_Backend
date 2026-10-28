@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { normalizePagination } from '@common/dto/pagination.dto';
+import { catDoSau, normalizePagination } from '@common/dto/pagination.dto';
 import { User, UserRole } from '@identity/users/entities/user.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { Review } from './entities/review.entity';
@@ -178,13 +178,18 @@ export class InteractionsService {
       offset,
     } = normalizePagination(currentPage, limit);
 
-    const [result, totalItems] = await this.reviewRepository.findAndCount({
-      where: { product: { id: productId } },
-      skip: offset,
-      take: numLimit,
-      relations: ['user'],
-      order: { created_at: 'DESC' },
-    });
+    const where = { product: { id: productId } };
+    // Trần độ sâu: route công khai, ?current=9000 không được thành OFFSET sâu.
+    const doSau = catDoSau({ offset, size: numLimit });
+    const [result, totalItems] = doSau.ngoaiTran
+      ? [[], await this.reviewRepository.count({ where })]
+      : await this.reviewRepository.findAndCount({
+          where,
+          skip: offset,
+          take: doSau.take,
+          relations: ['user'],
+          order: { created_at: 'DESC' },
+        });
 
     const { avg } = await this.reviewRepository
       .createQueryBuilder('review')
@@ -220,13 +225,16 @@ export class InteractionsService {
     // được đánh giá; trước đây nó tự nhớ trên máy (mất khi đổi máy, lỗi H-01).
     const where: any = mine ? { user: { id: user.id } } : {};
 
-    const [result, totalItems] = await this.reviewRepository.findAndCount({
-      where,
-      skip: offset,
-      take: numLimit,
-      relations: ['user', 'product'],
-      order: { created_at: 'DESC' },
-    });
+    const doSau = catDoSau({ offset, size: numLimit });
+    const [result, totalItems] = doSau.ngoaiTran
+      ? [[], await this.reviewRepository.count({ where })]
+      : await this.reviewRepository.findAndCount({
+          where,
+          skip: offset,
+          take: doSau.take,
+          relations: ['user', 'product'],
+          order: { created_at: 'DESC' },
+        });
 
     const totalPages = Math.ceil(totalItems / numLimit);
 
