@@ -1,4 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
+import * as fs from 'fs';
+import sharp from 'sharp';
 import { MulterConfigService } from './multer.config';
 import { FilesController } from './files.controller';
 
@@ -15,8 +17,23 @@ import { FilesController } from './files.controller';
  *      RAM. Mọi client chỉ tải ảnh (web accept="image/*", app expo-image-picker
  *      mediaTypes images và tự nén về JPEG 1600px, cỡ 150-400 KB).
  */
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+// Ảnh THẬT, không phải vài byte đầu giả: từ khi upload thu nhỏ ảnh bằng sharp
+// (nen-anh.ts), byte giả mang đầu PNG là "ảnh hỏng" và bị từ chối 400.
+const PNG_GIA = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00,
+]);
+let JPEG: Buffer;
+let PNG: Buffer;
+let GIF: Buffer;
+beforeAll(async () => {
+  const mau = (w: number, h: number) =>
+    sharp({
+      create: { width: w, height: h, channels: 3, background: '#c87832' },
+    });
+  JPEG = await mau(2400, 1800).jpeg().toBuffer();
+  PNG = await mau(800, 600).png().toBuffer();
+  GIF = await mau(40, 40).gif().toBuffer();
+});
 const HTML = Buffer.from(
   '<html><script>alert(document.cookie)</script></html>',
 );
@@ -52,7 +69,10 @@ function locDuoi(originalname: string): Promise<boolean> {
 }
 
 function dungController() {
-  const upload = jest.fn(() => Promise.resolve('https://img/x'));
+  // Chữ ký đủ ba tham số để mock.calls có kiểu [buffer, key, contentType].
+  const upload = jest.fn((...args: [Buffer, string, string]) =>
+    Promise.resolve(`https://img.zoldify.com/${args[1]}`),
+  );
   const create = jest.fn((x: unknown) => Promise.resolve(x));
   const controller = new FilesController(
     { create } as never,
@@ -135,13 +155,15 @@ describe('Upload chỉ nhận ảnh thật, nhỏ', () => {
       NGUOI,
     );
 
+    // Ảnh PNG được nén thành WebP: mime lưu xuống là của file ĐÃ LƯU, không
+    // phải text/html client khai, cũng không phải image/png của bản gốc.
     expect(upload).toHaveBeenCalledWith(
       expect.any(Buffer),
-      expect.stringMatching(/\.png$/),
-      'image/png',
+      expect.stringMatching(/\.webp$/),
+      'image/webp',
     );
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ mime_type: 'image/png' }),
+      expect.objectContaining({ mime_type: 'image/webp' }),
       NGUOI,
     );
   });
@@ -155,10 +177,117 @@ describe('Upload chỉ nhận ảnh thật, nhỏ', () => {
       NGUOI,
     );
 
-    expect(upload).toHaveBeenCalledWith(
-      expect.any(Buffer),
-      expect.stringMatching(/^products\/photo-1-\d+\.jpg$/),
-      'image/jpeg',
+    // Hai object: ảnh chính và ảnh nhỏ cùng tên, thêm _480 trước đuôi.
+    expect(upload).toHaveBeenCalledTimes(2);
+    const [chinh, nho] = upload.mock.calls;
+    expect(chinh[1]).toMatch(/^products\/photo-1-\d+\.webp$/);
+    expect(chinh[2]).toBe('image/webp');
+    expect(nho[1]).toBe(chinh[1].replace(/\.webp$/, '_480.webp'));
+    expect(nho[2]).toBe('image/webp');
+  });
+
+  it('bảng files lưu URL, cỡ và mime của ảnh CHÍNH đã nén', async () => {
+    const { controller, upload, create } = dungController();
+
+    await controller.uploadFile(
+      tep('photo-1.jpg', 'image/jpeg', JPEG) as never,
+      REQ,
+      NGUOI,
     );
+
+    const [buf, key] = upload.mock.calls[0];
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `https://img.zoldify.com/${key}`,
+        mime_type: 'image/webp',
+        size: buf.length,
+        file_name: 'photo-1.jpg',
+      }),
+      NGUOI,
+    );
+    expect(buf.length).toBeLessThan(JPEG.length);
+  });
+
+  it('đẩy ảnh nhỏ hỏng vẫn tải lên thành công (client lùi về ảnh chính)', async () => {
+    const { controller, upload, create } = dungController();
+    upload
+      .mockImplementationOnce((...args) =>
+        Promise.resolve(`https://img.zoldify.com/${args[1]}`),
+      )
+      .mockImplementationOnce(() => Promise.reject(new Error('R2 503')));
+
+    await controller.uploadFile(
+      tep('photo-1.jpg', 'image/jpeg', JPEG) as never,
+      REQ,
+      NGUOI,
+    );
+
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect((create.mock.calls[0][0] as { url: string }).url).toMatch(
+      /\d\.webp$/,
+    );
+  });
+
+  it('byte giả mang đầu PNG bị từ chối 400, không đẩy gì lên', async () => {
+    const { controller, upload, create } = dungController();
+
+    await expect(
+      controller.uploadFile(
+        tep('anh.png', 'image/png', PNG_GIA) as never,
+        REQ,
+        NGUOI,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(upload).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('GIF lưu nguyên một object, không có ảnh nhỏ', async () => {
+    const { controller, upload } = dungController();
+
+    await controller.uploadFile(
+      tep('dong.gif', 'image/gif', GIF) as never,
+      REQ,
+      NGUOI,
+    );
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(upload.mock.calls[0][1]).toMatch(/\.gif$/);
+    expect(upload.mock.calls[0][2]).toBe('image/gif');
+  });
+
+  it('chưa cấu hình R2 thì ghi cả ảnh chính lẫn ảnh nhỏ ra đĩa', async () => {
+    const create = jest.fn((x: unknown) => Promise.resolve(x));
+    const controller = new FilesController(
+      { create } as never,
+      { isEnabled: () => false, upload: jest.fn() } as never,
+    );
+    const mkdir = jest
+      .spyOn(fs, 'mkdirSync')
+      .mockImplementation(() => undefined);
+    const ghi = jest
+      .spyOn(fs, 'writeFileSync')
+      .mockImplementation(() => undefined);
+
+    try {
+      await controller.uploadFile(
+        tep('photo-1.jpg', 'image/jpeg', JPEG) as never,
+        REQ,
+        NGUOI,
+      );
+
+      const tenFile = ghi.mock.calls.map((c) => String(c[0]));
+      expect(tenFile).toHaveLength(2);
+      expect(tenFile[0]).toMatch(/photo-1-\d+\.webp$/);
+      expect(tenFile[1]).toBe(tenFile[0].replace(/\.webp$/, '_480.webp'));
+      expect(create).toHaveBeenCalledTimes(1);
+      expect((create.mock.calls[0][0] as { url: string }).url).toMatch(
+        /photo-1-\d+\.webp$/,
+      );
+    } finally {
+      mkdir.mockRestore();
+      ghi.mockRestore();
+    }
   });
 });
