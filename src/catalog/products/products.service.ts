@@ -610,6 +610,11 @@ export class ProductsService {
    * (status, id) nên đọc ngược K mục index là ra, không đụng dòng). Câu chính
    * thêm `id >= mốc`: một khoảng khoá chính, không lớn dần theo bảng.
    *
+   * LƯU Ý KHI GỘP: nhánh index (rà soát 28/10) bỏ `idx_status` để thay bằng
+   * (status, created_at). Khi đó câu mốc đọc ngược khoá chính và lọc
+   * `status`: vẫn có trần, cỡ K / tỉ lệ hàng đang bán dòng (đa số là hàng đang
+   * bán nên gần K). Đo lại bằng EXPLAIN sau khi gộp.
+   *
    * Đo trên 256k sản phẩm (zoldify_1mc, 28/10), câu "áo":
    *   cũ  LIKE '%áo%' + COUNT(DISTINCT)            3.352 ms (COUNT quét cả bảng)
    *   bảng con JOIN (SELECT id ... LIMIT 20000)     446 + 413 ms (dựng bảng tạm)
