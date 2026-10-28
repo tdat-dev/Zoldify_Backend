@@ -9,6 +9,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
 import { mailerConfig } from './common/mailer.config';
 import { cacheConfig } from './common/cache.config';
+import { tuyChonTruyVanCham } from './common/log-truy-van-cham';
 import { JwtModule } from '@nestjs/jwt';
 import { MaintenanceGuard } from './common/guards/maintenance.guard';
 import { AppService } from './app.service';
@@ -120,6 +121,10 @@ import { RecommendationsModule } from '@catalog/recommendations/recommendations.
         synchronize: false,
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         migrationsRun: false,
+        // Báo câu SQL quá 1s (DB_SLOW_QUERY_MS) qua JsonLogger, không kèm tham
+        // số. Trước đây không đặt, nên lúc API trượt dần thành timeout ở cỡ
+        // triệu dòng thì log không chỉ ra được câu nào chậm.
+        ...tuyChonTruyVanCham(),
         extra: {
           // 15 chứ không phải 50 — task #5 bảng phân công.
           //
