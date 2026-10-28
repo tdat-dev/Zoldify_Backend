@@ -20,6 +20,10 @@ import { User } from '@identity/users/entities/user.entity';
 // và `synchronize` đọc, nên thiếu dòng dưới thì lần sinh migration tới sẽ đề
 // nghị XOÁ đúng cái index đang phục vụ màn chat.
 @Index('idx_conversation_created', ['conversation', 'created_at'])
+// Đếm tin chưa đọc: conversation_id IN (...) AND is_read=0 AND sender_id <> tôi.
+// Đủ ba cột thì MySQL đếm xong trong index, không lần về bảng đọc `content`
+// (TEXT). Migration 1788500000000.
+@Index('idx_conversation_read_sender', ['conversation', 'is_read', 'sender'])
 export class Message {
   @PrimaryGeneratedColumn()
   id: number;

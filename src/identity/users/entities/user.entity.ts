@@ -16,9 +16,12 @@ export enum UserRole {
   MODERATOR = 'moderator',
 }
 
-// Thêm Index trên email và role (theo docs DATABASE.md)
-@Index('idx_email', ['email'])
+// idx_email ĐÃ BỎ ở migration 1788500000000: trùng hẳn index UNIQUE mà
+// `unique: true` của cột email sinh ra. Không khai lại, khai lại là bảo
+// TypeORM dựng lại đúng cái index vừa cố ý xoá.
 @Index('idx_role', ['role'])
+// Danh sách người dùng của admin, mới đăng ký trước. Migration 1788500000000.
+@Index('idx_created_at', ['created_at'])
 @Entity('users') // Tên bảng trong MySQL
 export class User {
   // Định danh tự tăng - INT PK

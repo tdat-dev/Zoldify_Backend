@@ -34,7 +34,7 @@ interface Pattern {
   params: any[];
   control?: boolean; //    true = kỳ vọng ĐÃ XANH (chứng minh test không phải lúc nào cũng đỏ)
   // Dãy cột index phải bắt đầu bằng, khi câu KHÔNG có dạng "lọc rồi sắp".
-  // Vd đếm tin chưa đọc: (conversation_id, is_read, sender_id) — cột cuối là
+  // Vd đếm tin chưa đọc: (conversation_id, is_read, sender_id), cột cuối là
   // điều kiện `<>` chứ không phải ORDER BY. Bỏ trống thì = filter + orderCol.
   cot?: string[];
 }
@@ -381,7 +381,7 @@ async function main() {
   // hai B-tree giống hệt nhau. Ở 1 triệu dòng đó là ~40MB buffer pool cho một
   // thứ không câu nào chọn (optimizer luôn ưu tiên UNIQUE).
   //
-  // `phu` là index PHẢI còn lại sau khi xoá — mất nó thì không được xoá.
+  // `phu` là index PHẢI còn lại sau khi xoá; mất nó thì không được xoá.
   console.log('\x1b[1m── Index thừa có tên (đợt 1M) ──\x1b[0m');
   const thuaCoTen: Array<{
     table: string;
@@ -423,7 +423,7 @@ async function main() {
     console.log(`\x1b[1m${t.table}.${t.idx}\x1b[0m`);
     if (!conPhu) {
       bad(
-        `${t.table}: chưa có index phủ (${t.phu.join(', ')}) — CHƯA được xoá ${t.idx}`,
+        `${t.table}: chưa có index phủ (${t.phu.join(', ')}), CHƯA được xoá ${t.idx}`,
       );
     } else if (tenIdx.length > 0) {
       bad(`${t.table}.${t.idx} THỪA (${t.lyDo}); nên drop`);

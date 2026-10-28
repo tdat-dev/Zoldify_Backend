@@ -28,6 +28,8 @@ export enum OrderStatus {
 @Index('idx_created_at', ['created_at'])
 @Index('idx_user_status', ['user', 'status'])
 @Index('idx_user_created', ['user', 'created_at'])
+// Bảng quản trị lọc đơn theo trạng thái, mới nhất trước. Migration 1788500000000.
+@Index('idx_status_created', ['status', 'created_at'])
 // Index PHỦ cho hai câu cộng doanh thu của bảng điều khiển (admin.getStats và
 // orders.getStats). Có `final_amount` ở cuối để MySQL đọc xong ngay trong
 // index, khỏi lần về bảng. Đo: type=ALL rows=1000 -> type=ref rows=681,
