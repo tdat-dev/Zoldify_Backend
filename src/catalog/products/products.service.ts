@@ -16,7 +16,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
-import { Repository, Between, MoreThan, SelectQueryBuilder } from 'typeorm';
+import { Repository, Between, In, MoreThan, SelectQueryBuilder } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
@@ -709,9 +709,8 @@ export class ProductsService {
 
     if (qs.q) {
       const rawQ = String(qs.q).trim();
-      const qb = this.productRepository
-        .createQueryBuilder('product')
-        .leftJoinAndSelect('product.category', 'category');
+      // KHÔNG JOIN ở câu lọc: danh mục nạp sau, theo id (xem `chonTheoId`).
+      const qb = this.productRepository.createQueryBuilder('product');
 
       // Tách từ, bỏ toán tử của BOOLEAN MODE và ký tự đại diện của LIKE.
       // NFC: "tủ" gõ từ bàn phím tổ hợp (t + u + dấu hỏi rời) dài 4 điểm mã,
@@ -771,7 +770,13 @@ export class ProductsService {
         qb.addOrderBy('product.view_count', 'DESC');
       }
       qbDem = qb;
-      layDong = (take) => qb.clone().skip(offset).take(take).getMany();
+      layDong = (take) =>
+        this.chonTheoId(qb, offset, take, (ids) =>
+          this.productRepository.find({
+            where: { id: In(ids) },
+            relations: { category: true },
+          }),
+        );
     } else {
       // CHỈ HIỆN HÀNG ĐANG MỞ BÁN.
       //
@@ -812,30 +817,12 @@ export class ProductsService {
       qbDem = this.productRepository
         .createQueryBuilder('product')
         .setFindOptions({ where, relations: quanHeLoc });
+      const qbTrang = qbDem.clone();
+      const [cotDau, ...cotSau] = Object.keys(order);
+      qbTrang.orderBy(`product.${cotDau}`, order[cotDau]);
+      for (const c of cotSau) qbTrang.addOrderBy(`product.${c}`, order[c]);
       layDong = (take) =>
-        this.productRepository.find({
-          where,
-          skip: offset,
-          take,
-          order,
-          relations: { category: true, seller: true },
-          /**
-           * CHỈ lấy vài cột của người bán và danh mục.
-           *
-           * Trước đây nạp nguyên bản ghi users cho MỖI sản phẩm, trên một endpoint
-           * công khai không cần đăng nhập. Đo được: email và số điện thoại người
-           * bán lộ ra với bất kỳ ai gọi API, và riêng đối tượng seller chiếm 43%
-           * gói tin (532 byte/sản phẩm trong gói 24,6 KB).
-           *
-           * Ô hàng trong lưới chỉ cần tên và ảnh đại diện người bán. Không liệt kê
-           * cột nào của chính sản phẩm ở đây — bỏ trống thì TypeORM lấy đủ, nên
-           * thêm cột mới cho products sau này không phải sửa lại chỗ này.
-           */
-          select: {
-            seller: { id: true, full_name: true, avatar: true },
-            category: { id: true, name: true, slug: true },
-          },
-        });
+        this.chonTheoId(qbTrang, offset, take, (ids) => this.napTheoId(ids));
     }
 
     // Tổng cache theo BỘ LỌC, không theo trang: lật từ trang 1 sang trang 2
@@ -850,6 +837,68 @@ export class ProductsService {
     });
 
     return { meta: metaCoTran(numPage, numLimit, tong), result: rows };
+  }
+
+  /**
+   * Chọn trang bằng MỘT câu chỉ lấy id (không JOIN quan hệ hiển thị), rồi
+   * nạp sản phẩm kèm quan hệ theo đúng các id đó, giữ thứ tự.
+   *
+   * VÌ SAO HAI BƯỚC. Đo 28/10 trên 1.001.015 sản phẩm (zoldify_1mall):
+   *  · `find({ relations, skip, take })` khiến TypeORM bọc câu trong bảng con
+   *    `SELECT DISTINCTROW distinctAlias.id FROM (... LEFT JOIN categories LEFT
+   *    JOIN users ...)`: MySQL dựng bảng tạm của cả 941k hàng đang bán rồi mới
+   *    sắp. Trang 1 mặc định 16.936 ms, most_viewed 6.222 ms; dưới 20 kết nối
+   *    phần lớn chạm trần max_execution_time 5 s và trả 500.
+   *  · Bỏ bảng con mà GIỮ hai LEFT JOIN thì MySQL vẫn quét cả bảng rồi Sort:
+   *    15.967 ms, kể cả có USE INDEX.
+   *  · Câu chỉ lấy id, không JOIN: đọc ngược `idx_status_created` (hoặc
+   *    idx_status_sold/view/price), dừng ở offset + take dòng.
+   * Hai LEFT JOIN đều nhiều-một (mỗi sản phẩm một danh mục, một người bán) nên
+   * nạp theo id ở bước hai không nhân dòng, không cần DISTINCT.
+   */
+  private async chonTheoId(
+    qbTrang: SelectQueryBuilder<Product>,
+    offset: number,
+    take: number,
+    nap: (ids: number[]) => Promise<Product[]>,
+  ): Promise<Product[]> {
+    const dong = await qbTrang
+      .clone()
+      .select('product.id', 'id')
+      .offset(offset)
+      .limit(take)
+      .getRawMany<{ id: number | string }>();
+    const ids = dong.map((d) => Number(d.id));
+    if (!ids.length) return [];
+    const theoId = new Map((await nap(ids)).map((p) => [p.id, p]));
+    return ids.flatMap((id) => {
+      const p = theoId.get(id);
+      return p ? [p] : [];
+    });
+  }
+
+  /** Sản phẩm của một trang danh sách công khai, kèm danh mục và người bán. */
+  private napTheoId(ids: number[]): Promise<Product[]> {
+    return this.productRepository.find({
+      where: { id: In(ids) },
+      relations: { category: true, seller: true },
+      /**
+       * CHỈ lấy vài cột của người bán và danh mục.
+       *
+       * Trước đây nạp nguyên bản ghi users cho MỖI sản phẩm, trên một endpoint
+       * công khai không cần đăng nhập. Đo được: email và số điện thoại người
+       * bán lộ ra với bất kỳ ai gọi API, và riêng đối tượng seller chiếm 43%
+       * gói tin (532 byte/sản phẩm trong gói 24,6 KB).
+       *
+       * Ô hàng trong lưới chỉ cần tên và ảnh đại diện người bán. Không liệt kê
+       * cột nào của chính sản phẩm ở đây — bỏ trống thì TypeORM lấy đủ, nên
+       * thêm cột mới cho products sau này không phải sửa lại chỗ này.
+       */
+      select: {
+        seller: { id: true, full_name: true, avatar: true },
+        category: { id: true, name: true, slug: true },
+      },
+    });
   }
 
   /**
