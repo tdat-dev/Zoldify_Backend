@@ -111,6 +111,49 @@ describe('nenAnh: ảnh tải lên được thu nhỏ về WebP', () => {
     await expect(nenAnh(rac, JPEG)).rejects.toThrow(BadRequestException);
   });
 
+  it('WebP động giữ nguyên bản, không có ảnh nhỏ', async () => {
+    // sharp mặc định chỉ đọc khung đầu: nén lại là mất chuyển động.
+    const khung = (r: number) =>
+      anhMau(20, 20).tint({ r, g: 0, b: 0 }).png().toBuffer();
+    const goc = await sharp([await khung(255), await khung(10)], {
+      join: { animated: true },
+    })
+      .webp()
+      .toBuffer();
+    expect((await sharp(goc).metadata()).pages).toBe(2);
+
+    const kq = await nenAnh(goc, { mime: 'image/webp', ext: '.webp' });
+
+    expect(kq.chinh.buffer.equals(goc)).toBe(true);
+    expect(kq.nho).toBeNull();
+  });
+
+  it('BMP (libvips trong sharp không đọc được) lưu nguyên như cũ', async () => {
+    // BMP 2x2 24-bit tự dựng: header 54 byte + 16 byte điểm ảnh.
+    const bmp = Buffer.alloc(70);
+    bmp.write('BM');
+    bmp.writeUInt32LE(70, 2);
+    bmp.writeUInt32LE(54, 10);
+    bmp.writeUInt32LE(40, 14);
+    bmp.writeInt32LE(2, 18);
+    bmp.writeInt32LE(2, 22);
+    bmp.writeUInt16LE(1, 26);
+    bmp.writeUInt16LE(24, 28);
+    bmp.writeUInt32LE(16, 34);
+
+    const kq = await nenAnh(bmp, { mime: 'image/bmp', ext: '.bmp' });
+
+    expect(kq.chinh.buffer.equals(bmp)).toBe(true);
+    expect(kq.chinh.mime).toBe('image/bmp');
+    expect(kq.nho).toBeNull();
+  });
+
+  it('ảnh vượt 40 triệu điểm ảnh bị từ chối bằng 400', async () => {
+    const lon = await anhMau(7000, 7000).jpeg().toBuffer();
+
+    await expect(nenAnh(lon, JPEG)).rejects.toThrow(BadRequestException);
+  });
+
   it('taoAnhNho từ chối byte rác bằng 400', async () => {
     await expect(taoAnhNho(Buffer.from('rac'))).rejects.toThrow(
       BadRequestException,
