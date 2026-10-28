@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
+// Ảnh đã có tên duy nhất (kèm timestamp) nên cache vĩnh viễn được. Dùng chung
+// với scripts/tao-anh-nho.ts: ảnh nhỏ bù sau phải được cache y như ảnh nhỏ tạo
+// lúc tải lên.
+export const CACHE_ANH = 'public, max-age=31536000, immutable';
+
 /**
  * Lưu ảnh/file lên Cloudflare R2 (API tương thích S3).
  *
@@ -77,8 +82,7 @@ export class StorageService {
         Key: fullKey,
         Body: buffer,
         ContentType: contentType,
-        // Ảnh đã có tên duy nhất (kèm timestamp) nên cache vĩnh viễn được.
-        CacheControl: 'public, max-age=31536000, immutable',
+        CacheControl: CACHE_ANH,
       }),
     );
     return `${this.publicUrl}/${fullKey}`;

@@ -13,6 +13,7 @@ import {
   UseGuards,
   Query,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { StorageService } from './storage.service';
@@ -28,10 +29,13 @@ import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { FileEntity } from './entities/file.entity';
 import { doanLoaiAnh } from './doan-loai-anh';
+import { khoaAnhNho, nenAnh } from './nen-anh';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
 
 @Controller('files')
 export class FilesController {
+  private readonly logger = new Logger(FilesController.name);
+
   constructor(
     private readonly filesService: FilesService,
     private readonly storage: StorageService,
@@ -76,12 +80,22 @@ export class FilesController {
       .replace(/[^a-zA-Z0-9_-]/g, '-')
       .replace(/-+/g, '-')
       .slice(0, 80);
-    const filename = `${safeBase || 'file'}-${Date.now()}${loai.ext}`;
+    // Nén TRƯỚC khi đặt tên: đuôi lưu xuống là của file đã nén (.webp), không
+    // phải của file gốc. Ảnh hỏng ném 400 ở đây, trước khi đẩy gì lên R2.
+    // Lý do và số đo: xem nen-anh.ts.
+    const anh = await nenAnh(file.buffer, loai);
+    const filename = `${safeBase || 'file'}-${Date.now()}${anh.chinh.ext}`;
     const key = `${folder}/${filename}`;
 
     let url: string;
     if (this.storage.isEnabled()) {
-      url = await this.storage.upload(file.buffer, key, loai.mime);
+      url = await this.storage.upload(anh.chinh.buffer, key, anh.chinh.mime);
+      if (anh.nho) {
+        const nho = anh.nho;
+        await this.ghiAnhNho(khoaAnhNho(key), () =>
+          this.storage.upload(nho.buffer, khoaAnhNho(key), nho.mime),
+        );
+      }
     } else {
       // Fallback đĩa (giữ hành vi cũ khi R2 chưa cấu hình): ghi buffer ra
       // public/images rồi ghép URL.
@@ -100,22 +114,47 @@ export class FilesController {
       // Task #13 trong `docs/BAN-GIAO.md`. Xem `common/public-url.ts`.
       const dir = join(process.cwd(), 'public', 'images', folder);
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(join(dir, filename), file.buffer);
+      fs.writeFileSync(join(dir, filename), anh.chinh.buffer);
+      if (anh.nho) {
+        const nho = anh.nho;
+        await this.ghiAnhNho(khoaAnhNho(filename), () =>
+          fs.writeFileSync(join(dir, khoaAnhNho(filename)), nho.buffer),
+        );
+      }
       url = urlTepCongKhai(process.env, folder, filename);
     }
 
+    // url, mime_type, size là của ảnh CHÍNH đã lưu, không phải file gốc:
+    // ai đọc bảng files để biết ảnh nặng bao nhiêu phải thấy đúng số đang phục
+    // vụ. Ảnh nhỏ không có dòng riêng, tên của nó suy ra từ url (khoaAnhNho).
     const saved = await this.filesService.create(
       {
         file_name: file.originalname,
         url,
-        mime_type: loai.mime,
-        size: file.size,
+        mime_type: anh.chinh.mime,
+        size: anh.chinh.buffer.length,
         folder,
       },
       user,
     );
 
     return saved;
+  }
+
+  /**
+   * Ảnh nhỏ là đồ thêm: hỏng thì chỉ cảnh báo, lượt tải vẫn thành công.
+   * Client thấy ảnh nhỏ 404 thì lùi về ảnh chính (vẫn đã nén còn 1600px),
+   * và `npm run anh:bu-thumb` bù lại được sau. Ném lỗi ở đây thì ảnh chính đã
+   * nằm trên R2 nhưng không có dòng nào trong bảng files trỏ tới.
+   */
+  private async ghiAnhNho(ten: string, ghi: () => unknown): Promise<void> {
+    try {
+      await ghi();
+    } catch (e) {
+      this.logger.warn(
+        `Không lưu được ảnh nhỏ ${ten}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   @UseGuards(JwtAuthGuard)
