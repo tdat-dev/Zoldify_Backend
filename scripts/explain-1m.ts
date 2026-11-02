@@ -32,6 +32,10 @@ import { AddHotListIndexesFor1M1788500000000 as Mig } from '../src/migrations/17
 import type { QueryRunner } from 'typeorm';
 
 const DB = process.env.DB_DATABASE || '';
+// EXPLAIN_CHI_DO=1: KHÔNG xoá, KHÔNG đổ dữ liệu, KHÔNG gỡ/dựng lại index. Chỉ
+// đo các câu nóng trên lược đồ và dữ liệu đang có, dùng cho database đã đổ
+// scripts/seed-1m.sql (đổ lại mất ~40 phút, nên không được phép đụng vào).
+const CHI_DO = process.env.EXPLAIN_CHI_DO === '1';
 if (!/1m|explain/i.test(DB) || DB === 'zoldify') {
   console.error(
     `Từ chối: DB_DATABASE = "${DB}". Script này xoá sạch rồi đổ dữ liệu giả;` +
@@ -421,6 +425,79 @@ function inBang(truoc: SoDo[], sau: SoDo[]): void {
   CAU.forEach((c, i) => console.log(`  ${c.ten}: ${truoc[i].extra}`));
 }
 
+/**
+ * Chế độ chỉ đo trên seed-1m. Id trong CAU ở trên là của bộ dữ liệu 650k tự
+ * sinh (hội thoại 1000..20000 của người bán 1); seed-1m đánh id từ 100000, nên
+ * thay bằng hội thoại thật của người bán nặng 100000. Thêm các câu chỉ có ý
+ * nghĩa ở seed-1m (đánh giá của một sản phẩm ~9.950 dòng, thông báo của người
+ * mua nặng, đơn bán theo vận đơn).
+ *
+ * Cờ "SỬA?": quá 200 ms, hoặc đọc thật quá 20.000 dòng cho một trang 20 dòng.
+ */
+async function chiDo(qr: QueryRunner): Promise<void> {
+  const hoiThoai: Array<{ id: number }> = await qr.query(
+    'SELECT id FROM conversations WHERE seller_id = 100000 ORDER BY id LIMIT 20',
+  );
+  const ids = hoiThoai.map((h) => h.id).join(',') || '0';
+  const cau: Cau[] = CAU.map((c) =>
+    c.ten.startsWith('Đếm tin chưa đọc')
+      ? {
+          ten: c.ten,
+          sql: c.sql
+            .replace(HOI_THOAI_CUA_NB1.join(','), ids)
+            .replace('sender_id <> 1', 'sender_id <> 100000'),
+        }
+      : c,
+  ).concat([
+    {
+      ten: 'Đánh giá của SP 100005 (~9.950 dòng)',
+      sql: `SELECT r.id, r.rating, r.comment FROM reviews r
+             WHERE r.product_id = 100005 AND r.deleted_at IS NULL
+             ORDER BY r.created_at DESC LIMIT 10`,
+    },
+    {
+      ten: 'Thông báo của người mua nặng 105000',
+      sql: `SELECT n.id, n.title FROM notifications n
+             WHERE n.user_id = 105000
+             ORDER BY n.created_at DESC LIMIT 20`,
+    },
+    {
+      ten: 'Đơn bán của người bán nặng (qua vận đơn)',
+      sql: `SELECT o.id, o.order_code FROM orders o
+             WHERE o.deleted_at IS NULL AND EXISTS (
+               SELECT 1 FROM order_shipments s
+                WHERE s.order_id = o.id AND s.seller_id = 100000)
+             ORDER BY o.created_at DESC LIMIT 10`,
+    },
+    {
+      ten: 'Hội thoại của người bán nặng',
+      sql: `SELECT c.id FROM conversations c
+             WHERE c.seller_id = 100000 OR c.buyer_id = 100000
+             ORDER BY c.updated_at DESC LIMIT 20`,
+    },
+  ]);
+  console.log(
+    '| Câu | key | rows ước lượng | dòng đọc thật | ms | Extra | SỬA? |',
+  );
+  console.log('|---|---|---:|---:|---:|---|---|');
+  for (const c of cau) {
+    let d: SoDo;
+    try {
+      d = await doMot(qr, c.sql);
+    } catch (e) {
+      // ER_QUERY_TIMEOUT (trần 5 s) là kết quả đo, không phải lỗi của script.
+      console.log(
+        `| ${c.ten} | | | | LỖI | ${(e as Error).message} | CẦN XEM |`,
+      );
+      continue;
+    }
+    const sua = d.ms > 200 || d.doc > 20_000 ? 'CẦN XEM' : '';
+    console.log(
+      `| ${c.ten} | ${d.key} | ${d.rows} | ${d.doc} | ${d.ms} | ${d.extra} | ${sua} |`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const ds = await AppDataSource.initialize();
   const qr = ds.createQueryRunner();
@@ -433,6 +510,10 @@ async function main(): Promise<void> {
       throw new Error('Chạy `npm run migration:run` trên database này trước.');
     }
     console.log(`Database: ${DB}\n`);
+    if (CHI_DO) {
+      await chiDo(qr);
+      return;
+    }
     await doDuLieu(qr);
 
     // TRƯỚC: lược đồ như staging hôm nay (down() của chính migration).
