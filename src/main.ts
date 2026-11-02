@@ -19,6 +19,7 @@ import { RedisIoAdapter } from './common/redis-io.adapter';
 import { JsonLogger } from './common/json-logger';
 import { chanTaiLieu, taiKhoanTuMoiTruong } from './core/swagger-guard';
 import { ganBatLoiTienTrinh } from './common/loi-tien-trinh';
+import { ganTinProxy } from './common/tin-proxy';
 
 // Gắn TRƯỚC khi dựng app. Tới lúc `daKhoiDong()` (ngay sau app.listen) mọi
 // lời hứa mồ côi đều làm tiến trình thoát mã 1: hỏng lúc boot thì phải chết
@@ -52,9 +53,10 @@ async function bootstrap() {
   // Compression: gzip response, giảm bandwidth ~70%
   app.use(compression());
 
-  // Trust proxy: để ThrottlerGuard đọc IP thật khi chạy sau nginx/load balancer
+  // Trust proxy: để ThrottlerGuard đọc IP thật khi chạy sau nginx/load balancer.
+  // Quy tắc và lý do nằm ở `common/tin-proxy.ts`, nơi có bài kiểm.
   const expressApp = app.getHttpAdapter().getInstance() as express.Express;
-  expressApp.set('trust proxy', 1);
+  ganTinProxy(expressApp);
 
   // Static files: cache 7 ngày (CDN-friendly headers)
   app.use(
