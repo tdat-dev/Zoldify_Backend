@@ -771,7 +771,7 @@ export class ProductsService {
           });
         }
 
-        // Nhánh TÌM KIẾM cũng phải lọc — xem lời giải thích ở nhánh dưới.
+        // Nhánh TÌM KIẾM cũng phải lọc: xem lời giải thích ở nhánh dưới.
         // Thiếu dòng này thì gõ đúng tên một tin đã bị từ chối là thấy nó ngay.
         qb.andWhere('product.status = :active', {
           active: ProductStatus.ACTIVE,
