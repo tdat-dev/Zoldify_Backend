@@ -1,4 +1,5 @@
 import { DataSource, Logger as TypeOrmLogger } from 'typeorm';
+import { createCache } from 'cache-manager';
 import { OrdersService } from './orders.service';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -252,5 +253,37 @@ describe('OrdersService.findAll as=seller: index phủ + đếm có trần', () 
     const kq = (await svc.findAll('1', '100', '', buyer)) as Ket;
     expect(kq.result).toHaveLength(79);
     expect(kq.meta.total).toBe(79);
+  });
+
+  // Đếm có trần vẫn phải gom tới 10.001 đơn khác nhau: với người bán 20.000
+  // đơn, nó tốn ngang câu chọn trang. Đo lại sau index phủ + USE INDEX: p95
+  // 604 ms một người gọi, 2.664 ms ở 20 kết nối, vì MỖI lần mở màn Đơn bán
+  // chạy cả hai câu. Tổng nhớ 60 giây theo (người bán, trạng thái), giống
+  // tổng của danh sách sản phẩm: đơn mới vào thì con số trễ tối đa một phút,
+  // còn danh sách đơn vẫn tươi.
+  it('lần mở thứ hai trong 60 giây không đếm lại', async () => {
+    const coCache = new OrdersService(
+      ds.getRepository(Order),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      ds,
+      {} as never,
+      undefined,
+      createCache({ ttl: 60_000 }),
+    );
+    await coCache.findAll('1', '10', '', seller, 'seller');
+    sql.cau = [];
+    const kq = (await coCache.findAll('2', '10', '', seller, 'seller')) as Ket;
+    expect(kq.meta.total).toBe(59);
+    expect(sql.cau.filter((c) => /COUNT\(/i.test(c.q))).toEqual([]);
   });
 });
