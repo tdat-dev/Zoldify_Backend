@@ -709,8 +709,6 @@ export class ProductsService {
 
     if (qs.q) {
       const rawQ = String(qs.q).trim();
-      // KHÔNG JOIN ở câu lọc: danh mục nạp sau, theo id (xem `chonTheoId`).
-      const qb = this.productRepository.createQueryBuilder('product');
 
       // Tách từ, bỏ toán tử của BOOLEAN MODE và ký tự đại diện của LIKE.
       // NFC: "tủ" gõ từ bàn phím tổ hợp (t + u + dấu hỏi rời) dài 4 điểm mã,
@@ -723,68 +721,125 @@ export class ProductsService {
         .filter(Boolean);
       const coTuDai = tu.some((w) => [...w].length >= FT_TU_TOI_THIEU);
 
-      if (coTuDai) {
-        // Có ít nhất một từ FULLTEXT index được: đi index như trước. Từ ngắn
-        // đi kèm vẫn gửi (InnoDB tự bỏ qua), để câu tìm giống hệt bản cũ.
-        //
-        // Từ dài mang `+` (BẮT BUỘC): BOOLEAN MODE không dấu là HOẶC, nên
-        // "tai nghe" ra cả "Tai lợn" lẫn "Nghe nhạc", và "sneaker cao cấp"
-        // khớp gần nửa bảng. Đo 02/11 trên 1.001.015 sản phẩm: HOẶC 3.976 ms,
-        // bắt buộc đủ từ 895 ms, vì MySQL phải đọc TỪNG dòng khớp để lọc
-        // trạng thái rồi sắp theo created_at (tim-kiem-nhieu-tu.spec.ts).
-        // Từ ngắn KHÔNG mang `+`: InnoDB không index chúng, bắt buộc một từ
-        // không có trong index là không ra gì.
-        const safeQ = tu
-          .filter((w) => [...w].length >= 2)
-          .map((w) => ([...w].length >= FT_TU_TOI_THIEU ? `+${w}*` : `${w}*`))
-          .join(' ');
-        qb.where(
-          'MATCH(product.name, product.description) AGAINST (:q IN BOOLEAN MODE)',
-          { q: safeQ },
-        );
-      } else if (tu.length) {
-        await this.timTuNgan(qb, tu, qs as BoLocSanPham);
-      } else {
-        // Chỉ toàn ký tự đặc biệt ("%%", "+-"): không có gì để tìm.
-        qb.where('1 = 0');
-      }
+      // Dựng câu tìm theo một trong ba cách khớp, rồi áp chung bộ lọc và thứ
+      // tự. KHÔNG JOIN ở câu lọc: danh mục nạp sau, theo id (xem `chonTheoId`).
+      const dungCau = async (
+        cach: 'ft' | 'cuaSo' | 'rong',
+      ): Promise<SelectQueryBuilder<Product>> => {
+        const qb = this.productRepository.createQueryBuilder('product');
+        if (cach === 'ft') {
+          // Có ít nhất một từ FULLTEXT index được. Từ ngắn đi kèm vẫn gửi
+          // (InnoDB tự bỏ qua), để câu tìm giống hệt bản cũ.
+          //
+          // Từ dài mang `+` (BẮT BUỘC): BOOLEAN MODE không dấu là HOẶC, nên
+          // "tai nghe" ra cả "Tai lợn" lẫn "Nghe nhạc", và "sneaker cao cấp"
+          // khớp gần nửa bảng. Đo 02/11 trên 1.001.015 sản phẩm: HOẶC
+          // 3.976 ms, bắt buộc đủ từ 895 ms, vì MySQL phải đọc TỪNG dòng khớp
+          // để lọc trạng thái rồi sắp theo created_at
+          // (tim-kiem-nhieu-tu.spec.ts). Từ ngắn KHÔNG mang `+`: InnoDB không
+          // index chúng, bắt buộc một từ không có trong index là không ra gì.
+          const safeQ = tu
+            .filter((w) => [...w].length >= 2)
+            .map((w) =>
+              [...w].length >= FT_TU_TOI_THIEU ? `+${w}*` : `${w}*`,
+            )
+            .join(' ');
+          qb.where(
+            'MATCH(product.name, product.description) AGAINST (:q IN BOOLEAN MODE)',
+            { q: safeQ },
+          );
+        } else if (cach === 'cuaSo') {
+          await this.timTuNgan(qb, tu, qs as BoLocSanPham);
+        } else {
+          // Chỉ toàn ký tự đặc biệt ("%%", "+-"): không có gì để tìm.
+          qb.where('1 = 0');
+        }
 
-      if (qs.category_id) {
-        qb.andWhere('product.category_id = :catId', {
-          catId: Number(qs.category_id),
+        if (qs.category_id) {
+          qb.andWhere('product.category_id = :catId', {
+            catId: Number(qs.category_id),
+          });
+        }
+        if (qs.price_min) {
+          qb.andWhere('product.price >= :pmin', {
+            pmin: Number(qs.price_min),
+          });
+        }
+        if (qs.price_max) {
+          qb.andWhere('product.price <= :pmax', {
+            pmax: Number(qs.price_max),
+          });
+        }
+
+        // Nhánh TÌM KIẾM cũng phải lọc — xem lời giải thích ở nhánh dưới.
+        // Thiếu dòng này thì gõ đúng tên một tin đã bị từ chối là thấy nó ngay.
+        qb.andWhere('product.status = :active', {
+          active: ProductStatus.ACTIVE,
         });
-      }
-      if (qs.price_min) {
-        qb.andWhere('product.price >= :pmin', { pmin: Number(qs.price_min) });
-      }
-      if (qs.price_max) {
-        qb.andWhere('product.price <= :pmax', { pmax: Number(qs.price_max) });
-      }
 
-      // Nhánh TÌM KIẾM cũng phải lọc — xem lời giải thích ở nhánh dưới.
-      // Thiếu dòng này thì gõ đúng tên một tin đã bị từ chối là thấy nó ngay.
-      qb.andWhere('product.status = :active', {
-        active: ProductStatus.ACTIVE,
-      });
+        if (condition) {
+          qb.andWhere('product.condition = :cond', { cond: condition });
+        }
 
-      if (condition) {
-        qb.andWhere('product.condition = :cond', { cond: condition });
-      }
+        const orderField = Object.keys(order)[0];
+        const orderDir = order[orderField];
+        qb.orderBy(`product.${orderField}`, orderDir);
+        if (qs.sort === 'featured') {
+          qb.addOrderBy('product.view_count', 'DESC');
+        }
+        return qb;
+      };
+      const nap = (ids: number[]) =>
+        this.productRepository.find({
+          where: { id: In(ids) },
+          relations: { category: true },
+        });
 
-      const orderField = Object.keys(order)[0];
-      const orderDir = order[orderField];
-      qb.orderBy(`product.${orderField}`, orderDir);
-      if (qs.sort === 'featured') {
-        qb.addOrderBy('product.view_count', 'DESC');
+      // TỪ DÀI PHỔ BIẾN: THỬ CỬA SỔ MỚI NHẤT TRƯỚC, FULLTEXT SAU.
+      //
+      // Kể cả khi đã bắt buộc đủ từ, FULLTEXT trên một từ phổ biến vẫn đắt:
+      // MySQL lấy MỌI tài liệu khớp từ index rồi về bảng đọc từng dòng để lọc
+      // trạng thái và sắp theo created_at. Đo 02/11 trên 1.001.015 sản phẩm
+      // (buffer pool 512M): "giày" khớp 83.401 món, 2.049 ms khi ấm, hơn 5 s
+      // khi lạnh; dưới tải route tìm kiếm p95 11.450 ms một người gọi, 500 ở
+      // 20 kết nối, vì câu quá trần 5 s thì không bao giờ được ghi vào cache.
+      //
+      // Nên với thứ tự mới nhất (mặc định / newest) ta thử trước đúng cách của
+      // từ ngắn: khớp đầu từ trong tên, chỉ trong `cuaSoTuNgan` món đang bán
+      // mới nhất (`timTuNgan`, mốc đọc ngược idx_status_created). Từ phổ biến
+      // lấp đầy trang ngay trong cửa sổ: vài chục mili-giây. Trang KHÔNG đầy
+      // nghĩa là từ hiếm (hoặc chỉ có trong mô tả, hoặc hàng cũ): khi đó mới
+      // đi FULLTEXT trên cả bảng, và từ hiếm thì FULLTEXT rẻ vì ít dòng khớp.
+      //
+      // ĐÁNH ĐỔI, NÓI RÕ. (1) Từ phổ biến chỉ hiện hàng trong cửa sổ mới
+      // nhất, và tổng (`meta.total`) đếm trong cửa sổ, giống từ ngắn. (2) Trong
+      // cửa sổ chỉ khớp TÊN, không khớp mô tả. (3) Sắp theo giá / bán chạy /
+      // xem nhiều vẫn đi FULLTEXT cả bảng như cũ: "rẻ nhất trong 20.000 món
+      // mới" không phải "rẻ nhất", nên không được dùng cửa sổ. Gỡ cả ba: chỉ
+      // mục tìm kiếm riêng (bảng hẹp chỉ tên + trạng thái + created_at, hoặc
+      // máy tìm kiếm ngoài).
+      const kieuSap = (qs as BoLocSanPham).sort;
+      const sapMoiNhat = !kieuSap || kieuSap === 'newest';
+      if (coTuDai && sapMoiNhat) {
+        // Dựng cửa sổ TRONG layDong: trangCoTran không gọi layDong khi trang
+        // vượt trần độ sâu, và câu mốc của cửa sổ là một OFFSET 19.999 không
+        // được chạy cho một trang đằng nào cũng rỗng (trang-qua-sau.spec.ts).
+        const qbFt = await dungCau('ft');
+        qbDem = qbFt;
+        layDong = async (take) => {
+          const qbCuaSo = await dungCau('cuaSo');
+          const thu = await this.chonTheoId(qbCuaSo, offset, take, nap);
+          if (thu.length === take) {
+            qbDem = qbCuaSo;
+            return thu;
+          }
+          return this.chonTheoId(qbFt, offset, take, nap);
+        };
+      } else {
+        const qb = await dungCau(coTuDai ? 'ft' : tu.length ? 'cuaSo' : 'rong');
+        qbDem = qb;
+        layDong = (take) => this.chonTheoId(qb, offset, take, nap);
       }
-      qbDem = qb;
-      layDong = (take) =>
-        this.chonTheoId(qb, offset, take, (ids) =>
-          this.productRepository.find({
-            where: { id: In(ids) },
-            relations: { category: true },
-          }),
-        );
     } else {
       // CHỈ HIỆN HÀNG ĐANG MỞ BÁN.
       //
