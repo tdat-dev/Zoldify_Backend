@@ -172,8 +172,10 @@ describe('ChatService.getMyConversations', () => {
     const voi12 = dem.dem;
 
     expect(voi12).toBe(voi3);
-    // Và phải nhỏ: một câu lấy hội thoại + một câu tin cuối + một câu đếm.
-    expect(voi12).toBeLessThanOrEqual(4);
+    // Và phải nhỏ: id của trang + tổng + nạp quan hệ theo id + tin cuối +
+    // đếm chưa đọc. Từ 02/11 là 5 thay vì 4: chọn trang tách khỏi nạp quan
+    // hệ để không quét cả bảng hội thoại (chat-danh-sach-hoi-thoai.spec.ts).
+    expect(voi12).toBeLessThanOrEqual(5);
   });
 
   // ── Nhanh mà sai thì tệ hơn chậm mà đúng ─────────────────────────────────

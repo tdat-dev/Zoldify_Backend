@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOneOptions, Repository } from 'typeorm';
+import { FindOneOptions, In, Repository } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
 import { Product } from '@catalog/products/entities/product.entity';
@@ -173,16 +173,66 @@ export class ChatService {
       offset,
     } = normalizePagination(currentPage, limit, 20);
 
-    const [conversations, totalItems] =
-      await this.conversationRepository.findAndCount({
-        where: [{ buyer: { id: user.id } }, { seller: { id: user.id } }],
-        relations: ['buyer', 'seller', 'product'],
-        order: { updated_at: 'DESC' },
-        skip: offset,
-        take: numLimit,
-      });
+    // HAI PHÍA, HAI INDEX, RỒI MỚI TRỘN.
+    //
+    // Bản cũ `findAndCount({ where: [{ buyer }, { seller }], relations, skip,
+    // take })` sinh `buyer_id = ? OR seller_id = ?` qua ba LEFT JOIN, bọc
+    // trong bảng con `distinctAlias`. MySQL không gộp được hai index cho câu
+    // có JOIN + ORDER BY, nên quét cả bảng hội thoại cùng ba JOIN rồi mới sắp.
+    // Đo 02/11 trên zoldify_1mall (50.000 hội thoại): người bán có 5.000 hội
+    // thoại mở tab Chat mất 2.054 ms (p95, một người gọi), 8.975 ms dưới 50
+    // kết nối; câu distinctAlias đọc 153.508 dòng mỗi lần.
+    //
+    // Nay mỗi phía đọc ngược `idx_buyer_updated` / `idx_seller_updated`, lấy
+    // đúng offset + limit mục đầu, trộn trong Node (tối đa 2 x (offset+limit)
+    // cặp số nhỏ), rồi nạp quan hệ theo id của trang. Một người không thể vừa
+    // là người mua vừa là người bán của CÙNG hội thoại (createConversation
+    // chặn tự nhắn mình), nên hai phía không trùng và tổng là tổng hai COUNT.
+    //
+    // Khoá phụ `id DESC` khi trùng giây (updated_at là TIMESTAMP, không có
+    // phần lẻ): bản cũ để MySQL tự chốt nên thứ tự ở ranh giới trang có thể
+    // đổi giữa hai lần gọi.
+    // Một câu cho id của trang (UNION ALL hai nhánh, nhánh nào cũng LIMIT
+    // trên index của nó, MySQL chỉ sắp tối đa 2 x (offset+limit) dòng) và một
+    // câu cho tổng (hai COUNT trên hai index). Giữ số câu cố định để
+    // chat.service.spec gác N+1 vẫn có nghĩa.
+    const can = offset + numLimit;
+    const [dongTrang, dongTong] = await Promise.all([
+      this.conversationRepository.query<Array<{ id: number | string }>>(
+        `SELECT t.id FROM (
+           (SELECT id, updated_at FROM conversations WHERE buyer_id = ?
+             ORDER BY updated_at DESC, id DESC LIMIT ?)
+           UNION ALL
+           (SELECT id, updated_at FROM conversations WHERE seller_id = ?
+             ORDER BY updated_at DESC, id DESC LIMIT ?)
+         ) t
+         ORDER BY t.updated_at DESC, t.id DESC
+         LIMIT ? OFFSET ?`,
+        [user.id, can, user.id, can, numLimit, offset],
+      ),
+      this.conversationRepository.query<Array<{ n: number | string }>>(
+        `SELECT (SELECT COUNT(*) FROM conversations WHERE buyer_id = ?)
+               + (SELECT COUNT(*) FROM conversations WHERE seller_id = ?) AS n`,
+        [user.id, user.id],
+      ),
+    ]);
+    const totalItems = Number(dongTong[0]?.n ?? 0);
+    const ids = dongTrang.map((r) => Number(r.id));
 
-    const ids = conversations.map((c) => c.id);
+    const theoId = new Map(
+      (ids.length
+        ? await this.conversationRepository.find({
+            where: { id: In(ids) },
+            relations: ['buyer', 'seller', 'product'],
+          })
+        : []
+      ).map((c) => [c.id, c]),
+    );
+    const conversations = ids.flatMap((id) => {
+      const c = theoId.get(id);
+      return c ? [c] : [];
+    });
+
     const tinCuoi = await this.tinNhanCuoiTheoLo(ids);
     const chuaDoc = await this.demChuaDocTheoLo(ids, user.id);
 
