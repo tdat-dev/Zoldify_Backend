@@ -21,6 +21,7 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { demCoTran } from '@common/dem-co-tran';
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
 import { OrderItem } from './entities/order-item.entity';
@@ -876,6 +877,14 @@ export class OrdersService {
         qb.innerJoin('order.items', 'item')
           .innerJoin('item.product', 'product')
           .where('product.seller_id = :sellerId', { sellerId: user.id });
+        // Tra đơn bằng index phủ (id, deleted_at, status, created_at) thay vì
+        // PRIMARY (migration 1788700000000). Đo 02/11 trên zoldify_1mall,
+        // người bán 20.000 đơn: tra qua PRIMARY là đọc cả dòng đơn rải khắp
+        // 197M dữ liệu, lạnh 5.077 ms; qua index phủ 934 ms, ấm 165 ms.
+        // Optimizer tự chọn PRIMARY vì so bằng trên khoá duy nhất trông rẻ
+        // nhất, nên phải gợi ý. Chỉ nhánh người bán: người mua/admin đi
+        // idx_user_created / idx_created_at như cũ.
+        qb.useIndex('idx_id_deleted_status_created');
       } else if (user.role !== 'admin') {
         qb.where('order.user_id = :userId', { userId: user.id });
       }
@@ -890,7 +899,15 @@ export class OrdersService {
      *    DISTINCT khoá chính gốc, nên seller-view có nhiều item trên một đơn
      *    vẫn ra đúng số đơn — sửa luôn bug meta.total đếm theo món trước đây.
      */
-    const total = await buildBase().getCount();
+    //
+    //    Người bán: đếm CÓ TRẦN (`demCoTran`, dừng ở 10.001 đơn) thay cho
+    //    COUNT(DISTINCT) không trần, cùng luật với mọi danh sách khác. Đo
+    //    02/11: người bán 20.000 đơn mất 2.860 ms mỗi lần đếm. Người mua và
+    //    admin giữ getCount(): người mua đi idx_user_created, admin đếm
+    //    orders.deleted_at trong index (migration 1788600000000).
+    const total = isSeller
+      ? (await demCoTran(buildBase(), undefined, { cot: 'order.id' })).total
+      : await buildBase().getCount();
 
     /**
      * 2) Lấy đúng ID của TRANG hiện tại. Hai chế độ, TƯƠNG THÍCH NGƯỢC:
