@@ -313,6 +313,46 @@ async function main() {
         "SELECT COALESCE(SUM(final_amount), 0) FROM orders WHERE is_paid = 1 AND status = 'delivered' AND deleted_at IS NULL",
       params: [],
     },
+    // ─── Đơn của người bán ở cỡ 1 triệu dòng (02/11, zoldify_1mall) ──────────
+    //
+    // `GET /orders?as=seller` (web /shop/orders, app màn Đơn bán) đi
+    // products(seller_id) -> order_items(product_id) -> orders(id). Mỗi chặng
+    // về bảng đọc TỪNG dòng: sản phẩm của một người bán rải khắp bảng (id cách
+    // nhau), nên 10.000 sản phẩm là gần 10.000 trang dữ liệu khác nhau, rồi
+    // 20.000 dòng hàng, rồi 20.000 đơn. Buffer pool 512M không giữ nổi ba bảng
+    // ~750M dữ liệu: đo lạnh 7.123 ms, ấm 258 ms; dưới tải p95 5.467 ms một
+    // người gọi, 500 ở 20 kết nối (quá trần 5 s). Ba index dưới cho cả ba
+    // chặng đọc xong trong index (Covering index lookup): lạnh 934 ms, ấm
+    // 165 ms.
+    {
+      name: 'orders.findAll as=seller: sản phẩm của người bán, lọc xoá mềm trong index',
+      table: 'products',
+      filter: ['seller_id', 'deleted_at'],
+      orderCol: 'deleted_at',
+      cot: ['seller_id', 'deleted_at'],
+      explainSql:
+        'SELECT id FROM products WHERE seller_id = ? AND deleted_at IS NULL',
+      params: [100000],
+    },
+    {
+      name: 'orders.findAll as=seller: dòng hàng theo sản phẩm, lấy order_id trong index',
+      table: 'order_items',
+      filter: ['product_id', 'order_id'],
+      orderCol: 'order_id',
+      cot: ['product_id', 'order_id'],
+      explainSql: 'SELECT order_id FROM order_items WHERE product_id = ?',
+      params: [100000],
+    },
+    {
+      name: 'orders.findAll as=seller: đơn theo id, xoá mềm/trạng thái/created_at trong index',
+      table: 'orders',
+      filter: ['id', 'deleted_at', 'status'],
+      orderCol: 'created_at',
+      cot: ['id', 'deleted_at', 'status', 'created_at'],
+      explainSql:
+        'SELECT id, created_at FROM orders WHERE id = ? AND deleted_at IS NULL',
+      params: [100003],
+    },
     // ─── Kỳ vọng XANH (control — chứng minh test biết phân biệt) ──────────────
     {
       name: 'orders.findAll admin (keyset ORDER BY created_at, id) — Epic 2',
