@@ -44,6 +44,9 @@ export enum OrderStatus {
 ])
 // COUNT(*) WHERE deleted_at IS NULL của thống kê. Migration 1788600000000.
 @Index('idx_deleted_at', ['deleted_at'])
+// Đơn của người bán tra đơn theo id mà không đọc cả dòng (OrdersService.findAll
+// gợi ý USE INDEX). Migration 1788700000000.
+@Index('idx_id_deleted_status_created', ['id', 'deleted_at', 'status', 'created_at'])
 // Header Idempotency-Key của POST /orders, duy nhất THEO NGƯỜI DÙNG.
 // Migration 1788200000000 giải thích vì sao là cột riêng.
 @Index('uq_order_user_client_key', ['user', 'client_idempotency_key'], {

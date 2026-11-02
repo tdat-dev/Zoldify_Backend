@@ -13,6 +13,8 @@ import { Product } from '@catalog/products/entities/product.entity';
 
 @Entity('order_items')
 @Index('idx_product_id', ['product'])
+// Đơn của người bán: lấy order_id ngay trong index. Migration 1788700000000.
+@Index('idx_product_order', ['product', 'order'])
 export class OrderItem {
   @PrimaryGeneratedColumn()
   id: number;

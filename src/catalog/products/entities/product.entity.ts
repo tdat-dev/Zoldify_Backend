@@ -63,6 +63,8 @@ export enum ProductStatus {
 // theo quy tắc leftmost-prefix nên giữ cả hai là trả tiền ghi cho một thứ
 // không ai đọc. Migration 1788000000000.
 @Index('idx_seller_status_created', ['seller', 'status', 'created_at'])
+// Đơn của người bán: lọc xoá mềm trong index. Migration 1788700000000.
+@Index('idx_seller_deleted', ['seller', 'deleted_at'])
 // FULLTEXT cho tìm kiếm sản phẩm — migration AddFulltextSearch tạo.
 @Index('ft_name_desc', ['name', 'description'], { fulltext: true })
 export class Product {
