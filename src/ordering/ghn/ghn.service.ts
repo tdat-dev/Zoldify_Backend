@@ -114,7 +114,9 @@ export class GhnService {
         keep.push(
           ...(await Promise.all(
             batch.map((p) =>
-              this.getDistricts(p.ProvinceID).then(
+              // Bộ lọc quận nhẹ (không tải phường): tải phường cho mọi quận của
+              // 63 tỉnh là ~700 lời gọi GHN chỉ để mở ô chọn tỉnh.
+              this.quanDangPhucVu(p.ProvinceID).then(
                 (ds) => ds.length > 0,
                 () => true,
               ),
@@ -126,8 +128,47 @@ export class GhnService {
     });
   }
 
-  /** Danh sách quận/huyện theo tỉnh. */
+  /**
+   * Danh sách quận/huyện cho ô chọn: quận đang phục vụ VÀ còn ít nhất một
+   * phường đang phục vụ.
+   *
+   * Vì sao phải tải phường (D-08, E2E 02/11). GHN có "Quận Đặc Biệt" trong
+   * danh mục (thấy ở Hưng Yên, đứng đầu danh sách), qua được bộ lọc
+   * Status/SupportType nhưng không có phường nào (E2E 30/09): chọn vào là ô
+   * phường trống, không điền xong địa chỉ. Không lọc theo tên vì không có gì
+   * bảo đảm GHN chỉ đặt đúng tên đó; "không còn phường" thì đúng với mọi quận,
+   * và quận như thế vốn không dùng được.
+   *
+   * Giá: lần đầu mở một tỉnh tốn thêm một lời gọi phường cho mỗi quận (8 cái
+   * một lượt, tỉnh lớn nhất ~30 quận). Kết quả phường vào cache 24h nên lúc
+   * người dùng chọn quận ngay sau đó không gọi lại GHN. Tải phường lỗi thì GIỮ
+   * quận, như getProvinces: GHN chập chờn không được làm mất quận thật.
+   */
   async getDistricts(provinceId: number) {
+    return this.cached(`districts-co-phuong:${provinceId}`, async () => {
+      const all = (await this.quanDangPhucVu(provinceId)) as Array<{
+        DistrictID: number;
+      }>;
+      const keep: boolean[] = [];
+      for (let i = 0; i < all.length; i += 8) {
+        const batch = all.slice(i, i + 8);
+        keep.push(
+          ...(await Promise.all(
+            batch.map((d) =>
+              this.getWards(d.DistrictID).then(
+                (ws) => ws.length > 0,
+                () => true,
+              ),
+            ),
+          )),
+        );
+      }
+      return all.filter((_, i) => keep[i]);
+    });
+  }
+
+  /** Quận đang phục vụ theo cờ Status/SupportType, chưa xét phường. */
+  private async quanDangPhucVu(provinceId: number) {
     return this.cached(`districts:${provinceId}`, async () => {
       const res = await firstValueFrom(
         this.httpService.post(
