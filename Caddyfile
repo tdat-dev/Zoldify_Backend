@@ -26,6 +26,20 @@
 		output stdout
 		format json
 	}
+
+	# Giữ X-Forwarded-For do nginx máy chủ ghi (IP khách thật) thay vì ghi đè.
+	#
+	# Không có dòng này, caddy coi mọi peer là không tin được và THAY XFF bằng
+	# IP của peer, tức cổng docker 172.18.0.1. Mọi bản api thấy cùng một IP,
+	# ThrottlerGuard đếm cả trang vào một xô 10 req/s (đo 02/11: một máy gửi
+	# 4 req/s nhận 429 cho cả 12 request).
+	#
+	# Chỉ tin dải private: nginx trên máy chủ nói chuyện với caddy qua cổng
+	# docker. Ai nối thẳng từ Internet (peer công khai) vẫn bị ghi đè XFF, nên
+	# không giả được IP. Phía api tin đúng các dải này (src/common/tin-proxy.ts).
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 
 # `{$BIEN:mặc định}` của Caddy CHỈ chạy khi biến KHÔNG ĐƯỢC ĐẶT. Biến được đặt

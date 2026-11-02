@@ -102,6 +102,64 @@ export const SAN_PHAM_CONG_KHAI: ProductStatus[] = [
   ProductStatus.SOLD,
 ];
 
+/** Cùng ngưỡng với `FT_TU_TOI_THIEU` (innodb_ft_min_token_size): một chỗ đổi là đủ. */
+const FT_CHU_TOI_THIEU = FT_TU_TOI_THIEU;
+/** Giới hạn số chữ đưa vào MATCH: ai dán cả đoạn văn vào ô tìm cũng không làm nặng máy. */
+const FT_TOI_DA_CHU = 8;
+
+/** Thoát `%`, `_`, `\` để chữ người dùng gõ không thành ký tự đại diện của LIKE. */
+export function thoatLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Dựng chuỗi `MATCH ... IN BOOLEAN MODE` cho ô tìm kiếm (D-17, E2E 02/11).
+ *
+ * VÌ SAO MỌI CHỮ PHẢI CÓ `+`. Trước đây chuỗi là `noi* chien*`. Ở chế độ boolean,
+ * chữ không có `+` là "có cũng được", nên MySQL trả mọi món khớp MỘT trong hai
+ * chữ. Gõ "noi chien" ra 87 món, đứng đầu là tay cầm Nintendo và loa JBL: mô
+ * tả của chúng có "kết nối", khớp `noi*` vì collation bỏ dấu. Giờ mọi chữ đều
+ * bắt buộc.
+ *
+ * HAI CÁI BẪY ĐO ĐƯỢC TRÊN MySQL 8.4 (utf8mb4_unicode_ci):
+ *  - Chữ dưới 3 ký tự (`áo`, `xe`, `đồ`) không vào chỉ mục. Gắn `+` cho nó thì
+ *    kết quả RỖNG. Nên chữ ngắn tách riêng ra `ngan`, nơi gọi lọc bằng LIKE
+ *    nguyên chữ trên tên (chạy sau MATCH nên chỉ quét số dòng MATCH đã lọc).
+ *  - Trong chỉ mục FULLTEXT `đ` KHÁC `d` (dù `'đ' = 'd'` ở phép so sánh thường):
+ *    `den*` không ra "Đèn bàn", `dien*` không ra "Nồi cơm điện". Người gõ không
+ *    dấu luôn gõ `d`, nên chữ bắt đầu bằng d/đ được tìm cả hai dạng:
+ *    `+(den* đen*)`. Tiếng Việt chỉ có `đ` ở đầu âm tiết nên đổi chữ đầu là đủ.
+ *
+ * `cơm`, `thẻ` trùng stopword tiếng Anh (`com`, `the`) nhưng có `*` thì vẫn
+ * khớp (đo trên cùng bảng thử), nên không phải bỏ chúng đi.
+ */
+export function dungTuKhoaTimKiem(rawQ: string): {
+  boolean: string | null;
+  ngan: string[];
+} {
+  const chu = rawQ
+    .replace(/[+\-><()~*"@]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const dai = chu
+    .filter((w) => [...w].length >= FT_CHU_TOI_THIEU)
+    .slice(0, FT_TOI_DA_CHU);
+  // Chữ một ký tự ("4", "l") gần như tên nào cũng chứa: lọc theo nó chỉ làm mất
+  // kết quả đúng mà không loại được gì.
+  const ngan = chu.filter((w) => [...w].length === 2);
+
+  const cum = dai.map((w) => {
+    const dau = w[0];
+    const duoi = w.slice(1);
+    if (dau === 'd' || dau === 'D' || dau === 'đ' || dau === 'Đ') {
+      return `+(d${duoi}* đ${duoi}*)`;
+    }
+    return `+${w}*`;
+  });
+  return { boolean: cum.length > 0 ? cum.join(' ') : null, ngan };
+}
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
@@ -728,26 +786,30 @@ export class ProductsService {
       ): Promise<SelectQueryBuilder<Product>> => {
         const qb = this.productRepository.createQueryBuilder('product');
         if (cach === 'ft') {
-          // Có ít nhất một từ FULLTEXT index được. Từ ngắn đi kèm vẫn gửi
-          // (InnoDB tự bỏ qua), để câu tìm giống hệt bản cũ.
+          // Có ít nhất một từ FULLTEXT index được (`coTuDai`), nên `boolean`
+          // không rỗng. Chuỗi do `dungTuKhoaTimKiem` dựng (D-17): mọi từ dài
+          // mang `+` (BẮT BUỘC), từ bắt đầu bằng d/đ tìm cả hai dạng.
           //
-          // Từ dài mang `+` (BẮT BUỘC): BOOLEAN MODE không dấu là HOẶC, nên
-          // "tai nghe" ra cả "Tai lợn" lẫn "Nghe nhạc", và "sneaker cao cấp"
-          // khớp gần nửa bảng. Đo 02/11 trên 1.001.015 sản phẩm: HOẶC
-          // 3.976 ms, bắt buộc đủ từ 895 ms, vì MySQL phải đọc TỪNG dòng khớp
-          // để lọc trạng thái rồi sắp theo created_at
-          // (tim-kiem-nhieu-tu.spec.ts). Từ ngắn KHÔNG mang `+`: InnoDB không
-          // index chúng, bắt buộc một từ không có trong index là không ra gì.
-          const safeQ = tu
-            .filter((w) => [...w].length >= 2)
-            .map((w) =>
-              [...w].length >= FT_TU_TOI_THIEU ? `+${w}*` : `${w}*`,
-            )
-            .join(' ');
+          // Bắt buộc đủ từ còn là chuyện tốc độ: BOOLEAN MODE không dấu là
+          // HOẶC, "sneaker cao cấp" khớp gần nửa bảng. Đo 02/11 trên 1.001.015
+          // sản phẩm: HOẶC 3.976 ms, bắt buộc đủ từ 895 ms, vì MySQL phải đọc
+          // TỪNG dòng khớp để lọc trạng thái rồi sắp theo created_at
+          // (tim-kiem-nhieu-tu.spec.ts).
+          //
+          // Từ 2 ký tự không vào index (gắn `+` là rỗng kết quả) nên lọc bằng
+          // LIKE NGUYÊN CHỮ trên tên, chạy sau MATCH nên chỉ quét các dòng
+          // MATCH đã lọc (tim-kiem-d17.spec.ts). `tu` đã bỏ `%`, `_`, `\`;
+          // vẫn gọi `thoatLike` phòng khi ai đổi bước tách từ.
+          const { boolean, ngan } = dungTuKhoaTimKiem(tu.join(' '));
           qb.where(
             'MATCH(product.name, product.description) AGAINST (:q IN BOOLEAN MODE)',
-            { q: safeQ },
+            { q: boolean },
           );
+          ngan.forEach((w, i) => {
+            qb.andWhere(`CONCAT(' ', product.name, ' ') LIKE :ngan${i}`, {
+              [`ngan${i}`]: `% ${thoatLike(w)} %`,
+            });
+          });
         } else if (cach === 'cuaSo') {
           await this.timTuNgan(qb, tu, qs as BoLocSanPham);
         } else {

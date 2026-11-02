@@ -22,6 +22,30 @@ import {
  * Giờ nguồn sự thật duy nhất là `ledger_accounts` + `ledger_entries`.
  * Bảng `wallets` và `wallet_transactions` không còn được ghi.
  */
+/**
+ * Mã đơn của một dòng sổ cái, để app ghép "Hoàn tiền" với đúng đơn (D-19).
+ *
+ * Bút toán giữ tiền đơn gắn `reference = order`, còn nhả/hoàn ký quỹ gắn
+ * `reference = escrow` và chỉ cất mã đơn trong `metadata.orderId`
+ * (escrows.service.ts). Không gom ở đây thì app thấy "escrow 17" mà không biết
+ * của đơn nào.
+ */
+function maDonCuaDong(
+  referenceType: unknown,
+  referenceId: unknown,
+  metadata: unknown,
+): number | null {
+  if (referenceType === 'order' && referenceId) return Number(referenceId);
+  const tuMeta =
+    metadata && typeof metadata === 'object'
+      ? (metadata as { orderId?: unknown }).orderId
+      : undefined;
+  const so = Number(tuMeta);
+  return tuMeta !== undefined && tuMeta !== null && Number.isFinite(so)
+    ? so
+    : null;
+}
+
 @Injectable()
 export class WalletsService {
   constructor(
@@ -277,14 +301,27 @@ export class WalletsService {
     const where = type ? 'e.account_id = ? AND t.type = ?' : 'e.account_id = ?';
     const params = type ? [account.id, type] : [account.id];
 
-    const [{ total }] = await em.query(
+    const [{ total }] = await em.query<Array<{ total: string | number }>>(
       `SELECT COUNT(*) AS total FROM ledger_entries e
        JOIN ledger_transactions t ON t.id = e.transaction_id
        WHERE ${where}`,
       params,
     );
 
-    const rows = await em.query(
+    // Khai kiểu dòng thay vì `any`: đọc nhầm tên cột ở đây là app hiện sai
+    // tiền, nên để trình biên dịch bắt.
+    const rows = await em.query<
+      Array<{
+        id: string | number;
+        amount: string | number;
+        balance_after: string | number;
+        created_at: Date;
+        type: string;
+        reference_type: string | null;
+        reference_id: string | number | null;
+        metadata: { note?: string; orderId?: unknown } | null;
+      }>
+    >(
       `SELECT e.id, e.amount, e.balance_after, e.created_at,
               t.type, t.reference_type, t.reference_id, t.metadata
        FROM ledger_entries e
@@ -302,13 +339,14 @@ export class WalletsService {
         pages: Math.ceil(Number(total) / limit),
         total: Number(total),
       },
-      result: rows.map((r: any) => ({
+      result: rows.map((r) => ({
         id: Number(r.id),
         amount: Number(r.amount),
         balance_after: Number(r.balance_after),
         type: r.type,
         reference_type: r.reference_type,
         reference_id: r.reference_id ? Number(r.reference_id) : null,
+        order_id: maDonCuaDong(r.reference_type, r.reference_id, r.metadata),
         note: r.metadata?.note ?? null,
         created_at: r.created_at,
       })),
