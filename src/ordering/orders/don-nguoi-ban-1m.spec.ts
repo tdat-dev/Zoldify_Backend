@@ -1,6 +1,6 @@
 import { DataSource, Logger as TypeOrmLogger } from 'typeorm';
 import { createCache } from 'cache-manager';
-import { OrdersService } from './orders.service';
+import { DOC_TU_DON, OrdersService } from './orders.service';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderShipment } from './entities/order-shipment.entity';
@@ -211,6 +211,18 @@ describe('OrdersService.findAll as=seller: index phủ + đếm có trần', () 
     result: Array<{ id: number }>;
   };
 
+  const chuanTrang2 = async () =>
+    (
+      await ds.query<Array<{ id: number }>>(
+        `SELECT DISTINCT o.id, o.created_at FROM orders o
+           JOIN order_items i ON i.order_id = o.id
+           JOIN products p ON p.id = i.product_id AND p.deleted_at IS NULL
+          WHERE p.seller_id = ? AND o.deleted_at IS NULL
+          ORDER BY o.created_at DESC, o.id DESC LIMIT 10 OFFSET 10`,
+        [seller.id],
+      )
+    ).map((o) => Number(o.id));
+
   it('trang 2 đúng tập đơn và thứ tự created_at DESC, id DESC; total đúng', async () => {
     const kq = (await svc.findAll('2', '10', '', seller, 'seller')) as Ket;
     const chuan = await ds.query<Array<{ id: number }>>(
@@ -226,9 +238,17 @@ describe('OrdersService.findAll as=seller: index phủ + đếm có trần', () 
     expect(kq.meta.pages).toBe(6);
   });
 
-  it('câu chọn trang tra đơn bằng index phủ, câu đếm có trần', async () => {
+  it('đường JOIN (trang sâu / người bán ít đơn): tra đơn bằng index phủ, đếm có trần', async () => {
+    // Ép đường JOIN: trần ước lượng 0 thì không bao giờ đi từ đơn xuống.
+    const cu = DOC_TU_DON.nguong;
+    DOC_TU_DON.nguong = 0;
     sql.cau = [];
-    await svc.findAll('1', '10', '', seller, 'seller');
+    try {
+      const kq = (await svc.findAll('2', '10', '', seller, 'seller')) as Ket;
+      expect(kq.result.map((o) => o.id)).toEqual(await chuanTrang2());
+    } finally {
+      DOC_TU_DON.nguong = cu;
+    }
     const dem = sql.cau.filter((c) => /COUNT\(/i.test(c.q));
     expect(dem.length).toBeGreaterThan(0);
     for (const c of dem) expect(c.q).toMatch(/\bLIMIT\b/i);
@@ -247,6 +267,21 @@ describe('OrdersService.findAll as=seller: index phủ + đếm có trần', () 
     );
     const don = plan.find((d) => d.table === 'order');
     expect(don?.key).toBe('idx_id_deleted_status_created');
+  });
+
+  // Người bán chiếm phần lớn đơn (59/80 ở đây, 2% ở seed-1m): đi từ đơn mới
+  // nhất xuống, hỏi EXISTS từng đơn, không gom hết đơn của người bán rồi sắp.
+  // Đo trên zoldify_1mall: trang đầu 21 ms thay vì 165 ms ấm / 1.216 ms dưới
+  // tải của câu JOIN.
+  it('người bán nhiều đơn: trang đầu đi từ đơn xuống bằng EXISTS, cùng kết quả', async () => {
+    sql.cau = [];
+    const kq = (await svc.findAll('2', '10', '', seller, 'seller')) as Ket;
+    expect(kq.result.map((o) => o.id)).toEqual(await chuanTrang2());
+    const trang = sql.cau.find(
+      (c) => /FROM `orders`/.test(c.q) && /ORDER BY/.test(c.q) && !/COUNT\(/i.test(c.q) && /LIMIT/.test(c.q),
+    );
+    expect(trang?.q).toMatch(/EXISTS/);
+    expect(trang?.q).not.toMatch(/INNER JOIN `order_items` `item`/);
   });
 
   it('đơn của người mua không đổi', async () => {
