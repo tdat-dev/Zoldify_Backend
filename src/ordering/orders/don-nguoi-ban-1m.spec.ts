@@ -274,14 +274,27 @@ describe('OrdersService.findAll as=seller: index phủ + đếm có trần', () 
   // Đo trên zoldify_1mall: trang đầu 21 ms thay vì 165 ms ấm / 1.216 ms dưới
   // tải của câu JOIN.
   it('người bán nhiều đơn: trang đầu đi từ đơn xuống bằng EXISTS, cùng kết quả', async () => {
-    sql.cau = [];
-    const kq = (await svc.findAll('2', '10', '', seller, 'seller')) as Ket;
-    expect(kq.result.map((o) => o.id)).toEqual(await chuanTrang2());
-    const trang = sql.cau.find(
-      (c) => /FROM `orders`/.test(c.q) && /ORDER BY/.test(c.q) && !/COUNT\(/i.test(c.q) && /LIMIT/.test(c.q),
-    );
-    expect(trang?.q).toMatch(/EXISTS/);
-    expect(trang?.q).not.toMatch(/INNER JOIN `order_items` `item`/);
+    // Ép đường đi từ đơn: quyết định dựa vào MAX(orders.id) của CẢ bảng, mà
+    // database test dùng chung có id tự tăng rất lớn sau nhiều lượt chạy nên
+    // ước lượng ở đây vô nghĩa. Bài này gác hình dạng và kết quả của đường đó.
+    const cu = DOC_TU_DON.nguong;
+    DOC_TU_DON.nguong = Number.MAX_SAFE_INTEGER;
+    try {
+      sql.cau = [];
+      const kq = (await svc.findAll('2', '10', '', seller, 'seller')) as Ket;
+      expect(kq.result.map((o) => o.id)).toEqual(await chuanTrang2());
+      const trang = sql.cau.find(
+        (c) =>
+          /FROM `orders`/.test(c.q) &&
+          /ORDER BY/.test(c.q) &&
+          !/COUNT\(/i.test(c.q) &&
+          /LIMIT/.test(c.q),
+      );
+      expect(trang?.q).toMatch(/EXISTS/);
+      expect(trang?.q).not.toMatch(/INNER JOIN `order_items` `item`/);
+    } finally {
+      DOC_TU_DON.nguong = cu;
+    }
   });
 
   it('đơn của người mua không đổi', async () => {
