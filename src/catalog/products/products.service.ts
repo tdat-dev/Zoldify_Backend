@@ -726,9 +726,17 @@ export class ProductsService {
       if (coTuDai) {
         // Có ít nhất một từ FULLTEXT index được: đi index như trước. Từ ngắn
         // đi kèm vẫn gửi (InnoDB tự bỏ qua), để câu tìm giống hệt bản cũ.
+        //
+        // Từ dài mang `+` (BẮT BUỘC): BOOLEAN MODE không dấu là HOẶC, nên
+        // "tai nghe" ra cả "Tai lợn" lẫn "Nghe nhạc", và "sneaker cao cấp"
+        // khớp gần nửa bảng. Đo 02/11 trên 1.001.015 sản phẩm: HOẶC 3.976 ms,
+        // bắt buộc đủ từ 895 ms, vì MySQL phải đọc TỪNG dòng khớp để lọc
+        // trạng thái rồi sắp theo created_at (tim-kiem-nhieu-tu.spec.ts).
+        // Từ ngắn KHÔNG mang `+`: InnoDB không index chúng, bắt buộc một từ
+        // không có trong index là không ra gì.
         const safeQ = tu
           .filter((w) => [...w].length >= 2)
-          .map((w) => `${w}*`)
+          .map((w) => ([...w].length >= FT_TU_TOI_THIEU ? `+${w}*` : `${w}*`))
           .join(' ');
         qb.where(
           'MATCH(product.name, product.description) AGAINST (:q IN BOOLEAN MODE)',
