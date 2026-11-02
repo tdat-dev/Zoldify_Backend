@@ -465,7 +465,9 @@ async function main(): Promise<void> {
   // HTTP 429, vì chỗ tắt rate limit trượt mà không báo gì. Một báo cáo hiệu năng
   // sai còn tệ hơn không có báo cáo: nó khiến người đọc yên tâm về thứ chưa
   // từng được đo. Nên thà đỏ và không có file, còn hơn có file mà sai.
-  const tongLoi = kq.reduce((s, k) => s + k.loi, 0);
+  // Chế độ 1M chỉ tính 5xx: chi tiết SP xoay id ngẫu nhiên nên ~6% rơi vào
+  // hàng nháp/đã bán/chờ duyệt và trả 404 ĐÚNG luật, không phải lỗi tải.
+  const tongLoi = kq.reduce((s, k) => s + (CHE_DO_1M ? k.loi5xx : k.loi), 0);
   const tongReq = kq.reduce((s, k) => s + Math.round(k.rps * 5), 0);
   const tiLeLoi = tongReq ? (tongLoi / tongReq) * 100 : 0;
   if (tiLeLoi > 1) {
