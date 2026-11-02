@@ -9736,7 +9736,7 @@
           "ip": {
             "type": "string",
             "nullable": true,
-            "description": "IP người gọi, lấy từ `req.ip`.\n\n45 ký tự vì IPv6 dạng ánh xạ IPv4 (`::ffff:255.255.255.255`) dài 45.\nTừ task #6 có Caddy đứng trước api, nên giá trị này chỉ đúng nhờ\n`trust proxy` đã bật trong `main.ts` — cùng lý do đã ghi ở\n`src/core/swagger-guard.ts:90`."
+            "description": "IP người gọi, lấy từ `req.ip`.\n\n45 ký tự vì IPv6 dạng ánh xạ IPv4 (`::ffff:255.255.255.255`) dài 45.\nTừ task #6 có Caddy đứng trước api, nên giá trị này chỉ đúng nhờ\nquy tắc `trust proxy` ở `src/common/tin-proxy.ts`."
           },
           "user_agent": {
             "type": "string",
