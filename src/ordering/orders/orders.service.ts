@@ -22,6 +22,13 @@ import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { demCoTran } from '@common/dem-co-tran';
+
+/**
+ * Trần số đơn ước lượng phải đọc khi đi \indAll\ của người bán từ đơn mới
+ * nhất xuống (xem chỗ dùng). 20.000 mục idx_created_at + EXISTS mỗi đơn: cỡ
+ * vài chục mili-giây khi ấm. Để là đối tượng cho bài kiểm chỉnh được.
+ */
+export const DOC_TU_DON = { nguong: 20_000 };
 import { Order, OrderStatus } from './entities/order.entity';
 import { PaymentMethod } from '@common/enums/payment.enum';
 import { OrderItem } from './entities/order-item.entity';
@@ -930,7 +937,52 @@ export class OrdersService {
      *      như trang đầu (OFFSET 500k ~2.8s → keyset ~vài chục ms).
      */
     const cursorPos = cursor ? decodeCursor(cursor) : null;
-    const idQb = buildBase()
+
+    // NGƯỜI BÁN NHIỀU ĐƠN: ĐI TỪ ĐƠN MỚI NHẤT XUỐNG, KHÔNG ĐI TỪ SẢN PHẨM LÊN.
+    //
+    // Câu JOIN (buildBase) bắt đầu từ sản phẩm của người bán, nên phải gom
+    // HẾT đơn của họ rồi mới sắp lấy 10 đơn mới nhất. Người bán nặng của
+    // zoldify_1mall (10.000 sản phẩm, 20.000 đơn) dù đã có index phủ vẫn
+    // 165 ms khi ấm, 1.216 ms trung bình dưới tải (đọc 49.735 dòng mỗi lần),
+    // p95 2.435 ms ở 20 kết nối.
+    //
+    // Ngược lại, đọc ngược idx_created_at của orders và hỏi EXISTS từng đơn
+    // thì chỉ cần đọc tới khi đủ trang: đơn của người này chiếm 2% nên ~500
+    // đơn cho trang đầu, 21 ms. Nhưng người bán ÍT đơn thì cách này đọc gần
+    // cả bảng orders. Nên chỉ đi đường này khi ước lượng số đơn phải đọc,
+    // (offset + limit) x số đơn cả sàn / số đơn của người bán, không quá
+    // DOC_TU_DON.nguong. Số đơn cả sàn lấy MAX(id) (đọc một mục khoá chính,
+    // ước lượng dư nên an toàn); số đơn của người bán là tổng có trần ở trên
+    // (trần 10.000 cũng chỉ làm ước lượng dư thêm). Trang sâu tự quay về
+    // câu JOIN.
+    //
+    // `NO_SEMIJOIN`: thiếu gợi ý này MySQL đổi EXISTS thành semi-join rồi lại
+    // bắt đầu từ sản phẩm (đo: 4.154 ms lạnh, y hệt câu JOIN).
+    // Tập đơn y hệt câu JOIN: có ít nhất một món của sản phẩm chưa xoá của
+    // người bán, đơn chưa xoá mềm (TypeORM tự thêm), cùng bộ lọc trạng thái.
+    let diTuDon = false;
+    if (isSeller && total > 0) {
+      const [{ m }] = await this.orderRepository.query<Array<{ m: number }>>(
+        'SELECT COALESCE(MAX(id), 0) AS m FROM orders',
+      );
+      diTuDon =
+        ((cursorPos ? 0 : offset) + numLimit) * (Number(m) / total) <=
+        DOC_TU_DON.nguong;
+    }
+    const goc = diTuDon
+      ? this.orderRepository.createQueryBuilder('order').where(
+          `EXISTS (SELECT /*+ NO_SEMIJOIN() */ 1 FROM order_items oi_ban
+                       INNER JOIN products p_ban ON p_ban.id = oi_ban.product_id
+                                               AND p_ban.deleted_at IS NULL
+                      WHERE oi_ban.order_id = \`order\`.\`id\`
+                        AND p_ban.seller_id = :sellerId)`,
+          { sellerId: user.id },
+        )
+      : buildBase();
+    if (diTuDon && status) {
+      goc.andWhere('order.status = :status', { status });
+    }
+    const idQb = goc
       .select('order.id', 'id')
       // Lấy created_at dạng CHUỖI đủ micro-giây (%f) để dựng con trỏ chính xác —
       // KHÔNG lấy qua entity Date (bị cắt còn mili-giây). ORDER BY vẫn trên cột
@@ -941,7 +993,7 @@ export class OrdersService {
       .orderBy('order.created_at', 'DESC')
       .addOrderBy('order.id', 'DESC')
       .limit(numLimit);
-    if (isSeller) {
+    if (isSeller && !diTuDon) {
       // JOIN sinh nhiều dòng/đơn → cần DISTINCT. Thêm created_at vào SELECT để
       // hợp lệ với ORDER BY khi có DISTINCT (MySQL ONLY_FULL_GROUP_BY).
       idQb.distinct(true).addSelect('order.created_at', 'created_at');
