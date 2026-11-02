@@ -7222,6 +7222,54 @@
         ]
       }
     },
+    "/api/v1/auth/account": {
+      "delete": {
+        "operationId": "XoaTaiKhoanController_xoaTaiKhoan_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MessageResponseDto"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Xoá tài khoản của chính người đang đăng nhập.\n\n400 kèm `reasons` (`open_orders`, `escrow_holding`, `wallet_balance`) khi\ncòn việc dở; 400 khi thiếu/sai mật khẩu với tài khoản có mật khẩu.",
+        "tags": [
+          "XoaTaiKhoan"
+        ]
+      }
+    },
     "/api/v1/settings/public": {
       "get": {
         "operationId": "SettingsController_getPublic_v1",
@@ -9870,6 +9918,16 @@
           "bank_account",
           "bank_holder"
         ]
+      },
+      "DeleteAccountDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "Mật khẩu hiện tại. BẮT BUỘC với tài khoản có mật khẩu; tài khoản chỉ đăng\nnhập bằng Google (chưa từng đặt mật khẩu) thì bỏ trống.",
+            "maxLength": 128
+          }
+        }
       }
     }
   }
