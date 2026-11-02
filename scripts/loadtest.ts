@@ -63,9 +63,19 @@ E.SITE_URL ??= 'http://localhost:3001';
 //   LOADTEST_REDIS=1 REDIS_URL=redis://127.0.0.1:6380 npm run loadtest
 if (E.LOADTEST_REDIS !== '1') delete E.REDIS_URL;
 
+// Chế độ 1 triệu dòng (LOADTEST_1M=1): đo các đường nóng trên database đã đổ
+// scripts/seed-1m.sql. Khác bộ mặc định ở ba chỗ: (1) tham số XOAY theo từng
+// request (trang, từ khoá, danh mục, id sản phẩm) để không phải lần nào cũng
+// trúng một khoá cache, (2) đăng nhập bằng người mua / người bán "nặng" của seed
+// (2.000 đơn, 5.000 hội thoại) thay vì tài khoản rỗng, (3) mức song song 1/20/50
+// là mức thật của một tiến trình api sau rate limit, không phải 100.
+const CHE_DO_1M = E.LOADTEST_1M === '1';
+
 const DB = E.DB_DATABASE ?? '';
-if (!/audit/i.test(DB)) {
-  console.error(`✋ Từ chối: DB_DATABASE = "${DB}" — tên phải chứa "audit".`);
+if (!(CHE_DO_1M ? /1m/i : /audit/i).test(DB)) {
+  console.error(
+    `Từ chối: DB_DATABASE = "${DB}", tên phải chứa "${CHE_DO_1M ? '1m' : 'audit'}".`,
+  );
   process.exit(1);
 }
 
@@ -192,6 +202,7 @@ interface KetQua {
   p99: number;
   max: number;
   loi: number;
+  loi5xx: number;
   lagP99: number;
   lagMax: number;
   cpu: number;
@@ -210,9 +221,10 @@ async function banTai(
   token: string | null,
   song: number,
   giay: number,
-): Promise<{ do: number[]; loi: number }> {
+): Promise<{ do: number[]; loi: number; loi5xx: number }> {
   const dos: number[] = [];
   let loi = 0;
+  let loi5xx = 0;
   let dem = 0;
   const het = Date.now() + giay * 1000;
   const headers: Record<string, string> = token ? { Authorization: 'Bearer ' + token } : {};
@@ -225,14 +237,16 @@ async function banTai(
         const r = await fetch(base + d, { headers });
         await r.arrayBuffer(); // phải đọc hết thân, không thì chưa tính là xong
         if (r.status >= 400) loi++;
+        if (r.status >= 500) loi5xx++;
       } catch {
         loi++;
+        loi5xx++;
       }
       dos.push(Number(process.hrtime.bigint() - t0) / 1e6);
     }
   };
   await Promise.all(Array.from({ length: song }, () => mot()));
-  return { do: dos, loi };
+  return { do: dos, loi, loi5xx };
 }
 
 async function main(): Promise<void> {
@@ -280,10 +294,51 @@ async function main(): Promise<void> {
   };
 
   console.log('▶ Đăng nhập…');
-  const tBuyer = await dangNhap('buyer@zoldify.com');
+  const tBuyer = await dangNhap(CHE_DO_1M ? 'u1m5000@zoldify.test' : 'buyer@zoldify.com');
   const tAdmin = await dangNhap('admin@zoldify.com');
+  // Người bán nặng của seed-1m (id 100000): 1% số sản phẩm, 5.000 hội thoại.
+  const tSeller = CHE_DO_1M ? await dangNhap('u1m0@zoldify.test') : null;
 
-  const routes: Array<{
+  const TU_KHOA = ['áo', 'giày', 'tai nghe', 'đồng hồ', 'xe đạp', 'nồi chiên', 'bàn phím',
+    'sneaker cao cấp', 'quần jean', 'iphone'];
+  const KIEU_SAP = ['', 'newest', 'price_asc', 'price_desc', 'best_selling', 'most_viewed'];
+  const routes1M: Array<{
+    ten: string;
+    duong: string | ((i: number) => string);
+    token: string | null;
+    ghiChu?: string;
+  }> = [
+    { ten: 'danh mục', duong: '/api/v1/categories', token: null },
+    {
+      ten: 'danh sách SP (xoay trang + kiểu sắp)',
+      duong: (i) => `/api/v1/products?current=${1 + (i % 50)}&pageSize=20${KIEU_SAP[i % 6] ? '&sort=' + KIEU_SAP[i % 6] : ''}`,
+      token: null,
+    },
+    {
+      ten: 'tìm kiếm (xoay 10 từ khoá)',
+      duong: (i) => `/api/v1/products?q=${encodeURIComponent(TU_KHOA[i % 10])}&current=1&pageSize=20`,
+      token: null,
+    },
+    {
+      ten: 'SP theo danh mục (9 danh mục x 5 trang)',
+      duong: (i) => `/api/v1/products?category_id=${1 + (i % 9)}&current=${1 + (Math.floor(i / 9) % 5)}&pageSize=20`,
+      token: null,
+    },
+    {
+      ten: 'chi tiết SP (id ngẫu nhiên trong 1M)',
+      duong: (i) => `/api/v1/products/${100000 + ((i * 7919 + 13) % 1000000)}`,
+      token: null,
+    },
+    { ten: 'chi tiết SP có ~9.950 đánh giá', duong: '/api/v1/products/100005', token: null },
+    { ten: 'đơn bán của người bán nặng', duong: '/api/v1/orders?currentPage=1&limit=10&as=seller', token: tSeller },
+    { ten: 'đơn mua của người mua nặng', duong: '/api/v1/orders?currentPage=1&limit=10', token: tBuyer },
+    { ten: 'chat: hội thoại người bán nặng', duong: '/api/v1/chat/conversations', token: tSeller },
+    { ten: 'chat: hội thoại người mua nặng', duong: '/api/v1/chat/conversations', token: tBuyer },
+    { ten: 'admin: thống kê', duong: '/api/v1/admin/stats', token: tAdmin },
+    { ten: 'admin: thống kê đơn', duong: '/api/v1/orders/stats', token: tAdmin },
+  ];
+
+  const routesMacDinh: Array<{
     ten: string;
     duong: string | ((i: number) => string);
     token: string | null;
@@ -313,7 +368,8 @@ async function main(): Promise<void> {
       ghiChu: 'phần nặng còn lại, nhưng đã chặn ở KICH_THUOC_LO và có cache',
     },
   ];
-  const mucSong = [1, 10, 50, 100];
+  const routes = CHE_DO_1M ? routes1M : routesMacDinh;
+  const mucSong = CHE_DO_1M ? [1, 20, 50] : [1, 10, 50, 100];
 
   console.log('▶ Làm nóng…');
   for (const r of routes) await banTai(base, r.duong, r.token, 2, 1);
@@ -324,7 +380,7 @@ async function main(): Promise<void> {
     for (const song of mucSong) {
       datMoc(con);
       const t0 = Date.now();
-      const { do: dos, loi } = await banTai(base, r.duong, r.token, song, 5);
+      const { do: dos, loi, loi5xx } = await banTai(base, r.duong, r.token, song, 5);
       const troi = (Date.now() - t0) / 1000;
       const lag = await hoiLag(con);
       dos.sort((a, b) => a - b);
@@ -334,6 +390,7 @@ async function main(): Promise<void> {
         p50: pct(dos, 50), p95: pct(dos, 95), p99: pct(dos, 99),
         max: Math.round(dos[dos.length - 1] * 100) / 100,
         loi,
+        loi5xx,
         lagP99: Math.round(lag.p99 * 100) / 100,
         lagMax: Math.round(lag.max * 100) / 100,
         cpu: Math.round(lag.cpu),
@@ -343,7 +400,7 @@ async function main(): Promise<void> {
         `  ${r.ten.padEnd(34)} song=${String(song).padStart(3)}  ` +
         `${String(c.rps).padStart(5)} rps  p95=${String(c.p95).padStart(8)}ms  ` +
         `lag p99=${String(c.lagP99).padStart(7)}ms  cpu=${c.cpu}%` +
-        (c.loi ? `  LỖI ${c.loi}` : ''),
+        (c.loi ? `  LỖI ${c.loi} (5xx ${c.loi5xx})` : ''),
       );
     }
   }
@@ -351,14 +408,17 @@ async function main(): Promise<void> {
   // ─── Cache đáng giá bao nhiêu ────────────────────────────────────────────
   // Dựng một server THỨ HAI với kho cache luôn trượt, rồi chạy đúng route sản
   // phẩm. Chênh lệch giữa hai lần chính là phần cache đang gánh.
-  console.log('▶ Dựng server thứ hai (cache tắt hẳn) để đo phần cache đang gánh…');
-  const { con: con2, base: base2 } = await dungServer({ LOADTEST_NOCACHE: '1' });
+  // Chế độ 1M bỏ server thứ hai: muốn đo đường không cache thì chạy lại cả bộ
+  // với LOADTEST_NOCACHE=1 (biến đó theo env vào luôn server chính).
   const duongSp = '/api/v1/products?currentPage=1&limit=10';
-  await banTai(base2, duongSp, null, 2, 1);
-  for (const song of mucSong) {
+  if (!CHE_DO_1M) console.log('▶ Dựng server thứ hai (cache tắt hẳn) để đo phần cache đang gánh…');
+  const s2 = CHE_DO_1M ? null : await dungServer({ LOADTEST_NOCACHE: '1' });
+  if (s2) await banTai(s2.base, duongSp, null, 2, 1);
+  for (const song of s2 ? mucSong : []) {
+    const { con: con2, base: base2 } = s2 as { con: ChildProcess; base: string };
     datMoc(con2);
     const t0 = Date.now();
-    const { do: dos, loi } = await banTai(base2, duongSp, null, song, 5);
+    const { do: dos, loi, loi5xx } = await banTai(base2, duongSp, null, song, 5);
     const troi = (Date.now() - t0) / 1000;
     const lag2 = await hoiLag(con2);
     dos.sort((a, b) => a - b);
@@ -369,6 +429,7 @@ async function main(): Promise<void> {
       p50: pct(dos, 50), p95: pct(dos, 95), p99: pct(dos, 99),
       max: Math.round(dos[dos.length - 1] * 100) / 100,
       loi,
+      loi5xx,
       lagP99: Math.round(lag2.p99 * 100) / 100,
       lagMax: Math.round(lag2.max * 100) / 100,
       cpu: Math.round(lag2.cpu),
@@ -376,7 +437,7 @@ async function main(): Promise<void> {
     const c = kq[kq.length - 1];
     console.log(`  sản phẩm — CACHE TẮT HẲN            song=${String(song).padStart(3)}  ${String(c.rps).padStart(5)} rps  p95=${String(c.p95).padStart(8)}ms` + (c.loi ? `  LỖI ${c.loi}` : ''));
   }
-  con2.kill();
+  s2?.con.kill();
 
   // ─── Bài chèn ngang: đây mới là câu trả lời cho "Node chứ không phải Java" ──
   console.log('▶ Bài chèn ngang: healthcheck rỗng trong lúc route nặng đang chạy…');
@@ -386,7 +447,9 @@ async function main(): Promise<void> {
   const pYen = pct(yen.do, 50);
 
   datMoc(con);
-  const nang = banTai(base, '/sitemap.xml', null, 4, 6);
+  const nang = CHE_DO_1M
+    ? banTai(base, (i) => `/api/v1/products?current=${1 + (i % 50)}&pageSize=20&sort=newest`, null, 4, 6)
+    : banTai(base, '/sitemap.xml', null, 4, 6);
   await new Promise((s) => setTimeout(s, 500)); // để tải nặng kịp lấp đầy
   const chen = await banTai(base, '/', null, 1, 4);
   await nang;
@@ -416,9 +479,12 @@ async function main(): Promise<void> {
   }
 
   const md = xuatBaoCao(kq, { pYen, pChen, tiLe, lagMax: Math.round(lagChen.max * 100) / 100 }, tiLeLoi);
-  const dich = path.join(__dirname, '..', 'docs', 'system-design', 'load-test.md');
+  const tenFile = CHE_DO_1M
+    ? `load-test-1m${E.LOADTEST_NOCACHE === '1' ? '-nocache' : ''}.md`
+    : 'load-test.md';
+  const dich = path.join(__dirname, '..', 'docs', 'system-design', tenFile);
   fs.writeFileSync(dich, md, 'utf8');
-  console.log('\n✓ Đã ghi docs/system-design/load-test.md');
+  console.log(`\n✓ Đã ghi docs/system-design/${tenFile}`);
 
   con.kill();
   process.exit(0);
@@ -469,10 +535,10 @@ function xuatBaoCao(kq: KetQua[], cn: ChenNgang, tiLeLoi: number): string {
 
   L.push('## Kết quả');
   L.push('');
-  L.push('| Route | song song | RPS | p50 | p95 | p99 | lag p99 | CPU |');
-  L.push('|---|---:|---:|---:|---:|---:|---:|---:|');
+  L.push('| Route | song song | RPS | p50 | p95 | p99 | 5xx | lag p99 | CPU |');
+  L.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|');
   for (const k of kq) {
-    L.push(`| ${k.ten} | ${k.song} | **${k.rps}** | ${k.p50} | ${k.p95} | ${k.p99} | ${k.lagP99} | ${k.cpu}% |`);
+    L.push(`| ${k.ten} | ${k.song} | **${k.rps}** | ${k.p50} | ${k.p95} | ${k.p99} | ${k.loi5xx} | ${k.lagP99} | ${k.cpu}% |`);
   }
   L.push('');
   L.push('`RPS` = request/giây · `p95` = 95% request xong trong ngần này ms ·');
@@ -501,6 +567,12 @@ function xuatBaoCao(kq: KetQua[], cn: ChenNgang, tiLeLoi: number): string {
   L.push('nguy hiểm hơn cùng route đó ở Java: nó không làm chậm chính nó, nó làm chậm');
   L.push('**tất cả mọi người**.');
   L.push('');
+
+  if (CHE_DO_1M) {
+    L.push(`Database: \`${DB}\` (scripts/seed-1m.sql). Redis: ${E.LOADTEST_REDIS === '1' ? 'bật' : 'tắt'}. Cache: ${E.LOADTEST_NOCACHE === '1' ? 'TẮT HẲN (mỗi request chạm DB)' : 'bật'}. Bài chèn ngang dùng danh sách SP xoay trang thay cho sitemap.`);
+    L.push('');
+    return L.join('\n');
+  }
 
   // Rút gọn: RPS cao nhất đạt được của mỗi route, để phần kết luận nói bằng số
   // của chính lần chạy này chứ không phải số tôi gõ tay vào.
