@@ -69,8 +69,8 @@ export class AdminActionLog {
    *
    * 45 ký tự vì IPv6 dạng ánh xạ IPv4 (`::ffff:255.255.255.255`) dài 45.
    * Từ task #6 có Caddy đứng trước api, nên giá trị này chỉ đúng nhờ
-   * `trust proxy` đã bật trong `main.ts` — cùng lý do đã ghi ở
-   * `src/core/swagger-guard.ts:90`.
+   * `trust proxy` ở `src/common/tin-proxy.ts` (trước 02/11 nó ghi cổng docker
+   * 172.18.0.1 cho mọi admin, xem lý do ở file đó).
    */
   @Column({ type: 'varchar', length: 45, nullable: true })
   ip: string | null;

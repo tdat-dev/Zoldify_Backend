@@ -86,8 +86,9 @@ export function choPhepXemTaiLieu(
 /** Middleware gắn vào `/api/docs` và `/api/docs-json` trong `main.ts`. */
 export function chanTaiLieu(tk: TaiKhoanTaiLieu) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    // `req.ip` chứ không header `Host`: `trust proxy` đã bật trong main.ts nên
-    // Express lấy IP thật từ `X-Forwarded-For` do Caddy/nginx đặt.
+    // `req.ip` chứ không header `Host`: `trust proxy` (common/tin-proxy.ts) chỉ
+    // tin peer private, nên request qua nginx/Caddy mang IP khách công khai,
+    // không bao giờ là 127.0.0.1; chỉ gọi thẳng trên máy mới được loopback.
     const quyet = choPhepXemTaiLieu(
       tk,
       req.header('authorization'),
