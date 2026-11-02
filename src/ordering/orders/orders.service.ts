@@ -905,8 +905,20 @@ export class OrdersService {
     //    02/11: người bán 20.000 đơn mất 2.860 ms mỗi lần đếm. Người mua và
     //    admin giữ getCount(): người mua đi idx_user_created, admin đếm
     //    orders.deleted_at trong index (migration 1788600000000).
+    //
+    //    Tổng của người bán NHỚ 60 GIÂY theo (người bán, trạng thái): đếm có
+    //    trần vẫn gom tới 10.001 đơn, ngang câu chọn trang, nên không nhớ thì
+    //    mỗi lần mở màn Đơn bán chạy hai câu nặng (đo: p95 2.664 ms ở 20 kết
+    //    nối). Đơn mới vào thì con số trễ tối đa một phút; danh sách vẫn tươi.
     const total = isSeller
-      ? (await demCoTran(buildBase(), undefined, { cot: 'order.id' })).total
+      ? await nhoNgan(
+          this.cache,
+          `orders:seller-total:${user.id}:${status || ''}`,
+          60_000,
+          async () =>
+            (await demCoTran(buildBase(), undefined, { cot: 'order.id' }))
+              .total,
+        )
       : await buildBase().getCount();
 
     /**
