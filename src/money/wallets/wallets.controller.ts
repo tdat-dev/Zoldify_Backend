@@ -5,7 +5,7 @@ import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { TopupDto } from './dto/topup.dto';
 import { TransferDto } from './dto/transfer.dto';
-import { WalletTransaction } from './entities/wallet-transaction.entity';
+import { WalletLedgerItemDto } from './dto/wallet-ledger-item.dto';
 import {
   ApiPaginated,
   ApiShape,
@@ -55,7 +55,9 @@ export class WalletsController {
     return this.walletsService.getBalance(user.id);
   }
 
-  @ApiPaginated(WalletTransaction)
+  // Khai đúng hình dạng sổ cái, không phải entity `wallet_transactions` cũ đã
+  // ngừng ghi (xem WalletLedgerItemDto).
+  @ApiPaginated(WalletLedgerItemDto)
   @Get('transactions')
   @ResponseMessage('Lấy lịch sử giao dịch thành công')
   getTransactions(

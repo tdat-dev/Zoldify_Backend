@@ -4579,7 +4579,7 @@
                         "result": {
                           "type": "array",
                           "items": {
-                            "$ref": "#/components/schemas/WalletTransaction"
+                            "$ref": "#/components/schemas/WalletLedgerItemDto"
                           }
                         }
                       },
@@ -8948,81 +8948,68 @@
           "amount"
         ]
       },
-      "Wallet": {
+      "WalletLedgerItemDto": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "number"
-          },
-          "user": {
-            "$ref": "#/components/schemas/User"
-          },
-          "balance": {
-            "type": "number"
-          },
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "user",
-          "balance",
-          "created_at",
-          "updated_at"
-        ]
-      },
-      "WalletTransaction": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "wallet": {
-            "$ref": "#/components/schemas/Wallet"
-          },
-          "amount": {
-            "type": "number"
-          },
-          "balance_before": {
-            "type": "number"
-          },
-          "balance_after": {
-            "type": "number"
+            "type": "number",
+            "description": "id của bút toán (ledger_entries.id), tăng dần theo thời gian"
           },
           "type": {
             "type": "string",
+            "description": "Loại sự kiện tiền",
             "enum": [
               "topup",
-              "payment",
-              "refund",
-              "withdrawal"
+              "order_hold",
+              "escrow_release",
+              "escrow_refund",
+              "withdrawal_approve",
+              "withdrawal_complete",
+              "adjustment"
             ]
           },
-          "reference": {
-            "type": "string"
+          "amount": {
+            "type": "number",
+            "description": "Số tiền (đồng). Dương là tiền vào ví, âm là tiền ra khỏi ví"
+          },
+          "balance_after": {
+            "type": "number",
+            "description": "Số dư khả dụng ngay sau bút toán này (đồng)"
+          },
+          "reference_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "Sự kiện gắn với đối tượng nào: order, escrow, payment, withdrawal"
+          },
+          "reference_id": {
+            "type": "number",
+            "nullable": true,
+            "description": "id của đối tượng ở `reference_type`"
+          },
+          "order_id": {
+            "type": "number",
+            "nullable": true,
+            "description": "Mã đơn (orders.id) nếu dòng này thuộc một đơn: trả bằng ví, hoàn tiền khi\nhuỷ, tiền bán hàng về. Null với nạp, rút, chuyển tiền."
           },
           "note": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Ghi chú kèm giao dịch, nếu có"
           },
           "created_at": {
             "format": "date-time",
-            "type": "string"
+            "type": "string",
+            "description": "Thời điểm ghi sổ"
           }
         },
         "required": [
           "id",
-          "wallet",
-          "amount",
-          "balance_before",
-          "balance_after",
           "type",
-          "reference",
+          "amount",
+          "balance_after",
+          "reference_type",
+          "reference_id",
+          "order_id",
           "note",
           "created_at"
         ]
