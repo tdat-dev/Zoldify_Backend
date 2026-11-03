@@ -20,6 +20,12 @@ import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { CategoryListItemDto } from './dto/category-list-item.dto';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
+import { CacheBien } from '@common/cache-bien';
+
+// Danh mục đổi vài lần một tháng, mọi trang đều gọi: Cloudflare giữ 5 phút.
+// Admin sửa danh mục gửi kèm token nên luôn thấy bản mới; khách thấy chậm
+// tối đa ~5 phút, cần ngay thì purge (docs/bao-cao/cache-cloudflare.md).
+const DANH_MUC_GIAY = 300;
 
 @Controller('categories')
 export class CategoriesController {
@@ -41,6 +47,7 @@ export class CategoriesController {
   @Public() // Cho phép xem danh sách danh mục công khai không cần token
   @ResponseMessage('Lấy danh sách tất cả danh mục thành công!')
   @ApiPaginated(CategoryListItemDto)
+  @CacheBien(DANH_MUC_GIAY)
   @Get()
   findAll(
     @Query('current') currentPage: string,
@@ -52,6 +59,7 @@ export class CategoriesController {
 
   @Public()
   @ResponseMessage('Lấy thông tin danh mục theo slug thành công!')
+  @CacheBien(DANH_MUC_GIAY)
   @Get('slug/:slug')
   findBySlug(@Param('slug') slug: string) {
     return this.categoriesService.findBySlug(slug);
@@ -59,6 +67,7 @@ export class CategoriesController {
 
   @Public() // Cho phép xem chi tiết một danh mục công khai
   @ResponseMessage('Lấy thông tin 1 danh mục thành công!')
+  @CacheBien(DANH_MUC_GIAY)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(+id);

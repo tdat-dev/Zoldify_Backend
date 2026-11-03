@@ -30,6 +30,7 @@ import type { IUser } from '@identity/users/users.interface';
 import { UpdateStockDto } from './dto/update-stock.dto';
 import { Product } from './entities/product.entity';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
+import { CacheBien } from '@common/cache-bien';
 
 @Controller('products')
 export class ProductsController {
@@ -44,6 +45,9 @@ export class ProductsController {
 
   @ResponseMessage('Lấy danh sách tất cả sản phẩm thành công!')
   @Public()
+  // Trang chủ gọi route này cho mọi khách: Cloudflare giữ 30 giây, bằng TTL
+  // cache Redis của danh sách (xem common/cache-bien.ts).
+  @CacheBien(30)
   @ApiPaginated(Product)
   // Khai kiểu số tường minh: tham số `number | undefined` làm plugin Swagger
   // ra `schema: {}`, ba client mất kiểu của bốn bộ lọc này.
@@ -112,6 +116,10 @@ export class ProductsController {
   // Công khai nhưng xác thực TUỲ CHỌN: khách chỉ thấy sản phẩm đang bán, chủ
   // sản phẩm và admin (gửi kèm token) thấy cả bản nháp cho trang sửa. Xem
   // OptionalJwtAuthGuard và ProductsService.findOne.
+  //
+  // KHÔNG @CacheBien: findOne đếm view_count ở mỗi lượt gọi, lượt trúng cache
+  // biên không tới origin thì `most_viewed` lại sắp theo số lần cache hết hạn
+  // (lỗi đã sửa 26/10). Gỡ khi lượt xem được đếm bằng đường riêng.
   @ResponseMessage('Lấy thông tin sản phẩm thành công!')
   @Public()
   @UseGuards(OptionalJwtAuthGuard)

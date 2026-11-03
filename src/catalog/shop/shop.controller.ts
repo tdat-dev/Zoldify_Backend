@@ -19,6 +19,7 @@ import { User } from '@common/decorators/user.decorator';
 import type { IUser } from '@identity/users/users.interface';
 import { Product } from '@catalog/products/entities/product.entity';
 import { ApiPaginated } from '@common/decorators/api-response.decorator';
+import { CacheBien } from '@common/cache-bien';
 
 @Controller('shop')
 export class ShopController {
@@ -47,6 +48,10 @@ export class ShopController {
 
   @Public()
   @ResponseMessage('Lấy thông tin shop thành công')
+  // Trang shop công khai, giống nhau với mọi khách (đã lọc trường riêng tư,
+  // xem shop-lo-thong-tin.spec.ts). Chủ shop sửa xong xem lại kèm token nên
+  // thấy ngay; khách chậm tối đa ~30 giây.
+  @CacheBien(30)
   @Get(':sellerId')
   getShop(@Param('sellerId') sellerId: string) {
     return this.shopService.getShopInfo(+sellerId);
@@ -55,6 +60,7 @@ export class ShopController {
   @Public()
   @ResponseMessage('Lấy sản phẩm của shop thành công')
   @ApiPaginated(Product)
+  @CacheBien(30)
   @Get(':sellerId/products')
   getProducts(
     @Param('sellerId') sellerId: string,
