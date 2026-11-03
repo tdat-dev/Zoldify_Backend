@@ -92,14 +92,26 @@ describe('Danh sách sản phẩm: chọn trang bằng id trước, nạp quan h
       `hai-buoc-${R}`,
     ]);
     catId = await idVuaChen();
-    // 3.600 món (vài phần trăm không bán) để planner chọn như ở cỡ thật.
+    // 14.400 món (vài phần trăm không bán) để planner chọn như ở cỡ thật.
+    //
+    // Bản đầu chèn 3.600 món và đỏ chập chờn: khoảng 1 lần trong 4 lần chạy,
+    // sort=most_viewed và price_asc ra "Table scan + Sort", kể cả khi chạy
+    // RIÊNG file này (không phải do suite khác để lại dữ liệu). Đo 03/11:
+    // cùng một dữ liệu, chỉ chạy lại `ANALYZE TABLE` 12 lần thì 3 lần ra Sort.
+    // Lý do: InnoDB ước số dòng bằng cách lấy mẫu 20 trang
+    // (innodb_stats_persistent_sample_pages) trong 28 trang của bảng; lúc mẫu
+    // ra n_rows = 3.532 thì quét bảng tính giá 360, đọc ngược idx_status_view
+    // tính 367, MySQL chọn quét bảng; lúc mẫu ra 3.605 thì ngược lại. Ở cỡ đó
+    // hai đường gần ngang giá nên tung đồng xu. Với 14.400 món, 12 lần ANALYZE
+    // đều chọn index cho cả view_count, price và created_at, kể cả khi mẫu
+    // ước hụt (14.082), đúng như ở 1 triệu dòng.
     await ds.query(
       `INSERT INTO products (name, slug, price, stock, status, category_id, seller_id,
                              sold_count, view_count)
-       WITH RECURSIVE s (n) AS (SELECT 0 UNION ALL SELECT n + 1 FROM s WHERE n < 59)
+       WITH RECURSIVE s (n) AS (SELECT 0 UNION ALL SELECT n + 1 FROM s WHERE n < 119)
        SELECT CONCAT('Áo khoác số ', n), CONCAT('dshb-${R}-', n), 1000 + (n * 7) % 900, 5,
               IF(n % 25 = 0, ?, ?), ?, ?, (n * 13) % 500, (n * 17) % 900
-         FROM (SELECT a.n * 60 + b.n AS n FROM s a, s b) t`,
+         FROM (SELECT a.n * 120 + b.n AS n FROM s a, s b) t`,
       [ProductStatus.SOLD, ProductStatus.ACTIVE, catId, sellerId],
     );
     await ds.query('ANALYZE TABLE products');
