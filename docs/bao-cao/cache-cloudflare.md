@@ -187,7 +187,44 @@ không có rule thì Cloudflare không cache JSON, header của origin vô hại
 | Ai đó dán `@CacheBien` lên route theo người dùng | đã chặn | Bài quét mọi controller trong `cache-bien.spec.ts` đỏ. |
 | Bật bảo trì: danh sách cũ còn phục vụ tới hết TTL | thấp | Purge hoặc tắt rule nếu cần dừng hẳn. |
 
-## Đưa lên production (CHƯA làm, cần anh Đạt đồng ý)
+## Production: ĐÃ BẬT ngày 03/11/2026 (user duyệt)
+
+- Image giữ để quay lui: `zoldify-backend:prod-keep-20261103` (`a215a03`).
+  Image gốc của bản prod đang chạy (944dfac) đã bị CD staging dọn khỏi kho nên
+  `docker tag`/`docker commit` báo "not found"; image giữ được dựng bằng
+  `docker export zoldify-api-1 | docker import` (WORKDIR /app, USER node,
+  ENTRYPOINT docker-entrypoint.sh, CMD node dist/main). Image import KHÔNG mang
+  HEALTHCHECK và ENV của Dockerfile; compose cấp env, nên chỉ dùng khi cần gấp.
+- Nhánh prod `chore/soat-cau-hinh-payos-firebase` fast-forward `944dfac` ->
+  `3ec10a9` (chỉ ba commit 639fb78, 6eff20b, 3ec10a9). Deploy Backend xanh,
+  3 bản api `healthy`, `/health` 200.
+- Origin prod trực tiếp (`127.0.0.1:3000`): `Cache-Control: public, max-age=0`,
+  `CDN-Cache-Control: max-age=30, stale-while-revalidate=30, stale-if-error=300`,
+  `Access-Control-Allow-Origin: *`, `Vary: Accept-Encoding`.
+- Rule Cloudflare RIÊNG cho prod (tắt độc lập với staging): rule
+  `33e57f787248454dbfe2e439dbd62a1d`, ref `zoldify_api_prod_cache_danh_sach`,
+  cùng ruleset `ad30ed18347f41e3bc9be6235c168c0f`, biểu thức giống staging với
+  `http.host eq "api.zoldify.com"`.
+
+Kiểm trên prod (bắn từ máy dev, KHÔNG từ VPS: Next.js SSR của prod gọi API từ
+chính IP VPS, bắn từ đó là làm SSR dính 429):
+
+| 200 request cùng URL, 20 luồng | Trước (`DYNAMIC`) | Sau |
+| --- | --- | --- |
+| Lượt tới origin | **200** | **9** |
+| Trạng thái Cloudflare | 200 `DYNAMIC` | 190 `HIT`, 5 `MISS`, 4 `UPDATING`, 1 curl lỗi mạng phía máy dev |
+
+- `/products`, `/categories`, `/shop/1/products`: `MISS`, `MISS`, rồi `HIT` có `Age`.
+- `/products/1`: `DYNAMIC`. Có token: `DYNAMIC` + `private, no-store`.
+- Giới hạn vẫn theo IP thật: 40 request song song tới route không cache từ máy
+  dev = 34x200/6x429, cùng lúc VPS gọi cùng route = 200; nginx ghi đúng IP máy
+  dev (`1.53.166.166`) cho cả 40 lượt.
+- `fetch` ẩn danh từ `https://zoldify.com` và `https://admin.zoldify.com`: đều
+  200, không lỗi CORS. Trang chủ zoldify.com tải đủ 6 lượt gọi API, đều 200.
+
+Hoàn tác: Caching > Cache Rules > tắt rule prod (tức thì). Không cần revert mã.
+
+## Checklist đã dùng để đưa lên production
 
 1. Fast-forward nhánh prod `chore/soat-cau-hinh-payos-firebase` (đang là
    `944dfac`) lên `origin/staging` (chứa `6eff20b` và commit tài liệu này), chờ
