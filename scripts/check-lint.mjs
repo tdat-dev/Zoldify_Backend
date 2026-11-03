@@ -44,7 +44,12 @@ import { ESLint } from 'eslint';
 // trong mã vai A (products.service 61, orders.service 34, payos 27,
 // chat.gateway 26). Không tự sửa được bằng `--fix` (chỉ 3/26 ở chat.gateway là
 // prettier), và sửa tay là chạm mã của vai A. Để lại cho một đợt dọn riêng.
-const BASELINE = 519;
+//
+// 03/11 — Epic 4 (keyset /products): khai interface `ProductListQuery` thay cho
+// `qs: any` trong findAll/queryProductList/queryNewestList + controller. Nhờ đó
+// mọi lần đọc `qs.sort`, `qs.cursor`… thành truy cập có kiểu, an toàn tĩnh — gỡ
+// bớt 36 `no-unsafe-*`. Hạ mốc 519 → 483 để khoá mức mới (không được leo lại).
+const BASELINE = 483;
 
 const eslint = new ESLint();
 const results = await eslint.lintFiles(['{src,apps,libs,test}/**/*.ts']);
