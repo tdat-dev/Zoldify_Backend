@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import type { ProductListQuery } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Public } from '@common/decorators/public.decorator';
@@ -46,7 +47,12 @@ export class ProductsController {
     @Query('price_max') price_max: string,
     @Query('condition') condition: string,
     @Query('sort') sort: string,
-    @Query() qs: any,
+    // Con trỏ keyset cho cuộn vô hạn "mới nhất". Tuỳ chọn và CỘNG THÊM: không gửi
+    // thì `/products` chạy offset y như cũ (tương thích ngược — K1). Gửi thì đi
+    // keyset và trả `meta.nextCursor`. Chỉ hợp lệ với sort mới nhất/mặc định,
+    // không kèm `q` (sai → 400, xem ProductsService.queryProductList).
+    @Query('cursor') cursor: string,
+    @Query() qs: ProductListQuery,
   ) {
     qs.q = q;
     qs.category_id = category_id;
@@ -55,6 +61,7 @@ export class ProductsController {
     qs.price_max = price_max;
     qs.condition = condition;
     qs.sort = sort;
+    qs.cursor = cursor;
     return this.productsService.findAll(currentPage, limit, qs);
   }
 

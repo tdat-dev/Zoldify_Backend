@@ -17,7 +17,11 @@ import { Shop } from '@catalog/shop/entities/shop.entity';
 import { Repository, Between } from 'typeorm';
 import { IUser } from '@identity/users/users.interface';
 import { formatMoney } from '@common/money';
-import { normalizePagination } from '@common/dto/pagination.dto';
+import {
+  normalizePagination,
+  decodeCursor,
+  encodeCursor,
+} from '@common/dto/pagination.dto';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import Redis from 'ioredis';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
@@ -54,6 +58,25 @@ const PRODUCT_LIST_GEN_TTL = 24 * 60 * 60_000; // 24h
 
 /** Nhớ "đời" bao lâu trong tiến trình trước khi hỏi lại cache. Xem `doiDanhSach`. */
 const DOI_NHO_MS = 1_000;
+
+/**
+ * Tham số lọc/sắp xếp/phân trang mà `GET /products` nhận từ query string — luôn
+ * là CHUỖI vì đến từ URL. Khai tường minh thay cho `any`: trước đây mỗi lần đọc
+ * `qs.sort`, `qs.cursor`… là một truy cập `any` không an toàn (cổng lint đếm từng
+ * cái). Có kiểu này thì các nhánh đọc query an toàn tĩnh, và đường keyset mới
+ * không phải nới bánh cóc lint.
+ */
+export interface ProductListQuery {
+  q?: string;
+  category_id?: string;
+  seller_id?: string;
+  price_min?: string;
+  price_max?: string;
+  condition?: string;
+  sort?: string;
+  /** Con trỏ keyset (opaque base64url) cho cuộn vô hạn "mới nhất". */
+  cursor?: string;
+}
 
 @Injectable()
 export class ProductsService {
@@ -302,7 +325,7 @@ export class ProductsService {
     return this.findOne(saved.id);
   }
 
-  async findAll(currentPage: string, limit: string, qs: any) {
+  async findAll(currentPage: string, limit: string, qs: ProductListQuery) {
     // Chặn tham số phân trang: ?pageSize=1000000 sẽ take(1000000) nạp cả kho vào
     // RAM. Ép về [1, MAX_PAGE_SIZE], page ≥ 1, loại NaN/âm (dùng chung với orders).
     const {
@@ -328,6 +351,10 @@ export class ProductsService {
         // Lọc tình trạng đến từ nhánh prod, gộp vào sau khi cache đã có. Thiếu
         // dòng này thì ?condition=new nhận nhầm danh sách chưa lọc từ cache.
         cond: String(qs.condition ?? ''),
+        // K5: con trỏ keyset PHẢI vào khoá cache. Khoá cũ chỉ có `page` (offset);
+        // nếu thiếu `cur`, request `?cursor=X` và request `?current=1` cùng sort
+        // trùng khoá → trả nhầm bản nhớ của nhau (trang cursor nhận lại trang 1).
+        cur: String(qs.cursor ?? ''),
       });
     return this.cacheWrap(cacheKey, PRODUCT_LIST_TTL, () =>
       this.queryProductList(numPage, numLimit, offset, qs),
@@ -378,10 +405,35 @@ export class ProductsService {
     numPage: number,
     numLimit: number,
     offset: number,
-    qs: any,
+    qs: ProductListQuery,
   ) {
     // Đọc một lần, dùng cho cả hai nhánh truy vấn bên dưới.
     const condition = qs.condition ? String(qs.condition) : undefined;
+    const sort = qs.sort ? String(qs.sort) : '';
+
+    // K4 — con trỏ keyset chỉ hợp lệ trên khoá (created_at, id): tức sắp xếp
+    // "mới nhất"/mặc định và KHÔNG tìm kiếm. Dùng kèm sort theo giá/lượt bán/lượt
+    // xem thì (created_at,id) không còn là khoá sắp xếp → trả SAI thứ tự; kèm `q`
+    // thì tập kết quả khác hẳn. Chặn tường minh bằng 400 thay vì trả nhầm âm thầm.
+    // Guard đặt TRƯỚC mọi nhánh truy vấn.
+    if (qs.cursor) {
+      if (qs.q) {
+        throw new BadRequestException('cursor không dùng kèm tìm kiếm (q)');
+      }
+      if (sort && sort !== 'newest') {
+        throw new BadRequestException(
+          'cursor chỉ dùng với sắp xếp mới nhất (sort=newest hoặc bỏ trống)',
+        );
+      }
+    }
+
+    // Bề mặt CUỘN VÔ HẠN: sắp xếp mới nhất/mặc định, không tìm kiếm → đường keyset.
+    // Có cursor hay chưa đều qua đây — lượt ĐẦU (chưa cursor) vẫn phải cấp
+    // `nextCursor` để client bắt đầu cuộn (xem queryNewestList).
+    if (!qs.q && (sort === '' || sort === 'newest')) {
+      return this.queryNewestList(numPage, numLimit, offset, qs);
+    }
+
     let order: any = { created_at: 'DESC' };
     if (qs.sort === 'price_asc') {
       order = { price: 'ASC' };
@@ -522,6 +574,117 @@ export class ProductsService {
         total: totalItems,
       },
       result,
+    };
+  }
+
+  /**
+   * Danh sách "mới nhất" cho cuộn vô hạn — đường KEYSET `(created_at, id)`.
+   *
+   * VÌ SAO TÁCH RIÊNG. Nhánh offset cũ (`findAndCount`) ở trang sâu phải quét bỏ
+   * `OFFSET` dòng (~2.8s @ 500k, đo ở Epic 2) và chạy `COUNT(*)` ở MỌI request.
+   * Keyset đi thẳng vào index `idx_created_at`, trang sâu nhanh như trang đầu, và
+   * cuộn vô hạn không hiện tổng số nên BỎ luôn `COUNT` được.
+   *
+   * TƯƠNG THÍCH NGƯỢC (K1). Client cũ vẫn gửi `current` (offset) với sort mới
+   * nhất: đường này GIỮ offset + `total`/`pages` khi KHÔNG có cursor, chỉ THÊM
+   * `meta.nextCursor` để client chuyển dần sang cursor. Có cursor thì chạy keyset
+   * và bỏ `COUNT` (`total`/`pages` = null).
+   *
+   * K3 — `products.created_at` là `timestamp` (GIÂY), nhiều tin cùng giây có
+   * created_at BẰNG nhau, nên khoá phụ `id` là BẮT BUỘC: thiếu nó thứ tự ở ranh
+   * giới trang nhảy giữa các lần gọi. Con trỏ giây là đủ (không mất µs như orders).
+   */
+  private async queryNewestList(
+    numPage: number,
+    numLimit: number,
+    offset: number,
+    qs: ProductListQuery,
+  ) {
+    const pos = qs.cursor ? decodeCursor(String(qs.cursor)) : null;
+
+    // Dựng phần WHERE dùng chung cho cả truy vấn lấy hàng LẪN truy vấn đếm tổng.
+    const base = () => {
+      const qb = this.productRepository
+        .createQueryBuilder('product')
+        // K2 — leftJoin + addSelect ĐÚNG VÀI CỘT công khai. TUYỆT ĐỐI không
+        // `leftJoinAndSelect`: nó kéo cả bảng users ra, lộ email/phone người bán
+        // trên endpoint công khai (lỗi cũ: seller chiếm 43% gói tin). Có bài kiểm
+        // canh rò (`đường cursor KHÔNG lộ email/phone`).
+        .leftJoin('product.seller', 'seller')
+        .addSelect(['seller.id', 'seller.full_name', 'seller.avatar'])
+        .leftJoin('product.category', 'category')
+        .addSelect(['category.id', 'category.name', 'category.slug'])
+        // CHỈ HIỆN HÀNG ĐANG MỞ BÁN — như nhánh offset, để tin draft/pending/
+        // rejected không bày ra cửa trước.
+        .where('product.status = :active', { active: ProductStatus.ACTIVE });
+      if (qs.category_id) {
+        qb.andWhere('product.category_id = :catId', {
+          catId: Number(qs.category_id),
+        });
+      }
+      if (qs.seller_id) {
+        qb.andWhere('product.seller_id = :sellerId', {
+          sellerId: Number(qs.seller_id),
+        });
+      }
+      if (qs.condition) {
+        qb.andWhere('product.condition = :cond', { cond: String(qs.condition) });
+      }
+      if (qs.price_min || qs.price_max) {
+        const min = qs.price_min ? Number(qs.price_min) : 0;
+        const max = qs.price_max ? Number(qs.price_max) : 999999999;
+        qb.andWhere('product.price BETWEEN :pmin AND :pmax', {
+          pmin: min,
+          pmax: max,
+        });
+      }
+      return qb;
+    };
+
+    const qb = base()
+      // Lấy created_at dạng CHUỖI để dựng con trỏ, KHÔNG qua entity Date (format
+      // ngược dễ lệch múi giờ). created_at là giây nên không cần phần %f.
+      .addSelect("DATE_FORMAT(product.created_at, '%Y-%m-%d %H:%i:%s')", 'cts')
+      .orderBy('product.created_at', 'DESC')
+      .addOrderBy('product.id', 'DESC')
+      // K6 — category/seller là many-to-one (một dòng/sản phẩm) nên không fan-out;
+      // `limit()` đếm đúng số sản phẩm, không như khi JOIN quan hệ một-nhiều.
+      .limit(numLimit);
+
+    let total: number | null = null;
+    if (pos) {
+      qb.andWhere(
+        '(product.created_at < :cts OR (product.created_at = :cts AND product.id < :cid))',
+        { cts: pos.createdAt, cid: pos.id },
+      );
+    } else {
+      // Lượt đầu (chưa cursor): giữ offset + đếm tổng cho client offset cũ.
+      qb.offset(offset);
+      total = await base().getCount();
+    }
+
+    const { entities, raw } = await qb.getRawAndEntities();
+
+    // K7 — chỉ cấp `nextCursor` khi trang ĐẦY (còn khả năng có tiếp). Hết hàng thì
+    // null, tránh client gọi thêm một lượt rỗng. Lấy `cts` từ raw (chuỗi đủ) và
+    // `id` từ entity (trùng chỉ số với raw).
+    const lastEntity = entities[entities.length - 1];
+    const lastCts = raw[raw.length - 1]?.cts;
+    const nextCursor =
+      entities.length === numLimit && lastEntity && lastCts
+        ? encodeCursor(lastCts, lastEntity.id)
+        : null;
+
+    return {
+      meta: {
+        current: numPage,
+        pageSize: numLimit,
+        // Đường cursor bỏ COUNT nên pages/total = null (cuộn vô hạn không cần).
+        pages: total == null ? null : Math.ceil(total / numLimit),
+        total,
+        nextCursor,
+      },
+      result: entities,
     };
   }
 
