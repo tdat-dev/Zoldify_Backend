@@ -3,9 +3,9 @@ import {
   HttpException,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { Follow } from './entities/follow.entity';
-import { FollowsService } from './follows.service';
+import { FollowsService, SO_LAN_THU_KHI_DEADLOCK } from './follows.service';
 import { User } from '@identity/users/entities/user.entity';
 
 /**
@@ -14,7 +14,7 @@ import { User } from '@identity/users/entities/user.entity';
  * Bất biến thật nằm ở **database** (khoá `UNIQUE(follower_id, following_id)`),
  * nên bài kiểm phải chạy trên MySQL thật — mock đi thì xanh mà không chứng minh gì.
  *
- * Khoá đó **đã có sẵn** ở `src/migrations/1690000000000-InitialSchema.ts:70` và
+ * Khoá đó **đã có sẵn** ở `src/migrations/1690000000000-InitialSchema.ts` và
  * `@Unique` trong `follow.entity.ts`. B5-2 **không có việc sửa mã** — chỉ có
  * việc viết bài kiểm.
  *
@@ -52,7 +52,8 @@ describe('FollowsService', () => {
       // Pool mặc định là 10: 20 lượt song song thì 10 lượt xếp hàng trong ứng
       // dụng và chưa từng chạm MySQL cùng lúc, bài đua nhẹ đi một nửa mà không
       // ai biết. Ba bản api x 15 kết nối đủ sức dồn 20 lượt thật vào một dòng.
-      extra: { connectionLimit: SO_LUOT_SONG_SONG },
+      // Thêm 2 cho transaction gài khoá và câu đếm lượt đang chờ khoá.
+      extra: { connectionLimit: SO_LUOT_SONG_SONG + 2 },
     });
     try {
       await dataSource.initialize();
@@ -178,6 +179,58 @@ describe('FollowsService', () => {
       expect(loi).toEqual([]);
     };
 
+    /**
+     * Gài đúng thế deadlock thay vì trông vào may rủi.
+     *
+     * Đua thuần qua service gần như không chạm được nó: đo 150 đợt 20 lượt lẫn
+     * lộn, `repository.delete` chỉ 0-5 đợt deadlock, thay riêng DELETE bằng câu
+     * SQL trần là 61 đợt. QueryBuilder làm DELETE tới MySQL trễ hơn các INSERT
+     * nên hai bên ít khi trùng nhau, bài xanh mà không chứng minh gì, trong khi
+     * request thật từ ba bản api không bị lệch kiểu đó.
+     *
+     * Nên ở đây: giữ một DELETE chưa commit, cho `luot` xếp hàng sau khoá của
+     * nó, đếm đủ số lượt đang chờ trong InnoDB rồi mới commit. Tất cả cùng tỉnh
+     * dậy trên bản ghi vừa bị đánh dấu xoá, đúng cảnh hai lượt chèn giữ khoá gap
+     * chia sẻ rồi chờ nhau.
+     */
+    const sauMotLuotBoChuaCommit = async <T>(luot: (() => Promise<T>)[]) => {
+      await service.follow(1, 2);
+
+      const qr = dataSource.createQueryRunner();
+      await qr.connect();
+      await qr.startTransaction();
+      try {
+        await qr.query(
+          'DELETE FROM follows WHERE follower_id = 1 AND following_id = 2',
+        );
+        let daXong = 0;
+        const ketQua = Promise.allSettled(
+          luot.map((chay) => chay().finally(() => daXong++)),
+        );
+
+        const hetHan = Date.now() + 15_000;
+        for (;;) {
+          const [{ soLuot }] = await dataSource.query<{ soLuot: string }[]>(
+            `SELECT COUNT(*) AS soLuot FROM information_schema.innodb_trx
+              WHERE trx_state = 'LOCK WAIT' AND trx_query LIKE '%follows%'`,
+          );
+          // Tính cả lượt đã xong: lượt bị MySQL loại ngay lúc đang xếp hàng thì
+          // không bao giờ quay lại hàng chờ, đếm riêng hàng chờ sẽ treo tới hạn.
+          if (Number(soLuot) + daXong === luot.length) break;
+          if (Date.now() > hetHan) {
+            throw new Error(`Chỉ ${soLuot}/${luot.length} lượt chờ khoá`);
+          }
+          await new Promise((xong) => setTimeout(xong, 5));
+        }
+
+        await qr.commitTransaction();
+        return await ketQua;
+      } finally {
+        if (qr.isTransactionActive) await qr.rollbackTransaction();
+        await qr.release();
+      }
+    };
+
     beforeEach(async () => {
       await taoUser(1);
       await taoUser(2);
@@ -251,8 +304,48 @@ describe('FollowsService', () => {
       }
     });
 
+    it('20 lượt theo dõi tỉnh dậy trên bản ghi vừa xoá, đúng một dòng, không lượt nào lỗi', async () => {
+      for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        const ketQua = await sauMotLuotBoChuaCommit(
+          Array.from(
+            { length: SO_LUOT_SONG_SONG },
+            () => () => service.follow(1, 2),
+          ),
+        );
+
+        phaiThanhCongHet(ketQua);
+        expect(await soDong()).toBe(1);
+        expect(await service.isFollowing(1, 2)).toBe(true);
+      }
+    });
+
+    it('20 lượt lẫn lộn tỉnh dậy trên bản ghi vừa xoá, bảng vẫn nhất quán', async () => {
+      for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        const ketQua = await sauMotLuotBoChuaCommit(
+          Array.from(
+            { length: SO_LUOT_SONG_SONG },
+            (_, i) => () =>
+              i % 2 === 0 ? service.follow(1, 2) : service.unfollow(1, 2),
+          ),
+        );
+
+        phaiThanhCongHet(ketQua);
+        const dong = await soDong();
+        expect(dong).toBeLessThanOrEqual(1);
+        expect(await service.isFollowing(1, 2)).toBe(dong === 1);
+
+        // Đưa về một trạng thái đã biết: sau trận đua cả hai chiều vẫn đi được.
+        await service.unfollow(1, 2);
+        expect(await soDong()).toBe(0);
+      }
+    });
+
     it('20 lượt lẫn lộn theo dõi và bỏ theo dõi, bảng vẫn nhất quán', async () => {
       for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        // Bản ghi vừa bị đánh dấu xoá là thứ gây deadlock: mỗi đợt phải có một.
+        await service.follow(1, 2);
+        await service.unfollow(1, 2);
+
         const ketQua = await Promise.allSettled(
           Array.from({ length: SO_LUOT_SONG_SONG }, (_, i) =>
             i % 2 === 0 ? service.follow(1, 2) : service.unfollow(1, 2),
@@ -357,6 +450,74 @@ describe('FollowsService', () => {
       } finally {
         await dataSource.getRepository(User).restore({ id: 3 });
       }
+    });
+  });
+
+  /**
+   * Giới hạn thử lại phải đo được bằng số lần gọi, và MySQL thật không ép ra
+   * "deadlock mãi không dứt" được, nên phần này dùng repository giả.
+   */
+  describe('thử lại khi deadlock', () => {
+    const loiMySql = (errno: number, code: string) =>
+      new QueryFailedError(
+        'câu SQL',
+        [],
+        Object.assign(new Error(code), { errno, code }),
+      );
+    const DEADLOCK = loiMySql(1213, 'ER_LOCK_DEADLOCK');
+
+    const taoService = () => {
+      const repo = { query: jest.fn(), delete: jest.fn() };
+      return {
+        repo,
+        service: new FollowsService(repo as unknown as Repository<Follow>),
+      };
+    };
+
+    it('follow thử lại rồi thành công', async () => {
+      const { repo, service: s } = taoService();
+      repo.query
+        .mockRejectedValueOnce(DEADLOCK)
+        .mockRejectedValueOnce(DEADLOCK)
+        .mockResolvedValue({ affectedRows: 1 });
+
+      expect(await s.follow(1, 2)).toEqual({ followed: true });
+      expect(repo.query).toHaveBeenCalledTimes(3);
+    });
+
+    it('unfollow thử lại rồi thành công', async () => {
+      const { repo, service: s } = taoService();
+      repo.delete.mockRejectedValueOnce(DEADLOCK).mockResolvedValue({});
+
+      expect(await s.unfollow(1, 2)).toEqual({ followed: false });
+      expect(repo.delete).toHaveBeenCalledTimes(2);
+    });
+
+    it('hết lượt thử thì ném nguyên lỗi 1213 để DatabaseExceptionFilter trả 409', async () => {
+      const { repo, service: s } = taoService();
+      repo.query.mockRejectedValue(DEADLOCK);
+      repo.delete.mockRejectedValue(DEADLOCK);
+
+      await expect(s.follow(1, 2)).rejects.toBe(DEADLOCK);
+      await expect(s.unfollow(1, 2)).rejects.toBe(DEADLOCK);
+
+      expect(repo.query).toHaveBeenCalledTimes(SO_LAN_THU_KHI_DEADLOCK);
+      expect(repo.delete).toHaveBeenCalledTimes(SO_LAN_THU_KHI_DEADLOCK);
+    });
+
+    it.each([
+      ['chờ khoá quá hạn', loiMySql(1205, 'ER_LOCK_WAIT_TIMEOUT')],
+      ['lỗi không phải của database', new Error('mất kết nối')],
+    ])('%s không được thử lại', async (_mo, loi) => {
+      const { repo, service: s } = taoService();
+      repo.query.mockRejectedValue(loi);
+      repo.delete.mockRejectedValue(loi);
+
+      await expect(s.follow(1, 2)).rejects.toBe(loi);
+      await expect(s.unfollow(1, 2)).rejects.toBe(loi);
+
+      expect(repo.query).toHaveBeenCalledTimes(1);
+      expect(repo.delete).toHaveBeenCalledTimes(1);
     });
   });
 });

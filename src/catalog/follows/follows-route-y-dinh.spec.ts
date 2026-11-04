@@ -6,7 +6,9 @@ import {
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { QueryFailedError } from 'typeorm';
 import { RESPONSE_MESSAGE } from '@common/decorators/response.decorator';
+import { DatabaseExceptionFilter } from '@core/db-exception.filter';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { FollowsController } from './follows.controller';
 import { FollowsService } from './follows.service';
@@ -54,6 +56,7 @@ describe('Route theo dõi nói rõ ý định', () => {
         transform: true,
       }),
     );
+    app.useGlobalFilters(new DatabaseExceptionFilter());
     await app.init();
   });
 
@@ -108,6 +111,21 @@ describe('Route theo dõi nói rõ ý định', () => {
     expect(service.toggle).toHaveBeenCalledWith(NGUOI_BAM, 42);
     expect(service.follow).not.toHaveBeenCalled();
     expect(service.unfollow).not.toHaveBeenCalled();
+  });
+
+  it('deadlock hết lượt thử là 409 kèm lời mời thử lại, không phải 500', async () => {
+    service.follow.mockRejectedValue(
+      new QueryFailedError(
+        'câu SQL',
+        [],
+        Object.assign(new Error('deadlock'), { errno: 1213 }),
+      ),
+    );
+
+    const res = await http().put('/follows/42').expect(409);
+
+    expect(JSON.stringify(res.body)).toContain('thử lại');
+    expect(JSON.stringify(res.body)).not.toMatch(/Deadlock|follows/i);
   });
 
   it('GET /follows/check/:sellerId vẫn chạy', async () => {
