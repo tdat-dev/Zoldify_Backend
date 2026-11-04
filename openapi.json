@@ -1801,6 +1801,112 @@
         ]
       }
     },
+    "/api/v1/follows/{sellerId}": {
+      "put": {
+        "operationId": "FollowsController_follow_v1",
+        "parameters": [
+          {
+            "name": "sellerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "followed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "followed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Follows"
+        ]
+      },
+      "delete": {
+        "operationId": "FollowsController_unfollow_v1",
+        "parameters": [
+          {
+            "name": "sellerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "followed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "followed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Follows"
+        ]
+      }
+    },
     "/api/v1/follows/{userId}/followers": {
       "get": {
         "operationId": "FollowsController_getFollowers_v1",
