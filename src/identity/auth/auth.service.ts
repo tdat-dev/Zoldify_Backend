@@ -12,8 +12,9 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '@identity/users/users.service';
 import { IUser } from '@identity/users/users.interface';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
+import { UserSession } from './entities/user-session.entity';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -105,6 +106,8 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private readonly mailerService: MailerService,
+    @InjectRepository(UserSession)
+    private readonly phienRepository: Repository<UserSession>,
   ) {}
 
   /**
@@ -181,23 +184,78 @@ export class AuthService {
     const tokenVersion = dbUser?.token_version || 0;
 
     const { id, full_name, email, role } = user;
+    const sid = randomUUID();
     const payload = {
       sub: id,
       full_name,
       email,
       role,
       token_version: tokenVersion,
+      sid,
     };
+    const accessToken = this.jwtService.sign(payload);
     const refreshToken = this.createRefreshToken(payload);
+    await this.phienRepository.insert({
+      id: sid,
+      user_id: id,
+      refresh_hash: bamRefresh(refreshToken),
+      expires_at: this.hanPhien(accessToken, refreshToken),
+    });
+    await this.donPhienHetHan(id);
+    // Vẫn ghi cột cũ dù token mang sid không đọc nó nữa, vì hai lúc mã bản
+    // trước còn chạy: lúc thay dần ba bản api trong deploy, và lúc lùi bản.
+    // Mã cũ so refresh token với cột này, không có thì coi là dùng lại và
+    // thu hồi mọi phiên. Đánh đổi: token không sid vẫn bị lần đăng nhập mới ghi
+    // đè như trước bản vá. Gỡ dòng này khi đã qua một JWT_REFRESH_EXPIRE kể từ
+    // ngày deploy và không còn định lùi bản.
     await this.usersService.updateUserToken(
       bamRefresh(refreshToken),
       id.toString(),
     );
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token: accessToken,
       refresh_token: refreshToken,
       user: { id, full_name, email, role },
     };
+  }
+
+  /**
+   * Hạn của dòng phiên: token nào sống lâu hơn thì lấy token đó.
+   *
+   * Không lấy mặc định hạn refresh: web và app chưa gọi /auth/refresh, nên với
+   * họ phiên kéo dài đúng bằng access token. Đặt JWT_ACCESS_EXPIRE dài hơn
+   * JWT_REFRESH_EXPIRE thì dòng chết trước token, người dùng bị đá sớm hơn
+   * trước bản vá. Đọc `exp` từ chính token cũng khỏi phải tự đổi "7d" ra giây.
+   */
+  private hanPhien(...tokens: string[]): Date {
+    const giay = tokens.map(
+      (t) => this.jwtService.decode<{ exp?: number }>(t)?.exp ?? 0,
+    );
+    return new Date(Math.max(...giay) * 1000);
+  }
+
+  /**
+   * Dọn dòng đã hết hạn của một người ngay lúc họ đăng nhập, để bảng không
+   * phình mãi mà không cần thêm cron. Dòng đã thu hồi còn hạn thì để nguyên:
+   * token của nó chưa hết hạn, xoá sớm cũng không đổi gì.
+   *
+   * Đây là việc dọn nhà: hỏng (khoá chờ quá lâu chẳng hạn) thì lần đăng nhập
+   * sau dọn tiếp, không được làm hỏng đăng nhập. Câu này và câu INSERT chạy
+   * riêng, không chung giao dịch: chung thì hai lần đăng nhập cùng lúc có thể
+   * giữ khoá khoảng của nhau rồi deadlock.
+   */
+  private async donPhienHetHan(userId: number) {
+    try {
+      await this.phienRepository.delete({
+        user_id: userId,
+        expires_at: LessThan(new Date()),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Không dọn được phiên hết hạn của user ${userId}: ` +
+          `${(err as Error).message}`,
+      );
+    }
   }
 
   createRefreshToken(payload: any) {

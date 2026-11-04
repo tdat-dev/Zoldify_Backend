@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 import { AuthService } from './auth.service';
 import { UsersService } from '@identity/users/users.service';
 import { User } from '@identity/users/entities/user.entity';
+import { UserSession } from './entities/user-session.entity';
 
 /**
  * Refresh token dùng lại được vô hạn lần.
@@ -63,7 +64,7 @@ describe('Refresh token chỉ dùng được một lần', () => {
     ds = new DataSource({
       type: 'mysql',
       ...TEST_DB,
-      entities: [User],
+      entities: [User, UserSession],
       synchronize: true,
       logging: false,
     });
@@ -86,6 +87,7 @@ describe('Refresh token chỉ dùng được một lần', () => {
       ds.getRepository(User),
       cache as never,
       {} as never,
+      ds.getRepository(UserSession),
     );
   });
 

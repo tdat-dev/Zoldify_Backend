@@ -11,12 +11,13 @@ import { JwtStrategy } from './passport/jwt.strategy';
 import { LocalStrategy } from './passport/local.strategy';
 import { UsersModule } from '@identity/users/users.module';
 import { User } from '@identity/users/entities/user.entity';
+import { UserSession } from './entities/user-session.entity';
 import { mailerConfig } from '../../common/mailer.config';
 
 @Module({
   imports: [
     UsersModule,
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, UserSession]),
     // Bộ nhớ đệm OTP nằm trong tiến trình (không có store ngoài): mất hết
     // khi restart, và không chia sẻ được giữa nhiều instance backend. Trước
     // khi chạy hơn một instance (scale ngang, zero-downtime deploy nhiều
