@@ -1,8 +1,37 @@
 # Refresh token: dùng một lần, ân hạn, và giới hạn một phiên mỗi người
 
-*Ghi 26/10/2026, cùng các bản vá ở `AuthService.refreshToken`.*
+*Ghi 26/10/2026, cùng các bản vá ở `AuthService.refreshToken`. Sửa 04/11/2026
+khi có bảng `user_sessions`.*
 
-## Hành vi hiện tại
+## Phiên theo thiết bị (từ 04/11)
+
+Mỗi lần đăng nhập một dòng `user_sessions`, `sid` nằm trong cả access lẫn refresh
+token. Có hai mức thu hồi:
+
+| Hành động | Mức thu hồi |
+|---|---|
+| Đăng xuất bằng token có `sid` | Chỉ dòng của máy đó (`revoked_at`). Máy khác, kể cả socket chat, sống tiếp. |
+| Đổi mật khẩu, đặt lại mật khẩu, khoá, đổi vai trò, xoá tài khoản, dùng lại refresh token | Mọi máy (`token_version`), như trước. |
+| Refresh token của phiên đã chết (đăng xuất, hết hạn, mất dòng) | **400**, không tăng `token_version`. Tăng là đá máy đang dùng, đúng lỗi bảng này sửa. |
+
+JwtStrategy và socket chat kiểm dòng phiên theo khoá chính, không cache. Socket
+chỉ nghe sống thêm tối đa 30 giây sau khi đăng xuất, tới lượt quét kế tiếp.
+
+Dòng hết hạn được dọn lúc chính người đó đăng nhập, không có cron. Người không
+bao giờ đăng nhập lại thì các dòng cuối của họ nằm đó, nhưng cũng không sinh thêm
+dòng nào, nên bảng không phình theo thời gian.
+
+**Token không `sid`** (phát trước ngày deploy) đi hết đường cũ bên dưới, kể cả
+đăng xuất đá mọi máy. Nhánh đó gỡ được khi đã qua một `JWT_ACCESS_EXPIRE` và một
+`JWT_REFRESH_EXPIRE` kể từ ngày deploy, cùng lúc gỡ dòng ghi cột
+`users.refresh_token` trong `login()`.
+
+**Lùi bản:** mã cũ không biết `sid`, nên access token của máy đã đăng xuất sống
+lại tới hết hạn (`token_version` không tăng). Lùi mã không cần lùi bảng; chạy
+chiều lùi của migration rồi lại lên bản này thì mọi token mang `sid` còn hạn mất
+phiên.
+
+## Đường cũ, cho token không `sid`
 
 | Tình huống | Kết quả |
 |---|---|
@@ -16,21 +45,18 @@
 cần migration. Nó chỉ được ghi khi token gửi lên đúng là token cột đang giữ, nên
 kẻ gửi lại token cũ không tự cấp ân hạn cho mình được.
 
-## Giới hạn đã biết: một phiên mỗi người
+## Giới hạn của đường cũ: một phiên mỗi người
 
-Cột `users.refresh_token` chỉ giữ **một** token. Hệ quả:
+Cột `users.refresh_token` chỉ giữ **một** token. Từ 04/11 giới hạn này chỉ còn
+với token không `sid`. Hệ quả:
 
 - Đăng nhập trên máy thứ hai ghi đè token của máy thứ nhất.
 - Máy thứ nhất làm mới sau đó (quá 30 giây) bị coi là dùng lại token cũ: **cả
   hai máy bị đăng xuất**.
-- Đăng xuất ở một máy tăng `token_version`, cũng đá mọi máy khác (đã như vậy từ
-  trước).
+- Đăng xuất bằng token không `sid` tăng `token_version`, cũng đá mọi máy khác.
 
-Hôm nay chưa client nào gọi `/auth/refresh` (kiểm 25/10: app và web đăng xuất
-khi access token hết hạn), nên giới hạn này chưa chạm người dùng. Khi client bắt
-đầu dùng refresh:
-
-1. Gom mọi lần làm mới đồng thời thành **một** (single-flight). Gặp 409 thì chờ
-   request đang chạy và dùng token nó trả về, đừng gọi lại.
-2. Muốn nhiều thiết bị cùng đăng nhập thì cần bảng phiên riêng (mỗi thiết bị
-   một dòng, có hash token, id thiết bị, hạn), thay cho cột đơn hiện tại.
+Hôm nay chưa client nào gọi `/auth/refresh` (kiểm 25/10 và 04/11: app và web
+đăng xuất khi access token hết hạn), nên giới hạn này chưa chạm người dùng. Khi
+client bắt đầu dùng refresh, phải gom mọi lần làm mới đồng thời của một phiên
+thành **một** (single-flight). Gặp 409 thì chờ request đang chạy và dùng token nó
+trả về, đừng gọi lại.
