@@ -47,6 +47,7 @@ describe('Đăng xuất gỡ push token', () => {
       userRepository as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const logout = service.logout.bind(service) as (
       u: IUser,

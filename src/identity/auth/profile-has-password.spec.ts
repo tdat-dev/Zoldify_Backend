@@ -38,6 +38,7 @@ describe('AuthService.getProfile: has_password', () => {
       { findOne: () => Promise.resolve({ ...baseUser }) } as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
   it('tài khoản có mật khẩu -> has_password: true', async () => {

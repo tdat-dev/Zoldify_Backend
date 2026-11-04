@@ -49,6 +49,7 @@ function dung() {
     repo as never,
     cache as never,
     mailer as never,
+    {} as never,
   );
   const otpTrongThu = () => /(\d{6})/.exec(thu[0]?.html ?? '')?.[1] ?? '';
   return { svc, cache, thu, repo, otpTrongThu };

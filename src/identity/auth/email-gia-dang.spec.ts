@@ -72,6 +72,7 @@ function dungService(opts: { coTaiKhoan?: boolean; otpDaLuu?: unknown } = {}) {
     repo as never,
     cache as never,
     mailer as never,
+    {} as never,
   );
   return { svc, repo, usersService, mailer };
 }

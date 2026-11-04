@@ -25,7 +25,7 @@ import { AuthService } from './auth.service';
 import { UserSession } from './entities/user-session.entity';
 import {
   OptionalJwtAuthGuard,
-  RequestNguoiXem,
+  type RequestNguoiXem,
 } from './optional-jwt-auth.guard';
 import { JwtStrategy } from './passport/jwt.strategy';
 

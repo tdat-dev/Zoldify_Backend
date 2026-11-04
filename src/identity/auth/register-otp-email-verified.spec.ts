@@ -41,6 +41,7 @@ describe('verifyRegisterOtp đánh dấu email đã xác thực', () => {
         del: jest.fn(),
       } as never,
       {} as never,
+      {} as never,
     );
 
   it('tài khoản tạo qua OTP có email_verified = true', async () => {

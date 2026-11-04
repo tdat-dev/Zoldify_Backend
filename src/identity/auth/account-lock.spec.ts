@@ -47,6 +47,7 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
     const strategy = new JwtStrategy(
       { get: () => 'test-secret' } as never,
       repoReturning(lockedUser) as never,
+      {} as never,
     );
     await expect(
       strategy.validate({ sub: 5, token_version: 2, role: 'buyer' }),
@@ -57,6 +58,7 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
     const strategy = new JwtStrategy(
       { get: () => 'test-secret' } as never,
       repoReturning(activeUser) as never,
+      {} as never,
     );
     await expect(
       strategy.validate({ sub: 5, token_version: 2, role: 'buyer' }),
@@ -70,6 +72,7 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
       { sign } as never,
       { get: () => '1d' } as never,
       repoReturning(lockedUser) as never,
+      {} as never,
       {} as never,
       {} as never,
     );
@@ -122,6 +125,7 @@ describe('B-04: tài khoản bị khoá không dùng được hệ thống', () 
           findOne: () => Promise.resolve(dbUser),
           update: () => Promise.resolve(),
         } as never,
+        {} as never,
       );
       // Từ 6afa504 handleConnection đếm socket đang mở của người dùng qua
       // server.in(phòng).fetchSockets(), nên server giả phải có hàm đó; thiếu nó

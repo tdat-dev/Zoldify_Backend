@@ -60,6 +60,7 @@ describe('resetPassword thu hồi phiên cũ', () => {
       userRepository as never,
       cacheManager as never,
       {} as never,
+      {} as never,
     );
 
     return { service, user, incrementCalls, updateCalls, updateUserToken };

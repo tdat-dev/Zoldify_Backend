@@ -59,6 +59,7 @@ function dung(opts: { coTaiKhoan: boolean }) {
     repo as never,
     cache as never,
     mailer as never,
+    {} as never,
   );
   const otp = () => /(\d{6})/.exec(thu[thu.length - 1]?.html ?? '')?.[1] ?? '';
   const otpSai = () => (otp() === '000000' ? '111111' : '000000');

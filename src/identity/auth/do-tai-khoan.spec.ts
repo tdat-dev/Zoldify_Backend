@@ -21,6 +21,7 @@ function dung(user: { id: number; email: string } | null) {
       del: jest.fn(() => Promise.resolve()),
     } as never,
     mailer as never,
+    {} as never,
   );
   return { svc, mailer };
 }
