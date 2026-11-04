@@ -40,9 +40,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // chính mỗi request; không cache, vì đăng xuất phải có hiệu lực ngay trên
     // cả ba bản api. Token phát trước bản này không có sid: bỏ qua bước này
     // cho tới khi chúng hết hạn, nếu không deploy là đá mọi người đang dùng.
-    if (payload.sid) {
+    const { sid } = payload as { sid?: string };
+    if (sid) {
       const phien = await this.phienRepository.findOne({
-        where: { id: payload.sid },
+        where: { id: sid },
         select: ['id', 'revoked_at', 'expires_at'],
       });
       if (!phienConSong(phien)) {
@@ -56,7 +57,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       full_name: payload.full_name,
       email: payload.email,
       role: payload.role,
-      sid: payload.sid,
+      sid,
     };
   }
 }

@@ -197,11 +197,11 @@ export class AuthService {
     const refreshToken = this.createRefreshToken(payload);
     await this.phienRepository.insert({
       id: sid,
-      user_id: id,
+      user_id: id as number,
       refresh_hash: bamRefresh(refreshToken),
       expires_at: this.hanPhien(accessToken, refreshToken),
     });
-    await this.donPhienHetHan(id);
+    await this.donPhienHetHan(id as number);
     // Vẫn ghi cột cũ dù token mang sid không đọc nó nữa, vì hai lúc mã bản
     // trước còn chạy: lúc thay dần ba bản api trong deploy, và lúc lùi bản.
     // Mã cũ so refresh token với cột này, không có thì coi là dùng lại và
@@ -635,9 +635,8 @@ export class AuthService {
       );
     }
 
-    if (payload.sid) {
-      return this.lamMoiTheoPhien(user, payload.sid, refreshToken);
-    }
+    const { sid } = payload as { sid?: string };
+    if (sid) return this.lamMoiTheoPhien(user, sid, refreshToken);
 
     // Từ đây xuống chỉ còn token phát trước khi có bảng phiên (không có sid).
     // Gỡ cả đoạn này khi đã qua một JWT_REFRESH_EXPIRE kể từ ngày deploy.
@@ -756,11 +755,7 @@ export class AuthService {
    * cầm token của phiên ấy, không có gì để bảo vệ thêm; xếp nó vào ca dùng lại
    * là đá máy A đang dùng, đúng lỗi bảng này sinh ra để sửa.
    */
-  private async lamMoiTheoPhien(
-    user: User,
-    sid: string,
-    refreshToken: string,
-  ) {
+  private async lamMoiTheoPhien(user: User, sid: string, refreshToken: string) {
     const phien = await this.phienRepository.findOne({
       where: { id: sid, user_id: user.id },
     });
