@@ -1,4 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { Follow } from './entities/follow.entity';
 import { FollowsService } from './follows.service';
@@ -29,6 +33,11 @@ const TEST_DB = {
 
 jest.setTimeout(60_000);
 
+/** Số lượt bấm cùng lúc ở các bài đua `follow`/`unfollow`. */
+const SO_LUOT_SONG_SONG = 20;
+/** Deadlock là chuyện xác suất: một vòng xanh chưa nói lên gì, nên đua nhiều vòng. */
+const SO_VONG_DUA = 5;
+
 describe('FollowsService', () => {
   let dataSource: DataSource;
   let service: FollowsService;
@@ -40,6 +49,10 @@ describe('FollowsService', () => {
       entities: [Follow, User],
       synchronize: true,
       logging: false,
+      // Pool mặc định là 10: 20 lượt song song thì 10 lượt xếp hàng trong ứng
+      // dụng và chưa từng chạm MySQL cùng lúc, bài đua nhẹ đi một nửa mà không
+      // ai biết. Ba bản api x 15 kết nối đủ sức dồn 20 lượt thật vào một dòng.
+      extra: { connectionLimit: SO_LUOT_SONG_SONG },
     });
     try {
       await dataSource.initialize();
@@ -136,5 +149,214 @@ describe('FollowsService', () => {
     const rejected = results.filter((r) => r.status === 'rejected');
     expect(rejected.length).toBe(1);
     expect(rejected[0].reason).toBeInstanceOf(Error);
+  });
+
+  /**
+   * Q5/Q6 TRÊN TRELLO: `toggle` lật trạng thái theo thứ đang có trên server chứ
+   * không theo điều người dùng muốn. Thiết bị A còn hiện "Đang theo dõi" trong
+   * khi B đã bỏ: A bấm bỏ theo dõi thì thành theo dõi lại. Hai thiết bị cùng bấm
+   * bỏ: lượt sau lật lại lượt trước, cuối cùng vẫn đang theo dõi.
+   *
+   * `follow`/`unfollow` nói rõ ý định nên kết quả không phụ thuộc trạng thái
+   * trước đó. Bài song song gọi đúng service và đếm dòng thật trong bảng: chép
+   * lại câu SQL ra đây thì sửa mã xong bài vẫn y nguyên, không nghiệm thu được.
+   */
+  describe('follow/unfollow nói rõ ý định', () => {
+    const soDong = (followerId = 1, followingId = 2) =>
+      dataSource.getRepository(Follow).count({
+        where: { follower_id: followerId, following_id: followingId },
+      });
+
+    /** Mọi lượt phải thành công. Lỗi thì in mã MySQL để biết đụng khoá kiểu gì. */
+    const phaiThanhCongHet = <T>(ketQua: PromiseSettledResult<T>[]) => {
+      const loi = ketQua
+        .filter((k): k is PromiseRejectedResult => k.status === 'rejected')
+        .map((k) => {
+          const e = k.reason as { code?: string; message?: string };
+          return e.code ?? e.message;
+        });
+      expect(loi).toEqual([]);
+    };
+
+    beforeEach(async () => {
+      await taoUser(1);
+      await taoUser(2);
+    });
+
+    it('bỏ theo dõi khi vốn không theo dõi thì vẫn không theo dõi', async () => {
+      expect(await service.unfollow(1, 2)).toEqual({ followed: false });
+      expect(await soDong()).toBe(0);
+    });
+
+    it('theo dõi khi đã theo dõi thì vẫn theo dõi, không tạo dòng mới', async () => {
+      expect(await service.follow(1, 2)).toEqual({ followed: true });
+      const dongDau = await dataSource
+        .getRepository(Follow)
+        .findOneByOrFail({ follower_id: 1, following_id: 2 });
+
+      expect(await service.follow(1, 2)).toEqual({ followed: true });
+
+      // So cả id: xoá rồi chèn lại cũng ra một dòng, nhưng làm mất `created_at`
+      // và đẩy người này lên đầu danh sách người theo dõi của shop.
+      const dongSau = await dataSource
+        .getRepository(Follow)
+        .findOneByOrFail({ follower_id: 1, following_id: 2 });
+      expect(dongSau.id).toBe(dongDau.id);
+      expect(await soDong()).toBe(1);
+    });
+
+    it('Q5: thiết bị A còn trạng thái cũ, bấm bỏ theo dõi không theo dõi lại', async () => {
+      await service.follow(1, 2);
+      await service.unfollow(1, 2); // thiết bị B
+
+      expect(await service.unfollow(1, 2)).toEqual({ followed: false }); // A
+      expect(await service.isFollowing(1, 2)).toBe(false);
+    });
+
+    it('theo dõi có CHIỀU: bỏ theo dõi B không đụng tới việc B theo mình', async () => {
+      await service.follow(1, 2);
+      await service.follow(2, 1);
+
+      await service.unfollow(1, 2);
+
+      expect(await service.isFollowing(1, 2)).toBe(false);
+      expect(await service.isFollowing(2, 1)).toBe(true);
+    });
+
+    it('Q6: 20 lượt bỏ theo dõi song song, kết thúc không theo dõi, không lượt nào lỗi', async () => {
+      for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        await service.follow(1, 2);
+
+        const ketQua = await Promise.allSettled(
+          Array.from({ length: SO_LUOT_SONG_SONG }, () =>
+            service.unfollow(1, 2),
+          ),
+        );
+
+        phaiThanhCongHet(ketQua);
+        expect(await soDong()).toBe(0);
+      }
+    });
+
+    it('20 lượt theo dõi song song, đúng một dòng, không lượt nào lỗi', async () => {
+      for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        await service.unfollow(1, 2);
+
+        const ketQua = await Promise.allSettled(
+          Array.from({ length: SO_LUOT_SONG_SONG }, () => service.follow(1, 2)),
+        );
+
+        phaiThanhCongHet(ketQua);
+        expect(await soDong()).toBe(1);
+      }
+    });
+
+    it('20 lượt lẫn lộn theo dõi và bỏ theo dõi, bảng vẫn nhất quán', async () => {
+      for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        const ketQua = await Promise.allSettled(
+          Array.from({ length: SO_LUOT_SONG_SONG }, (_, i) =>
+            i % 2 === 0 ? service.follow(1, 2) : service.unfollow(1, 2),
+          ),
+        );
+
+        phaiThanhCongHet(ketQua);
+        // Mỗi lượt trả đúng ý định của chính nó, không phải trạng thái ai khác.
+        ketQua.forEach((k, i) => {
+          expect(k).toEqual({
+            status: 'fulfilled',
+            value: { followed: i % 2 === 0 },
+          });
+        });
+        const dong = await soDong();
+        expect(dong).toBeLessThanOrEqual(1);
+        expect(await service.isFollowing(1, 2)).toBe(dong === 1);
+      }
+
+      // Sau trận đua, cả hai chiều vẫn đi được.
+      await service.follow(1, 2);
+      expect(await soDong()).toBe(1);
+      await service.unfollow(1, 2);
+      expect(await soDong()).toBe(0);
+    });
+
+    it('hai người theo dõi nhau cùng lúc, không lượt nào lỗi', async () => {
+      // Chèn `follows` lấy khoá chia sẻ trên CẢ HAI dòng users (khoá ngoại). Cách
+      // nào khoá dòng users theo thứ người bấm rồi người được theo thì hai chiều
+      // ngược nhau là đủ thành vòng chờ, bài cùng một cặp không thấy được.
+      for (let vong = 0; vong < SO_VONG_DUA; vong++) {
+        const ketQua = await Promise.allSettled(
+          Array.from({ length: SO_LUOT_SONG_SONG }, (_, i) =>
+            i % 2 === 0 ? service.follow(1, 2) : service.follow(2, 1),
+          ),
+        );
+
+        phaiThanhCongHet(ketQua);
+        expect(await soDong(1, 2)).toBe(1);
+        expect(await soDong(2, 1)).toBe(1);
+
+        await service.unfollow(1, 2);
+        await service.unfollow(2, 1);
+      }
+    });
+
+    it('20 người khác nhau cùng theo dõi một shop, đủ 20 dòng', async () => {
+      const nguoiTheoDoi = Array.from(
+        { length: SO_LUOT_SONG_SONG },
+        (_, i) => 100 + i,
+      );
+      for (const id of nguoiTheoDoi) await taoUser(id);
+
+      const ketQua = await Promise.allSettled(
+        nguoiTheoDoi.map((id) => service.follow(id, 2)),
+      );
+
+      phaiThanhCongHet(ketQua);
+      expect(await service.countFollowers(2)).toBe(SO_LUOT_SONG_SONG);
+    });
+
+    it('không cho theo dõi chính mình, và không ghi gì', async () => {
+      await expect(service.follow(1, 1)).rejects.toThrow(BadRequestException);
+      expect(await soDong(1, 1)).toBe(0);
+    });
+
+    it.each([
+      ['không có trong bảng users', 987_654],
+      // Vượt cột INT: ParseIntPipe cho qua, MySQL ở chế độ strict ném 1264.
+      ['vượt khoảng cột INT', 99_999_999_999],
+    ])('theo dõi người %s là 404, không phải 500', async (_mo, id) => {
+      const loi: unknown = await service.follow(1, id).catch((e: unknown) => e);
+
+      // `INSERT IGNORE` nuốt luôn lỗi khoá ngoại: không có dòng nào mà vẫn trả
+      // `followed: true`. Bài này chặn chính cái bẫy đó.
+      expect(loi).toBeInstanceOf(NotFoundException);
+      expect((loi as HttpException).getStatus()).toBe(404);
+      expect(await service.countFollowings(1)).toBe(0);
+    });
+
+    it('theo dõi tài khoản đã xoá mềm là 404', async () => {
+      // Xoá tài khoản chỉ gắn `deleted_at`, dòng users còn nguyên nên khoá ngoại
+      // không chặn gì. Bấm từ một trang cũ thì sinh ra dòng theo dõi một người
+      // đã biến mất, và `getFollowing` trả về phần tử rỗng trong danh sách.
+      await taoUser(3);
+      await dataSource.getRepository(User).softDelete({ id: 3 });
+      try {
+        await expect(service.follow(1, 3)).rejects.toThrow(NotFoundException);
+        expect(await soDong(1, 3)).toBe(0);
+      } finally {
+        await dataSource.getRepository(User).restore({ id: 3 });
+      }
+    });
+
+    it('bỏ theo dõi tài khoản đã xoá vẫn được: người ta đang muốn gỡ nó đi', async () => {
+      await taoUser(3);
+      await service.follow(1, 3);
+      await dataSource.getRepository(User).softDelete({ id: 3 });
+      try {
+        expect(await service.unfollow(1, 3)).toEqual({ followed: false });
+        expect(await soDong(1, 3)).toBe(0);
+      } finally {
+        await dataSource.getRepository(User).restore({ id: 3 });
+      }
+    });
   });
 });
