@@ -7,6 +7,9 @@ export interface IUser {
   email: string;
   role: UserRole;
   avatar: string;
+  // Phiên của request này (user_sessions.id). Trống với token phát trước khi
+  // có bảng phiên.
+  sid?: string;
   permissions?: {
     _id: string;
     name: string;

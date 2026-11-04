@@ -85,10 +85,10 @@ export class RefreshTokenDto {
 }
 
 // 7. Đăng xuất. `push_token` tuỳ chọn: token FCM của CHÍNH thiết bị đang đăng
-// xuất, để gỡ trong cùng request. App không gỡ sau được nữa vì logout tăng
-// token_version, JWT chết ngay, lời gọi DELETE /notifications/push-token đến
-// sau nhận 401. Thiếu trường này thì máy đã đăng xuất vẫn nhận thông báo đơn
-// của tài khoản cũ.
+// xuất, để gỡ trong cùng request. App không gỡ sau được nữa vì logout thu hồi
+// phiên, JWT chết ngay, lời gọi DELETE /notifications/push-token đến sau nhận
+// 401. Thiếu trường này thì máy đã đăng xuất vẫn nhận thông báo đơn của tài
+// khoản cũ.
 export class LogoutDto {
   /** Token FCM của thiết bị đang đăng xuất (bỏ trống nếu chưa đăng ký push). */
   @IsOptional()

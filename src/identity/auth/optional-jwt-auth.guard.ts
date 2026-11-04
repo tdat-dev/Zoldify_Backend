@@ -21,7 +21,7 @@ export type RequestNguoiXem = Request & {
  *  - Không có header Authorization: cho qua, `req.user` trống. Không gọi
  *    passport, không tốn một câu SELECT users nào cho khách vãng lai.
  *  - Có token hợp lệ: `req.user` như mọi route cần đăng nhập (JwtStrategy vẫn
- *    kiểm khoá tài khoản, token_version).
+ *    kiểm khoá tài khoản, token_version, phiên theo sid).
  *  - Có token nhưng hỏng (hết hạn, bị thu hồi): coi như khách vãng lai, KHÔNG
  *    BAO GIỜ 401. Web và app không có luồng làm mới token, gặp 401 là xoá
  *    phiên: người mua token hết hạn mở trang sản phẩm mà bị đăng xuất là sai.

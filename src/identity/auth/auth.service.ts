@@ -12,7 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '@identity/users/users.service';
 import { IUser } from '@identity/users/users.interface';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { IsNull, LessThan, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
 import { UserSession } from './entities/user-session.entity';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -336,8 +336,22 @@ export class AuthService {
   }
 
   async logout(user: IUser, pushToken?: string) {
-    await this.userRepository.increment({ id: user.id }, 'token_version', 1);
-    await this.usersService.updateUserToken('', user.id.toString());
+    if (user.sid) {
+      // Chỉ thu hồi phiên của máy đang gọi. Tăng token_version ở đây chính là
+      // lỗi cũ: máy B đăng xuất, máy A đang dùng mất phiên không báo trước.
+      // Điều kiện revoked_at IS NULL giữ nguyên mốc của lần thu hồi đầu tiên;
+      // user_id để sid của người khác không làm gì được.
+      await this.phienRepository.update(
+        { id: user.sid, user_id: user.id, revoked_at: IsNull() },
+        { revoked_at: new Date() },
+      );
+    } else {
+      // Token phát trước khi có bảng phiên: không biết nó thuộc máy nào, nên
+      // giữ cách cũ là đá hết. Gỡ khi đã qua một JWT_ACCESS_EXPIRE và một
+      // JWT_REFRESH_EXPIRE kể từ ngày deploy.
+      await this.userRepository.increment({ id: user.id }, 'token_version', 1);
+      await this.usersService.updateUserToken('', user.id.toString());
+    }
 
     // Gỡ push token của thiết bị này TRONG CÙNG request (xem LogoutDto).
     //
