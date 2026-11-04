@@ -14,7 +14,7 @@ import { IUser } from '@identity/users/users.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThan, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
-import { UserSession } from './entities/user-session.entity';
+import { UserSession, phienConSong } from './entities/user-session.entity';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -635,6 +635,13 @@ export class AuthService {
       );
     }
 
+    if (payload.sid) {
+      return this.lamMoiTheoPhien(user, payload.sid, refreshToken);
+    }
+
+    // Từ đây xuống chỉ còn token phát trước khi có bảng phiên (không có sid).
+    // Gỡ cả đoạn này khi đã qua một JWT_REFRESH_EXPIRE kể từ ngày deploy.
+
     // Create new tokens
     const newPayload = {
       sub: user.id,
@@ -668,8 +675,8 @@ export class AuthService {
     // nhập trên máy thứ hai làm token của máy thứ nhất thành "cũ"; máy thứ nhất
     // làm mới là đá cả hai máy. Client gọi /auth/refresh phải gom các lần làm
     // mới đồng thời thành một (single-flight). Hôm nay chưa client nào gọi
-    // route này (kiểm 25/10). Muốn nhiều phiên song song thì cần bảng phiên
-    // riêng, mỗi thiết bị một dòng.
+    // route này (kiểm 25/10). Đánh đổi này chỉ còn với token không sid; token
+    // có sid xoay trên dòng phiên của mình (xem lamMoiTheoPhien).
     // KHOẢNG ÂN HẠN 30 GIÂY cho request trùng (xem hằng AN_HAN_REFRESH_MS).
     //
     // Đánh dấu TRƯỚC câu UPDATE, và chỉ khi token gửi lên đúng là token cột
@@ -734,6 +741,94 @@ export class AuthService {
         email: user.email,
         role: user.role,
       },
+    };
+  }
+
+  /**
+   * Xoay refresh token trên dòng phiên của chính nó. Cùng ý với đoạn dùng một
+   * lần ở refreshToken: một câu UPDATE có điều kiện, ân hạn đánh dấu TRƯỚC câu
+   * đó và chỉ khi token gửi lên đúng là token dòng đang giữ, không trúng dòng
+   * mà ngoài ân hạn thì coi là bị trộm và thu hồi tất cả. Khác ở chỗ mỗi máy
+   * có dòng riêng, nên máy này xoay không làm token máy kia thành "cũ".
+   *
+   * Phiên đã chết (đăng xuất, hết hạn, mất dòng) thì chỉ từ chối, KHÔNG tăng
+   * token_version. Máy đã đăng xuất mà app còn gửi refresh token, hoặc kẻ gian
+   * cầm token của phiên ấy, không có gì để bảo vệ thêm; xếp nó vào ca dùng lại
+   * là đá máy A đang dùng, đúng lỗi bảng này sinh ra để sửa.
+   */
+  private async lamMoiTheoPhien(
+    user: User,
+    sid: string,
+    refreshToken: string,
+  ) {
+    const phien = await this.phienRepository.findOne({
+      where: { id: sid, user_id: user.id },
+    });
+    if (!phien || !phienConSong(phien)) {
+      throw new BadRequestException(
+        'Refresh token đã bị thu hồi (đã đăng xuất)',
+      );
+    }
+
+    const { id, full_name, email, role, token_version } = user;
+    const payload = { sub: id, full_name, email, role, token_version, sid };
+    const accessToken = this.jwtService.sign(payload);
+    const newRefreshToken = this.createRefreshToken(payload);
+
+    const hashCu = bamRefresh(refreshToken);
+    if (phien.refresh_hash === hashCu) {
+      await this.cacheManager
+        .set(`refresh_an_han_${hashCu}`, 1, AN_HAN_REFRESH_MS)
+        .catch(() => undefined);
+    }
+
+    // Gia hạn cùng lúc với xoay: token mới có hạn mới, dòng giữ hạn cũ thì
+    // người đang dùng đều vẫn bị đá đúng ngày hết hạn của lần đăng nhập đầu.
+    const doi = await this.phienRepository
+      .createQueryBuilder()
+      .update(UserSession)
+      .set({
+        refresh_hash: bamRefresh(newRefreshToken),
+        expires_at: this.hanPhien(accessToken, newRefreshToken),
+      })
+      .where('id = :sid', { sid })
+      .andWhere('refresh_hash = :hashCu', { hashCu })
+      .andWhere('revoked_at IS NULL')
+      .execute();
+    if (!doi.affected) {
+      const trungHopLe = await this.cacheManager
+        .get(`refresh_an_han_${hashCu}`)
+        .catch(() => undefined);
+      if (trungHopLe) {
+        throw new ConflictException(
+          'Refresh token vừa được làm mới bởi một yêu cầu khác',
+        );
+      }
+      // Đọc lại: UPDATE trượt có thể vì đăng xuất chen vào giữa, không phải vì
+      // token cũ. Thiếu bước này thì một lần đăng xuất bình thường đá hết máy.
+      const sauCung = await this.phienRepository.findOne({
+        where: { id: sid },
+        select: ['id', 'revoked_at', 'expires_at'],
+      });
+      if (!phienConSong(sauCung)) {
+        throw new BadRequestException(
+          'Refresh token đã bị thu hồi (đã đăng xuất)',
+        );
+      }
+      await this.userRepository.increment({ id }, 'token_version', 1);
+      await this.userRepository.update(id, { refresh_token: null });
+      this.logger.warn(
+        `Refresh token đã dùng rồi bị gửi lại cho user ${id}: thu hồi mọi phiên`,
+      );
+      throw new BadRequestException(
+        'Refresh token đã được dùng hoặc đã bị thu hồi, vui lòng đăng nhập lại',
+      );
+    }
+
+    return {
+      access_token: accessToken,
+      refresh_token: newRefreshToken,
+      user: { id, full_name, email, role },
     };
   }
 }
