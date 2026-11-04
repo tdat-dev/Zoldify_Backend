@@ -8,6 +8,8 @@ import {
   Delete,
   UseGuards,
   Query,
+  Put,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FollowsService } from './follows.service';
 import { CreateFollowDto } from './dto/create-follow.dto';
@@ -32,6 +34,31 @@ export class FollowsController {
   @Post('toggle')
   toggle(@Body() dto: CreateFollowDto, @User() user: IUser) {
     return this.followsService.toggle(user.id, dto.following_id);
+  }
+
+  // `toggle` ở trên giữ nguyên: APK đã cài và web hiện tại vẫn gọi nó. Client mới
+  // đi qua hai route dưới, nói rõ ý định nên bấm lại hay bấm từ thiết bị còn trạng
+  // thái cũ đều ra đúng thứ người dùng muốn (Q5/Q6 trên Trello).
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Đã theo dõi')
+  @ApiShape({ followed: 'boolean' })
+  @Put(':sellerId')
+  follow(
+    @Param('sellerId', ParseIntPipe) sellerId: number,
+    @User() user: IUser,
+  ) {
+    return this.followsService.follow(user.id, sellerId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Đã hủy theo dõi')
+  @ApiShape({ followed: 'boolean' })
+  @Delete(':sellerId')
+  unfollow(
+    @Param('sellerId', ParseIntPipe) sellerId: number,
+    @User() user: IUser,
+  ) {
+    return this.followsService.unfollow(user.id, sellerId);
   }
 
   @Public()
