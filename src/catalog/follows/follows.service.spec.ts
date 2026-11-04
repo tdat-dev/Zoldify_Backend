@@ -208,15 +208,17 @@ describe('FollowsService', () => {
           luot.map((chay) => chay().finally(() => daXong++)),
         );
 
+        // Đếm ở `data_lock_waits`, không ở `innodb_trx.trx_state`: bảng đó không
+        // liệt kê các DELETE đang chờ, đo được 10/20 trong lúc đủ 20 lượt đã kẹt.
         const hetHan = Date.now() + 15_000;
         for (;;) {
           const [{ soLuot }] = await dataSource.query<{ soLuot: string }[]>(
-            `SELECT COUNT(*) AS soLuot FROM information_schema.innodb_trx
-              WHERE trx_state = 'LOCK WAIT' AND trx_query LIKE '%follows%'`,
+            `SELECT COUNT(DISTINCT REQUESTING_THREAD_ID) AS soLuot
+               FROM performance_schema.data_lock_waits`,
           );
           // Tính cả lượt đã xong: lượt bị MySQL loại ngay lúc đang xếp hàng thì
           // không bao giờ quay lại hàng chờ, đếm riêng hàng chờ sẽ treo tới hạn.
-          if (Number(soLuot) + daXong === luot.length) break;
+          if (Number(soLuot) + daXong >= luot.length) break;
           if (Date.now() > hetHan) {
             throw new Error(`Chỉ ${soLuot}/${luot.length} lượt chờ khoá`);
           }
