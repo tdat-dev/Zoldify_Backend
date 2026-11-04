@@ -37,6 +37,7 @@ function dung() {
         Promise.resolve({ is_locked: false, token_version: 0 }),
       ),
     } as never,
+    {} as never,
   );
   gateway.server = { to: () => ({ emit: jest.fn() }) } as never;
   const socket: SocketGia = {

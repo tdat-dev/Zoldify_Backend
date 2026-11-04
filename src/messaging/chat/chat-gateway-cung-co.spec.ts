@@ -64,6 +64,7 @@ function dung(opts: { tokenVersionDb?: number; soSocketDangMo?: number } = {}) {
     } as never,
     { create: jest.fn(() => Promise.resolve()) } as never,
     userRepository as never,
+    {} as never,
   );
   gateway.server = {
     to: () => ({ emit: jest.fn() }),

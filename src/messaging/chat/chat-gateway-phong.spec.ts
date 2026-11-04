@@ -32,6 +32,7 @@ function dung(hoiThoai: unknown) {
     {} as never,
     {} as never,
     userRepository as never,
+    {} as never,
   );
   const socket = (userId: number): SocketGia => ({
     data: { user: { id: userId, token_version: 0 } },
