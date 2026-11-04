@@ -89,7 +89,7 @@ describe('Route theo dõi nói rõ ý định', () => {
     expect(service.follow).not.toHaveBeenCalled();
   });
 
-  it.each(['abc', '12abc', '1.5', '1e3', 'NaN', 'toggle'])(
+  it.each(['abc', '12abc', '1.5', 'NaN', 'toggle'])(
     'sellerId "%s" không phải số nguyên là 400, service không được gọi',
     async (id) => {
       await http().put(`/follows/${id}`).expect(400);
@@ -99,6 +99,15 @@ describe('Route theo dõi nói rõ ý định', () => {
       expect(service.unfollow).not.toHaveBeenCalled();
     },
   );
+
+  it('"1e3" tới service là số 1000, không phải chuỗi lạ', async () => {
+    // ValidationPipe toàn cục ép `+value` TRƯỚC ParseIntPipe vì tham số khai kiểu
+    // number, nên "1e3" đã là 1000 khi tới pipe. Mọi route ParseIntPipe của repo
+    // đều vậy. Vô hại: đó là một số nguyên thật, không có gì lạ đi xuống SQL.
+    await http().put('/follows/1e3').expect(200);
+
+    expect(service.follow).toHaveBeenCalledWith(NGUOI_BAM, 1000);
+  });
 
   it('POST /follows/toggle vẫn tới `toggle`, hai route mới không nuốt nó', async () => {
     service.toggle.mockResolvedValue({
