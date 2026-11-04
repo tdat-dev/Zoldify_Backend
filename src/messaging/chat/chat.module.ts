@@ -9,11 +9,18 @@ import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
 import { Product } from '@catalog/products/entities/product.entity';
 import { User } from '@identity/users/entities/user.entity';
+import { UserSession } from '@identity/auth/entities/user-session.entity';
 import { NotificationsModule } from '@messaging/notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Conversation, Message, Product, User]),
+    TypeOrmModule.forFeature([
+      Conversation,
+      Message,
+      Product,
+      User,
+      UserSession,
+    ]),
     NotificationsModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({

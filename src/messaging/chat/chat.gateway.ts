@@ -15,6 +15,10 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { User } from '@identity/users/entities/user.entity';
+import {
+  UserSession,
+  phienConSong,
+} from '@identity/auth/entities/user-session.entity';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -54,6 +58,8 @@ type NguoiTrenSocket = {
   full_name: string;
   role?: string;
   token_version?: number;
+  // Trống với token phát trước khi có bảng phiên.
+  sid?: string;
 };
 
 @Injectable()
@@ -112,7 +118,18 @@ export class ChatGateway
     private readonly notificationsService: NotificationsService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(UserSession)
+    private readonly phienRepository: Repository<UserSession>,
   ) {}
+
+  /** Một câu theo khoá chính, cùng luật với JwtStrategy. */
+  private async sidConSong(sid: string): Promise<boolean> {
+    const phien = await this.phienRepository.findOne({
+      where: { id: sid },
+      select: ['id', 'revoked_at', 'expires_at'],
+    });
+    return phienConSong(phien);
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -124,6 +141,7 @@ export class ChatGateway
         full_name: string;
         role: string;
         token_version: number;
+        sid?: string;
       }>(token);
       const userId = payload.sub;
 
@@ -140,6 +158,10 @@ export class ChatGateway
         client.disconnect();
         return;
       }
+      if (payload.sid && !(await this.sidConSong(payload.sid))) {
+        client.disconnect();
+        return;
+      }
       // Giới hạn số kết nối của một người (xem KET_NOI_TOI_DA).
       const phongRieng = `user_${userId}`;
       const dangMo = await this.server.in(phongRieng).fetchSockets();
@@ -150,14 +172,15 @@ export class ChatGateway
       }
       await client.join(phongRieng);
 
-      // token_version giữ lại để mỗi lần gửi tin và mỗi lượt quét so với DB:
-      // phiên bị thu hồi SAU lúc nối thì socket phải chết theo.
+      // token_version và sid giữ lại để mỗi lần gửi tin và mỗi lượt quét so với
+      // DB: phiên bị thu hồi SAU lúc nối thì socket phải chết theo.
       client.data.user = {
         id: userId,
         email: payload.email,
         full_name: payload.full_name,
         role: payload.role,
         token_version: dbUser.token_version,
+        sid: payload.sid,
       } satisfies NguoiTrenSocket;
 
       // Cập nhật last_seen cho user khi vừa kết nối socket
@@ -260,10 +283,11 @@ export class ChatGateway
   /**
    * PHIÊN BỊ THU HỒI THÌ SOCKET PHẢI CHẾT.
    *
-   * Mọi đường thu hồi phiên (khoá tài khoản, đăng xuất, đổi vai trò, đổi/đặt
-   * lại mật khẩu, refresh bị dùng lại) đều tăng token_version. handleConnection
-   * chỉ so MỘT LẦN lúc nối, nên trước đây socket đang mở sống tiếp: vẫn gửi
-   * tin, vẫn nghe tin trong các phòng đã vào.
+   * Các đường thu hồi mọi phiên (khoá tài khoản, đổi vai trò, đổi/đặt lại mật
+   * khẩu, refresh bị dùng lại) tăng token_version; đăng xuất chỉ thu hồi dòng
+   * user_sessions của máy đó, nên phải so cả hai, và socket của máy khác sống
+   * tiếp. handleConnection chỉ so MỘT LẦN lúc nối, nên trước đây socket đang mở
+   * sống tiếp: vẫn gửi tin, vẫn nghe tin trong các phòng đã vào.
    *
    * VÌ SAO KIỂM Ở ĐÂY CHỨ KHÔNG PHÁT SỰ KIỆN TỪ CHỖ TĂNG token_version.
    * Phát sự kiện thì ngắt ngay lập tức, nhưng phải sửa sáu chỗ ở hai module
@@ -282,7 +306,8 @@ export class ChatGateway
     if (
       !dbUser ||
       dbUser.is_locked ||
-      dbUser.token_version !== user.token_version
+      dbUser.token_version !== user.token_version ||
+      (user.sid && !(await this.sidConSong(user.sid)))
     ) {
       client.emit(
         'error',
@@ -296,7 +321,8 @@ export class ChatGateway
 
   /**
    * Lượt quét: socket của tiến trình NÀY (server.local) mà phiên đã bị thu hồi
-   * thì ngắt. Mỗi bản api quét phần của mình, một câu SELECT cho cả lượt.
+   * thì ngắt. Mỗi bản api quét phần của mình, một câu SELECT users và một câu
+   * SELECT user_sessions cho cả lượt, không hỏi từng socket.
    */
   async quetPhienDaThuHoi(): Promise<void> {
     const sockets = await this.server.local.fetchSockets();
@@ -313,11 +339,30 @@ export class ChatGateway
       select: ['id', 'token_version', 'is_locked'],
     });
     const theoId = new Map(dbUsers.map((u) => [u.id, u]));
+    const sids = [
+      ...new Set(
+        sockets
+          .map((s) => (s.data as { user?: NguoiTrenSocket }).user?.sid)
+          .filter((sid): sid is string => !!sid),
+      ),
+    ];
+    const phiens = sids.length
+      ? await this.phienRepository.find({
+          where: { id: In(sids) },
+          select: ['id', 'revoked_at', 'expires_at'],
+        })
+      : [];
+    const phienTheoId = new Map(phiens.map((p) => [p.id, p]));
     for (const s of sockets) {
       const user = (s.data as { user?: NguoiTrenSocket }).user;
       if (!user) continue;
       const db = theoId.get(user.id);
-      if (!db || db.is_locked || db.token_version !== user.token_version) {
+      if (
+        !db ||
+        db.is_locked ||
+        db.token_version !== user.token_version ||
+        (user.sid && !phienConSong(phienTheoId.get(user.sid)))
+      ) {
         s.disconnect(true);
       }
     }
