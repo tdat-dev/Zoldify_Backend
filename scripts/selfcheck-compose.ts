@@ -219,6 +219,18 @@ if (coCaddyfile) {
     'upstream khai bằng `dynamic a` (hỏi lại DNS, thấy đủ ba bản)',
     'dạng tĩnh `api:3000` chốt một IP lúc khởi động — nhân bản xong mà tải vẫn dồn vào một bản',
   );
+
+  // Phiên polling của socket.io nằm trong RAM một bản api, Redis chỉ chuyển tin
+  // giữa các bản. Chia theo least_conn thì request sau rơi sang bản khác và nhận
+  // 400 "Session ID unknown": đo 05/11 trên staging là 8/12 phiên. App bắt đầu
+  // bằng polling nên ngắt rồi nối lại liên tục, mà không có dòng log lỗi nào.
+  kiem(
+    soBan(S.api) < 2 ||
+      (/path\s+\/socket\.io\/\*/.test(cf) &&
+        /lb_policy\s+header\s+Cf-Connecting-Ip\b/i.test(cf)),
+    'polling socket.io được ghim vào một bản api theo IP thật của khách',
+    'thiếu thì 2/3 phiên polling mất session khi chạy ba bản api',
+  );
 }
 
 // ─── 3. Nhiều bản api ───────────────────────────────────────────────────────
