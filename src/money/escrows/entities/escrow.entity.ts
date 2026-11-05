@@ -21,6 +21,10 @@ export enum EscrowStatus {
 @Entity('escrows')
 @Index('idx_order', ['order'])
 @Index('idx_seller', ['seller'])
+// Ký quỹ của người bán: WHERE seller_id ORDER BY created_at.
+@Index('idx_seller_created', ['seller', 'created_at'])
+// Danh sách admin không lọc trạng thái.
+@Index('idx_created', ['created_at'])
 // Danh sách ký quỹ của admin: WHERE status ORDER BY created_at. Trước
 // migration 1788500000000 bảng này không có index nào trên created_at.
 @Index('idx_status_created', ['status', 'created_at'])

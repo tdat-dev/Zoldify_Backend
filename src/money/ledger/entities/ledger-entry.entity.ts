@@ -23,6 +23,8 @@ import { LedgerTransaction } from './ledger-transaction.entity';
  */
 @Entity('ledger_entries')
 @Index('idx_ledger_entry_account_time', ['account', 'created_at'])
+// Lịch sử ví sắp theo id: thiếu cái này MySQL đi lùi cả khoá chính của bảng.
+@Index('idx_ledger_entry_account_id', ['account', 'id'])
 export class LedgerEntry {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
