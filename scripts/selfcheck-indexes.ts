@@ -132,6 +132,30 @@ async function main() {
         'SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 20',
       params: [1],
     },
+    // ─── Đợt đo nhóm tiền trên prod 1 triệu dòng (05/11) ───────────────────────
+    //
+    // Lịch sử ví sắp theo id trong khi index chỉ có (account_id, created_at), nên
+    // MySQL đi lùi cả khoá chính của ledger_entries: p95 7,1 giây ở 50 kết nối, và
+    // người càng ít giao dịch càng phải quét lâu mới đủ một trang. Ký quỹ của người
+    // bán thì 100% trả 500 vì chạm trần 5 giây.
+    {
+      name: 'wallets.getTransactions (ledger_entries WHERE account_id ORDER BY id)',
+      table: 'ledger_entries',
+      filter: ['account_id'],
+      orderCol: 'id',
+      explainSql:
+        'SELECT * FROM ledger_entries WHERE account_id = ? ORDER BY id DESC LIMIT 20',
+      params: [1],
+    },
+    {
+      name: 'escrows.findBySeller (WHERE seller_id ORDER BY created_at)',
+      table: 'escrows',
+      filter: ['seller_id'],
+      orderCol: 'created_at',
+      explainSql:
+        'SELECT * FROM escrows WHERE seller_id = ? ORDER BY created_at DESC LIMIT 20',
+      params: [1],
+    },
     {
       name: 'wallets: lịch sử giao dịch (WHERE wallet_id ORDER BY created_at)',
       table: 'wallet_transactions',
