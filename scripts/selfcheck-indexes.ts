@@ -139,6 +139,19 @@ async function main() {
     // người càng ít giao dịch càng phải quét lâu mới đủ một trang. Ký quỹ của người
     // bán thì 100% trả 500 vì chạm trần 5 giây.
     {
+      // Khối "Dưới 100k" trên trang chủ: danh sách 10 ms, nhưng câu đếm có trần
+      // 2,7 giây vì phải về bảng đọc deleted_at của từng dòng trong 10.001 dòng,
+      // chạm trần 5 giây lúc máy bận (đo trên prod 1 triệu dòng 05/11). Phủ đủ ba
+      // cột thì câu đếm chạy trọn trong index.
+      name: 'products: đếm có trần theo khoảng giá (status, deleted_at, price)',
+      table: 'products',
+      filter: ['status', 'deleted_at'],
+      orderCol: 'price',
+      explainSql:
+        "SELECT id FROM products WHERE status = ? AND deleted_at IS NULL AND price <= 100000 LIMIT 10001",
+      params: ['active'],
+    },
+    {
       name: 'wallets.getTransactions (ledger_entries WHERE account_id ORDER BY id)',
       table: 'ledger_entries',
       filter: ['account_id'],
