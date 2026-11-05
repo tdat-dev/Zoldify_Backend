@@ -23,6 +23,9 @@
 SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION';
 SET SESSION unique_checks = 0;
 SET SESSION foreign_key_checks = 0;
+-- Trần 5 giây của compose cắt các câu SELECT tổng hợp ở cuối file. Dính thật lúc
+-- chạy trên prod 05/11: MySQL thử không đặt trần nên chạy thử không thấy.
+SET SESSION max_execution_time = 0;
 SET @t0 = NOW(6);
 
 DROP TABLE IF EXISTS _so;
