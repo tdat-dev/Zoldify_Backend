@@ -42,6 +42,33 @@
 	}
 }
 
+# Phần chung của mọi đường vào api. Tách ra để khối socket và khối thường không
+# lệch nhau về cổng hay healthcheck.
+(ban_api) {
+	# `dynamic a` CHỨ KHÔNG PHẢI `reverse_proxy api:3000`.
+	#
+	# Viết `api:3000` thì caddy giải tên một lần lúc khởi động và giữ đúng
+	# MỘT địa chỉ IP. Compose dựng ba bản api, DNS nội bộ của Docker trả về
+	# ba bản ghi A — nhưng caddy đã chốt bản đầu tiên, nên hai bản còn lại
+	# ngồi không trong khi bản thứ nhất vẫn nghẽn đúng như cũ. Cụm trông như
+	# đã nhân ba mà số đo không nhúc nhích; đây là kiểu hỏng im lặng nhất
+	# của task này, vì mọi thứ đều "chạy".
+	#
+	# `dynamic a` hỏi lại DNS mỗi `refresh`, nên bản api mới dựng lên là
+	# vào đội ngay, và bản chết bị loại khỏi danh sách.
+	dynamic a {
+		name api
+		port 3000
+		refresh 10s
+	}
+
+	# Bản api chết thì loại khỏi đội trong 10 giây thay vì cứ đẩy request
+	# vào. `GET /` là healthcheck rẻ nhất, không chạm database.
+	health_uri /
+	health_interval 10s
+	health_timeout 3s
+}
+
 # `{$BIEN:mặc định}` của Caddy CHỈ chạy khi biến KHÔNG ĐƯỢC ĐẶT. Biến được đặt
 # nhưng RỖNG thì nó thay bằng chuỗi rỗng, và dòng dưới thành `{` trần — caddy
 # từ chối cả file với "server block without any key is global configuration,
@@ -55,23 +82,24 @@
 {$API_DOMAIN::80} {
 	encode zstd gzip
 
+	# Polling của socket.io phải quay lại ĐÚNG bản api đã mở phiên: phiên nằm trong
+	# RAM của bản đó, Redis chỉ chuyển tin giữa các bản. Chia theo least_conn thì
+	# request sau rơi sang bản khác và nhận 400 "Session ID unknown": đo 05/11 trên
+	# staging là 8/12 phiên, app bắt đầu bằng polling nên ngắt rồi nối lại liên tục.
+	# WebSocket chỉ có một kết nối nên không dính, vì thế chỉ ghim đường này, các
+	# route khác vẫn chia theo bản rảnh.
+	#
+	# Băm theo Cf-Connecting-Ip chứ không client_ip_hash: nginx ghi X-Forwarded-For
+	# là IP biên Cloudflare, đổi theo từng request. Thiếu header (gọi thẳng, không
+	# qua Cloudflare) thì caddy rơi về chọn ngẫu nhiên.
+	@socket path /socket.io/*
+	reverse_proxy @socket {
+		import ban_api
+		lb_policy header Cf-Connecting-Ip
+	}
+
 	reverse_proxy {
-		# `dynamic a` CHỨ KHÔNG PHẢI `reverse_proxy api:3000`.
-		#
-		# Viết `api:3000` thì caddy giải tên một lần lúc khởi động và giữ đúng
-		# MỘT địa chỉ IP. Compose dựng ba bản api, DNS nội bộ của Docker trả về
-		# ba bản ghi A — nhưng caddy đã chốt bản đầu tiên, nên hai bản còn lại
-		# ngồi không trong khi bản thứ nhất vẫn nghẽn đúng như cũ. Cụm trông như
-		# đã nhân ba mà số đo không nhúc nhích; đây là kiểu hỏng im lặng nhất
-		# của task này, vì mọi thứ đều "chạy".
-		#
-		# `dynamic a` hỏi lại DNS mỗi `refresh`, nên bản api mới dựng lên là
-		# vào đội ngay, và bản chết bị loại khỏi danh sách.
-		dynamic a {
-			name api
-			port 3000
-			refresh 10s
-		}
+		import ban_api
 
 		# Chọn bản đang ít việc nhất, không phải xoay vòng. Lý do nằm ở
 		# load-test.md: các route của hệ này lệch nhau tới 10 lần về thời gian
@@ -79,15 +107,5 @@
 		# tay sẽ dồn hai request nặng vào cùng một bản trong khi bản bên cạnh
 		# rảnh — mà một bản Node bận là TẤT CẢ request trên bản đó xếp hàng.
 		lb_policy least_conn
-
-		# Bản api chết thì loại khỏi đội trong 10 giây thay vì cứ đẩy request
-		# vào. `GET /` là healthcheck rẻ nhất, không chạm database.
-		health_uri /
-		health_interval 10s
-		health_timeout 3s
-
-		# Socket chat đi qua đây: caddy tự nhận `Upgrade: websocket` và chuyển
-		# tiếp, không cần khai gì thêm. Trạng thái socket nằm ở Redis (task #5)
-		# nên rơi vào bản api nào cũng được.
 	}
 }
