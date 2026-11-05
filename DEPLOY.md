@@ -127,6 +127,14 @@ npm run docker:up          # dựng lại ảnh, chạy migration, khởi độn
 Chưa có CI nên chưa có ảnh dựng sẵn trên registry — máy chủ tự dựng lấy. Xem
 `r8-cicd-pipeline` để biết phần nào của quy trình đã có, phần nào chưa.
 
+**Có sửa `Caddyfile` thì phải tạo lại container caddy.** File gắn vào bằng bind
+mount một file, nên `git checkout` thay file mới mà container vẫn đọc bản cũ, và
+`docker compose up -d` thấy cấu hình dịch vụ không đổi nên không làm gì:
+
+```bash
+docker compose -p <zoldify|zoldify-staging> up -d --force-recreate --no-deps caddy
+```
+
 ---
 
 ## Database dựng từ số không
