@@ -251,6 +251,58 @@ describe('EscrowsService — ai được xem khoản ký quỹ nào', () => {
    * service danh sách, nhưng `escrows.controller` truyền thẳng `+limit || 20`
    * xuống `take` nên lọt lưới.
    */
+  it('phân trang giữ đúng thứ tự mới nhất trước, không dòng nào nằm hai trang', async () => {
+    // created_at cố ý xáo so với id: nạp theo IN (...) trả về theo id, nên thiếu bước
+    // sắp lại là bài này đỏ. Hai dòng cùng giây để kiểm phá hoà bằng id.
+    const gio = [
+      '2026-01-03 10:00:00',
+      '2026-01-05 10:00:00',
+      '2026-01-02 10:00:00',
+      '2026-01-04 10:00:00',
+      '2026-01-04 10:00:00',
+    ];
+    const mongDoi: number[] = [];
+    for (const [i, g] of gio.entries()) {
+      await ds.query(
+        `INSERT INTO orders (order_code, user_id, total_amount, shipping_fee, final_amount,
+           status, payment_method, is_paid, receiver_name, receiver_phone, shipping_address)
+         VALUES (?, ?, 1000, 0, 1000, 'confirmed', 'payos', 1, 'T', '0900000000', 'addr')`,
+        [`Q-T${i}`, buyerId],
+      );
+      const [o] = await ds.query<Array<{ id: number }>>(
+        'SELECT id FROM orders WHERE order_code = ?',
+        [`Q-T${i}`],
+      );
+      await ds.query(
+        `INSERT INTO escrows (amount, status, order_id, buyer_id, seller_id, created_at)
+         VALUES (1000, 'holding', ?, ?, ?, ?)`,
+        [o.id, buyerId, sellerId, g],
+      );
+      const [e] = await ds.query<Array<{ id: number }>>(
+        'SELECT id FROM escrows WHERE order_id = ?',
+        [o.id],
+      );
+      mongDoi.push(e.id);
+    }
+    // Dòng tạo ở beforeEach mang giờ hiện tại nên đứng đầu; bỏ nó ra để so phần còn lại.
+    const [m0, m1, m2, m3, m4] = mongDoi;
+    const dungThuTu = [m1, m4, m3, m0, m2];
+
+    const chuShop = vai(sellerId, UserRole.SELLER);
+    const t1 = await escrows.findBySeller(sellerId, 1, 3, undefined, chuShop);
+    const t2 = await escrows.findBySeller(sellerId, 2, 3, undefined, chuShop);
+
+    expect(t1.meta.total).toBe(6);
+    const ids = [...t1.result, ...t2.result].map((r) => r.id);
+    expect(new Set(ids).size).toBe(6);
+    expect(ids.slice(1)).toEqual(dungThuTu);
+
+    const dau = t2.result[0];
+    expect(dau.order?.id).toBeDefined();
+    expect(dau.buyer?.full_name).toBeDefined();
+    expect((dau.buyer as unknown as { email?: string }).email).toBeUndefined();
+  });
+
   it('limit bị chặn trần, không nạp cả bảng', async () => {
     const r = await escrows.findAll(
       1,

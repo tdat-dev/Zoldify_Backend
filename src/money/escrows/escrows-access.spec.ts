@@ -94,6 +94,20 @@ describe('B-03: /escrows theo quyền sở hữu', () => {
         captured.push(opts);
         return Promise.resolve([[], 0]);
       },
+      // Danh sách lấy id trước rồi mới find(), nên trả một id để find() được gọi.
+      createQueryBuilder: () => {
+        const qb = {
+          andWhere: () => qb,
+          select: () => qb,
+          orderBy: () => qb,
+          addOrderBy: () => qb,
+          offset: () => qb,
+          limit: () => qb,
+          getCount: () => Promise.resolve(1),
+          getRawMany: () => Promise.resolve([{ id: 1 }]),
+        };
+        return qb;
+      },
     };
     const service = new EscrowsService(
       repo as never,

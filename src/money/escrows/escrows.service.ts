@@ -11,6 +11,7 @@ import { OrderItem } from '@ordering/orders/entities/order-item.entity';
 import {
   DataSource,
   EntityManager,
+  FindOptionsSelect,
   In,
   Repository,
 } from 'typeorm';
@@ -660,17 +661,13 @@ export class EscrowsService {
       offset,
     } = normalizePagination(String(page), String(limit));
 
-    const where: any = { seller: { id: sellerId } };
-    if (status) where.status = status;
-
-    const [result, total] = await this.escrowRepository.findAndCount({
-      where,
-      relations: ['order', 'buyer'],
-      select: { buyer: SAFE_PARTY },
-      skip: offset,
-      take: size,
-      order: { created_at: 'DESC' },
-    });
+    const { result, total } = await this.trangKyQuy(
+      { sellerId, status },
+      offset,
+      size,
+      ['order', 'buyer'],
+      { buyer: SAFE_PARTY },
+    );
 
     return {
       meta: {
@@ -700,17 +697,13 @@ export class EscrowsService {
       offset,
     } = normalizePagination(String(page), String(limit));
 
-    const where: any = {};
-    if (status) where.status = status;
-
-    const [result, total] = await this.escrowRepository.findAndCount({
-      where,
-      relations: ['order', 'buyer', 'seller'],
-      select: { buyer: SAFE_PARTY, seller: SAFE_PARTY },
-      skip: offset,
-      take: size,
-      order: { created_at: 'DESC' },
-    });
+    const { result, total } = await this.trangKyQuy(
+      { status },
+      offset,
+      size,
+      ['order', 'buyer', 'seller'],
+      { buyer: SAFE_PARTY, seller: SAFE_PARTY },
+    );
 
     return {
       meta: {
@@ -720,6 +713,54 @@ export class EscrowsService {
         total,
       },
       result,
+    };
+  }
+
+  /**
+   * Một trang ký quỹ: lấy id trước, rồi mới nạp quan hệ cho đúng những dòng đó.
+   *
+   * findAndCount kèm relations nối đơn và người dùng cho MỌI dòng khớp rồi mới cắt
+   * trang: người bán 9.945 khoản thì 100% trả 500 vì chạm trần 5 giây (đo trên prod
+   * 1 triệu dòng 05/11). Câu lấy id đi thẳng trên index, không đọc dòng nào thừa.
+   *
+   * `id DESC` phá hoà khi trùng thời điểm, không thì một dòng có thể nằm ở hai trang.
+   */
+  private async trangKyQuy(
+    loc: { sellerId?: number; status?: string },
+    offset: number,
+    size: number,
+    relations: string[],
+    select: FindOptionsSelect<Escrow>,
+  ) {
+    const qb = this.escrowRepository.createQueryBuilder('e');
+    if (loc.sellerId !== undefined) {
+      qb.andWhere('e.seller_id = :sellerId', { sellerId: loc.sellerId });
+    }
+    if (loc.status) qb.andWhere('e.status = :status', { status: loc.status });
+
+    const total = await qb.getCount();
+    const dong = await qb
+      .select('e.id', 'id')
+      .orderBy('e.created_at', 'DESC')
+      .addOrderBy('e.id', 'DESC')
+      .offset(offset)
+      .limit(size)
+      .getRawMany<{ id: number }>();
+    if (!dong.length) return { result: [], total };
+
+    const ids = dong.map((d) => Number(d.id));
+    const rows = await this.escrowRepository.find({
+      where: { id: In(ids) },
+      relations,
+      select,
+    });
+    const theoId = new Map(rows.map((r) => [r.id, r]));
+    return {
+      result: ids.flatMap((id) => {
+        const r = theoId.get(id);
+        return r ? [r] : [];
+      }),
+      total,
     };
   }
 
