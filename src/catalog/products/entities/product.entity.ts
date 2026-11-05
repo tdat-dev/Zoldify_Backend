@@ -37,6 +37,8 @@ export enum ProductStatus {
 // trước/sau: scripts/explain-1m.ts. Migration 1788500000000.
 @Index('idx_status_created', ['status', 'created_at'])
 @Index('idx_status_price', ['status', 'price'])
+// Đếm có trần theo khoảng giá chạy trọn trong index, không về bảng đọc deleted_at.
+@Index('idx_status_deleted_price', ['status', 'deleted_at', 'price'])
 @Index('idx_status_sold', ['status', 'sold_count'])
 @Index('idx_status_view', ['status', 'view_count'])
 // Danh sách theo danh mục, kiểu sắp mặc định, VÀ product_count của
