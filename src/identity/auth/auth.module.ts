@@ -5,7 +5,6 @@ import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService, ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CacheModule } from '@nestjs/cache-manager';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { JwtStrategy } from './passport/jwt.strategy';
 import { LocalStrategy } from './passport/local.strategy';
@@ -18,12 +17,11 @@ import { mailerConfig } from '../../common/mailer.config';
   imports: [
     UsersModule,
     TypeOrmModule.forFeature([User, UserSession]),
-    // Bộ nhớ đệm OTP nằm trong tiến trình (không có store ngoài): mất hết
-    // khi restart, và không chia sẻ được giữa nhiều instance backend. Trước
-    // khi chạy hơn một instance (scale ngang, zero-downtime deploy nhiều
-    // tiến trình), phải đổi sang store chung (ví dụ Redis) kẻo OTP phát ra
-    // ở instance A không xác minh được ở instance B.
-    CacheModule.register({ ttl: 300, max: 100 }),
+    // KHÔNG khai CacheModule ở đây. AuthService phải lấy cache Redis toàn cục
+    // của AppModule, vì OTP và dấu ân hạn refresh phải thấy được từ mọi bản api.
+    // Khai riêng là che mất bản toàn cục: đo 05/11 với ba bản api, ân hạn chỉ
+    // đúng 3/9 lần, OTP phát ở bản này sang bản khác báo hết hạn. Bài giữ luật
+    // này: cache-nhieu-ban-api.spec.ts.
     // AuthService lấy MailerService từ ĐÂY, không phải từ bản khai trong
     // app.module — module nào tự khai thì dùng bản của chính nó. Hai bản từng
     // chép tay và đã lệch: bản này thiếu `defaults.from`, nên mail OTP đi ra
