@@ -301,10 +301,14 @@ export class WalletsService {
     const where = type ? 'e.account_id = ? AND t.type = ?' : 'e.account_id = ?';
     const params = type ? [account.id, type] : [account.id];
 
+    // Không lọc loại thì khỏi nối sang ledger_transactions: đếm chỉ cần index của
+    // ledger_entries, còn nối là đọc thêm một dòng cho mỗi bút toán của người đó.
     const [{ total }] = await em.query<Array<{ total: string | number }>>(
-      `SELECT COUNT(*) AS total FROM ledger_entries e
-       JOIN ledger_transactions t ON t.id = e.transaction_id
-       WHERE ${where}`,
+      type
+        ? `SELECT COUNT(*) AS total FROM ledger_entries e
+           JOIN ledger_transactions t ON t.id = e.transaction_id
+           WHERE ${where}`
+        : `SELECT COUNT(*) AS total FROM ledger_entries e WHERE ${where}`,
       params,
     );
 
