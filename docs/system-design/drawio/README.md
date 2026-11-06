@@ -5,7 +5,7 @@ Mở bằng [app.diagrams.net](https://app.diagrams.net) hoặc draw.io desktop.
 
 | Slide | File | Ghi chú |
 |---|---|---|
-| 5 Use Case | `05-use-case-diagram.drawio` | 7 trang: tổng quan (vẽ tay) + UC01 đến UC06 |
+| 5 Use Case | `05-use-case-diagram.drawio` | 7 trang: tổng quan + UC01 đến UC06 |
 | 6 Activity Diagram | `activity_zoldify.drawio` | 15 trang, nhóm vẽ tay |
 | 8 Class Diagram | `08-class-diagram.drawio` | 3 trang: Domain Model, Enumerations, Money Services |
 | 9 Sequence Diagram | `Sequence-Diagrams.drawio` | 14 trang, slide 9 dùng trang Payment |
@@ -28,12 +28,12 @@ trong draw.io vì lần sinh sau sẽ đè:
 
 | File | Nguồn | Lệnh |
 |---|---|---|
-| `05-use-case-diagram.drawio`, các trang UC01 đến UC06 | `scripts/drawio-specs/usecase/NN-*.json`, mỗi file một trang | `node scripts/drawio-usecase.mjs` |
+| `05-use-case-diagram.drawio` | Trang tổng quan: `buildOverview` trong script. Trang UC01 đến UC06: `scripts/drawio-specs/usecase/NN-*.json` | `node scripts/drawio-usecase.mjs` |
 | `08-class-diagram.drawio` | `scripts/drawio-class.mjs` (toạ độ, thuộc tính, quan hệ) | `node scripts/drawio-class.mjs` |
 | `Sequence-Diagrams.drawio` | `scripts/drawio-specs/sequence/NN-*.json`, mỗi file một trang | `node scripts/drawio-sequence.mjs` |
 
-Riêng file use case: trang đầu (tổng quan) là bản vẽ tay, script giữ nguyên nó và chỉ thay
-các trang UC phía sau. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
+Riêng file use case: trang đầu (tổng quan) vẽ ngang 16:9 để chiếu được trên slide, có 5 actor:
+Guest, User kế thừa Guest, Buyer và Seller kế thừa User, Administrator. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
 giữa, use case `«include»` / `«extend»` bên phải, actor hệ thống ngoài (GHN, PayOS, FCM)
 ngoài cùng.
 
