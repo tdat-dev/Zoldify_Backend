@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, IsNull, Like, Not, Repository } from 'typeorm';
 import {
   Product,
   ProductStatus,
@@ -25,23 +25,46 @@ import { siteUrlChinh } from '@common/site-url';
 export const KICH_THUOC_LO = 5000;
 
 /**
- * Đường dẫn sản phẩm cho sitemap — phải khớp CHÍNH XÁC với cách frontend dựng
- * link (Zoldify_Frontend/src/lib/product-url.ts). Hai chỗ lệch nhau là sitemap
- * lại nộp cho Google những URL mà bấm vào không ra gì, đúng lỗi vừa sửa.
+ * Phải cho cùng kết quả với toSlug của web (Zoldify_Frontend/src/lib/slug.ts):
+ * ký tự lạ bị BỎ chứ không thay bằng gạch, nên "1.5L" ra "15l". Bản cũ ở đây
+ * thay bằng gạch ra "1-5l", và URL trong sitemap phải chuyển hướng thêm một bước.
  */
-function productPath(p: { id: number; name?: string; slug?: string }): string {
-  const words = (p.slug || p.name || '')
+function toSlug(input: string): string {
+  return input
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '');
-  return words ? `/product/${words}-p${p.id}` : `/product/${p.id}`;
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 }
+
+/**
+ * Hai đường dẫn dưới đây phải khớp CHÍNH XÁC web
+ * (Zoldify_Frontend/src/lib/public-urls.ts). Web đã đổi từ `-p<id>` sang
+ * `-i<id>` và không nhận kiểu cũ: đo trên prod 06/11, URL trong sitemap trả 404.
+ */
+function productPath(p: { id: number; name?: string; slug?: string }): string {
+  const slug = toSlug(p.slug || p.name || '');
+  return slug ? `/product/${slug}-i${p.id}` : `/product/${p.id}`;
+}
+
+function shopPath(u: { id: number; full_name?: string }): string {
+  const slug = toSlug(u.full_name || '');
+  return slug ? `/shop/${slug}-${u.id}` : `/shop/${u.id}`;
+}
+
+/**
+ * Dữ liệu sinh cho bài đo 1 triệu dòng. Trang của chúng có noindex (web, lib/seo.ts)
+ * nên nộp trong sitemap là vừa mời vừa đuổi Google, lại đẩy hàng triệu URL giả vào
+ * báo cáo. Gỡ hai hằng này khi prod không còn dữ liệu đó.
+ */
+const MAU_SAN_PHAM_THU = 'sp-1m-%';
+const MAU_SHOP_THU = 'shop-1m-%';
 
 export interface SitemapUrl {
   loc: string;
@@ -161,13 +184,16 @@ export class SitemapService {
     const lo = await this.productRepository
       .createQueryBuilder('p')
       .select('FLOOR((p.id - 1) / :size)', 'lo')
-      .addSelect('MAX(p.updated_at)', 'moi_nhat')
       .where('p.status = :st', { st: ProductStatus.ACTIVE })
       .andWhere('p.deleted_at IS NULL')
+      // Lô chỉ toàn dữ liệu thử thì file con của nó sẽ rỗng và trả 404.
+      .andWhere('(p.slug IS NULL OR p.slug NOT LIKE :thu)', {
+        thu: MAU_SAN_PHAM_THU,
+      })
       .groupBy('lo')
       .orderBy('lo', 'ASC')
       .setParameter('size', this.kichThuocLo)
-      .getRawMany<{ lo: string | number; moi_nhat: Date | null }>();
+      .getRawMany<{ lo: string | number }>();
 
     // `apiUrl` chứ KHÔNG phải `siteUrl`: đây là địa chỉ của chính mấy file
     // sitemap, mà chúng do API phục vụ. Xem ghi chú ở constructor.
@@ -175,7 +201,6 @@ export class SitemapService {
       { loc: `${this.apiUrl}/sitemap-static.xml` },
       ...lo.map((l) => ({
         loc: `${this.apiUrl}/sitemap-products-${Number(l.lo)}.xml`,
-        lastmod: ngay(l.moi_nhat),
       })),
     ];
   }
@@ -192,7 +217,6 @@ export class SitemapService {
   async urlTinh(): Promise<SitemapUrl[]> {
     const urls: SitemapUrl[] = [
       { loc: `${this.siteUrl}/`, priority: '1.0' },
-      { loc: `${this.siteUrl}/search`, priority: '0.8' },
     ];
 
     const categories = await this.categoryRepository.find({
@@ -207,13 +231,14 @@ export class SitemapService {
     }
 
     const shops = await this.shopRepository.find({
-      where: { status: ShopStatus.ACTIVE },
-      select: ['id', 'updated_at'],
-      relations: ['user'],
+      where: { status: ShopStatus.ACTIVE, slug: Not(Like(MAU_SHOP_THU)) },
+      select: { id: true, updated_at: true, user: { id: true, full_name: true } },
+      relations: { user: true },
     });
     for (const s of shops) {
+      if (!s.user) continue;
       urls.push({
-        loc: `${this.siteUrl}/shop/${s.user?.id || s.id}`,
+        loc: `${this.siteUrl}${shopPath(s.user)}`,
         lastmod: ngay(s.updated_at),
         priority: '0.7',
       });
@@ -227,9 +252,15 @@ export class SitemapService {
     const dau = lo * this.kichThuocLo + 1;
     const cuoi = (lo + 1) * this.kichThuocLo;
 
+    const dangBan = { status: ProductStatus.ACTIVE, id: Between(dau, cuoi) };
     const products = await this.productRepository.find({
-      where: { status: ProductStatus.ACTIVE, id: Between(dau, cuoi) },
-      select: ['id', 'name', 'slug', 'updated_at'],
+      // Hai nhánh vì slug có thể NULL, mà NULL NOT LIKE ... không phải TRUE: chỉ
+      // một điều kiện thì tin không có slug âm thầm rơi khỏi sitemap.
+      where: [
+        { ...dangBan, slug: Not(Like(MAU_SAN_PHAM_THU)) },
+        { ...dangBan, slug: IsNull() },
+      ],
+      select: ['id', 'name', 'slug'],
       order: { id: 'ASC' },
       // Chặn trên thừa so với khoảng id ở trên, nhưng giữ có chủ đích: nếu sau
       // này ai đó đổi cách chia lô mà quên, `take` vẫn không cho một request
@@ -238,16 +269,19 @@ export class SitemapService {
     });
 
     return products.map((p) => ({
-      // `<slug>-p<id>`, KHÔNG phải slug trần.
+      // `<slug>-i<id>`, KHÔNG phải slug trần.
       //
       // Bản trước phát `/product/${slug || id}`. Ứng dụng lại tra sản phẩm theo
       // id, nên mọi URL dạng slug đều mở ra trang "không tìm thấy" mà vẫn đáp
       // HTTP 200 — đo được: cả 377 URL sản phẩm trong sitemap đều như vậy.
       // Google gọi đó là soft 404 và vẫn lập chỉ mục trang rỗng.
       //
-      // Đuôi -p<id> giữ chữ cho người đọc mà vẫn cho máy một khoá chắc chắn.
+      // Đuôi -i<id> giữ chữ cho người đọc mà vẫn cho máy một khoá chắc chắn.
       loc: `${this.siteUrl}${productPath(p)}`,
-      lastmod: ngay(p.updated_at),
+      // KHÔNG có lastmod: repository.increment trong flushViewCount cũng đẩy
+      // updated_at, nên mỗi lượt xem đều đổi ngày. Đo trên prod 06/11: mọi món
+      // cùng mốc 09:10:00 của job. Google bỏ qua lastmod không đáng tin. Thêm lại
+      // khi job đó giữ nguyên updated_at.
       priority: '0.8',
     }));
   }

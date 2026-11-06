@@ -350,6 +350,26 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
     }
   });
 
+  it('tin có slug NULL vẫn lên sitemap: `NOT LIKE` với NULL không đúng cũng không sai', async () => {
+    await ds.query('UPDATE products SET slug = NULL WHERE id = ?', [idHang[3]]);
+    try {
+      const urls = await svc.urlSanPham(0);
+      expect(urls.some((u) => u.loc.endsWith(`-i${idHang[3]}`))).toBe(true);
+    } finally {
+      await ds.query('UPDATE products SET slug = ? WHERE id = ?', [
+        'san-pham-3',
+        idHang[3],
+      ]);
+    }
+  });
+
+  it('sản phẩm không phát lastmod: updated_at đổi theo mỗi lượt xem nên không đáng tin', async () => {
+    const urls = await svc.urlSanPham(0);
+    expect(urls.every((u) => u.lastmod === undefined)).toBe(true);
+    const muc = await svc.danhSachFileCon();
+    expect(muc.every((m) => m.lastmod === undefined)).toBe(true);
+  });
+
   it('shop thử shop-1m không lên sitemap', async () => {
     const u2 = await ds.query<{ insertId: number }>(
       "INSERT INTO users (full_name, email, password, role) VALUES ('nguoi thu','t@t.local','x','seller')",
