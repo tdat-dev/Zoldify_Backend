@@ -1062,4 +1062,108 @@ describe('Đua trạng thái đơn và ký quỹ', () => {
     expect((await donLuc(orderId)).is_paid).toBe(0);
     expect(await soKyQuy(orderId)).toBe(0);
   });
+
+  /**
+   * Đơn trả trước không bao giờ có vận đơn (tái hiện trên staging 05/11).
+   *
+   * Ví và PayOS đặt thẳng `confirmed` trong transaction tiền, không đi qua
+   * `updateStatus`, mà vận đơn chỉ được tạo ở đó khi đích là `confirmed`. Bảng
+   * trạng thái không cho đi lại `confirmed`, nên đơn đã trả tiền đứng yên: GHN
+   * không có gì để lấy, người bán không gửi được, tiền nằm trong ký quỹ.
+   */
+  const loCua = (orderId: number) =>
+    ds.getRepository(OrderShipment).find({
+      where: { order: { id: orderId } },
+    });
+
+  async function taoDonTraBangVi(): Promise<number> {
+    const orderId = await taoDonDaTra(1);
+    await ds.query(`UPDATE orders SET payment_method = 'wallet' WHERE id = ?`, [
+      orderId,
+    ]);
+    return orderId;
+  }
+
+  const ghnThat = () =>
+    (orders as unknown as { ghnService: GhnService }).ghnService;
+
+  it('van don: đơn đã trả sang chuẩn bị hàng thì có vận đơn, không thu hộ', async () => {
+    const orderId = await taoDonTraBangVi();
+    const taoVanDon = jest.spyOn(ghnThat(), 'createOrder');
+
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.PROCESSING },
+      nguoiBan(),
+    );
+
+    const lo = await loCua(orderId);
+    expect(lo).toHaveLength(1);
+    expect(lo[0].status).toBe(ShipmentStatus.CREATED);
+    expect(Number(lo[0].cod_amount)).toBe(0);
+    expect(taoVanDon).toHaveBeenCalledTimes(1);
+    expect(taoVanDon.mock.calls[0][0]).toMatchObject({ cod_amount: 0 });
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.PROCESSING);
+    taoVanDon.mockRestore();
+  });
+
+  it('van don: đơn COD đã có vận đơn thì chuẩn bị hàng không tạo thêm', async () => {
+    const orderId = await taoDonChoGhn(1);
+    const taoVanDon = jest.spyOn(ghnThat(), 'createOrder');
+
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.CONFIRMED },
+      nguoiBan(),
+    );
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.PROCESSING },
+      nguoiBan(),
+    );
+
+    expect(taoVanDon).toHaveBeenCalledTimes(1);
+    expect(await loCua(orderId)).toHaveLength(1);
+    taoVanDon.mockRestore();
+  });
+
+  it('van don: GHN từ chối thì vẫn chuẩn bị hàng được, lô ghi FAILED để tạo lại', async () => {
+    const orderId = await taoDonTraBangVi();
+    const taoVanDon = jest
+      .spyOn(ghnThat(), 'createOrder')
+      .mockRejectedValueOnce(
+        Object.assign(new Error('GHN từ chối'), {
+          response: { data: { message: 'Quận ngừng phục vụ' } },
+        }),
+      );
+
+    await orders.updateStatus(
+      orderId,
+      { status: OrderStatus.PROCESSING },
+      nguoiBan(),
+    );
+
+    const lo = await loCua(orderId);
+    expect(lo).toHaveLength(1);
+    expect(lo[0].status).toBe(ShipmentStatus.FAILED);
+    expect((await donLuc(orderId)).status).toBe(OrderStatus.PROCESSING);
+    taoVanDon.mockRestore();
+  });
+
+  it('van don: huỷ chen vào lúc chuẩn bị hàng thì vận đơn mồ côi được đánh dấu', async () => {
+    const orderId = await taoDonTraBangVi();
+    giuaGhn = () => orders.cancel(orderId, nguoiMua());
+
+    await expect(
+      orders.updateStatus(
+        orderId,
+        { status: OrderStatus.PROCESSING },
+        nguoiBan(),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const lo = await loCua(orderId);
+    expect(lo).toHaveLength(1);
+    expect(lo[0].error ?? '').toMatch(/huỷ.*GHN/);
+  });
 });
