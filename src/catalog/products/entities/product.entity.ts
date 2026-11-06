@@ -131,6 +131,21 @@ export class Product {
   @Column({ type: 'varchar', length: 20, default: 'new' })
   condition: string;
 
+  // Người bán tự kể tình trạng thật: xước ở đâu, pin còn bao nhiêu, thiếu gì.
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  condition_note: string | null;
+
+  // Chép từ địa chỉ lấy hàng của shop lúc đăng, lý do ghi ở migration
+  // 1789100000000. Dữ liệu thử sp-1m-* để trống.
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  province_name: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  province_slug: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  district_name: string | null;
+
   @Column({ type: 'boolean', default: false })
   is_freeship: boolean;
 

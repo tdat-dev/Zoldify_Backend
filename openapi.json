@@ -8088,6 +8088,22 @@
           "condition": {
             "type": "string"
           },
+          "condition_note": {
+            "type": "string",
+            "nullable": true
+          },
+          "province_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "province_slug": {
+            "type": "string",
+            "nullable": true
+          },
+          "district_name": {
+            "type": "string",
+            "nullable": true
+          },
           "is_freeship": {
             "type": "boolean"
           },
@@ -8145,6 +8161,10 @@
           "spec",
           "images",
           "condition",
+          "condition_note",
+          "province_name",
+          "province_slug",
+          "district_name",
           "is_freeship",
           "sold_count",
           "rating_avg",
@@ -8244,6 +8264,10 @@
           },
           "condition": {
             "type": "string"
+          },
+          "condition_note": {
+            "type": "string",
+            "maxLength": 500
           },
           "is_freeship": {
             "type": "boolean"

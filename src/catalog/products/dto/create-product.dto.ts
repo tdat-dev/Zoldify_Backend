@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -80,6 +81,15 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   condition?: string; // new | like_new | good | fair
+
+  /**
+   * Tuỳ chọn ở đây dù web bắt buộc khi hàng không mới: app Android không có cập
+   * nhật bắt buộc, bắt ở server là bản đang chạy nhận 400.
+   */
+  @IsOptional()
+  @IsString({ message: 'Ghi chú tình trạng phải là chuỗi' })
+  @MaxLength(500, { message: 'Ghi chú tình trạng tối đa 500 ký tự' })
+  condition_note?: string;
 
   @IsOptional()
   is_freeship?: boolean;

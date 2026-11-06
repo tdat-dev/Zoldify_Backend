@@ -8,6 +8,7 @@ import {
 import { Category } from '@catalog/categories/entities/category.entity';
 import { Shop, ShopStatus } from '@catalog/shop/entities/shop.entity';
 import { siteUrlChinh } from '@common/site-url';
+import { toSlug } from '@common/slug';
 
 /**
  * Số sản phẩm tối đa trong MỘT file sitemap con.
@@ -23,25 +24,6 @@ import { siteUrlChinh } from '@common/site-url';
  *    mili-giây.
  */
 export const KICH_THUOC_LO = 5000;
-
-/**
- * Phải cho cùng kết quả với toSlug của web (Zoldify_Frontend/src/lib/slug.ts):
- * ký tự lạ bị BỎ chứ không thay bằng gạch, nên "1.5L" ra "15l". Bản cũ ở đây
- * thay bằng gạch ra "1-5l", và URL trong sitemap phải chuyển hướng thêm một bước.
- */
-function toSlug(input: string): string {
-  return input
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 /**
  * Hai đường dẫn dưới đây phải khớp CHÍNH XÁC web

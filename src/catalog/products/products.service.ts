@@ -21,6 +21,7 @@ import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialE
 import { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
 import { formatMoney } from '@common/money';
+import { toSlug } from '@common/slug';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
@@ -94,6 +95,17 @@ interface BoLocSanPham {
   price_max?: string;
   condition?: string;
   sort?: string;
+}
+
+/**
+ * Thang tình trạng chuẩn, cùng thang với web (lib/product-condition.ts). Bản app
+ * đang chạy còn gửi `used` và `refurbished`, không có cập nhật bắt buộc nên phải
+ * đổi về thang chuẩn chứ không từ chối. `undefined` giữ nguyên để entity áp mặc định.
+ */
+const TINH_TRANG_CHUAN = ['new', 'like_new', 'good', 'fair'];
+function chuanHoaTinhTrang(v: string | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return TINH_TRANG_CHUAN.includes(v) ? v : 'good';
 }
 
 /** Trạng thái ai cũng xem được chi tiết (xem `findOne`). */
@@ -220,7 +232,7 @@ export class ProductsService {
    * người bán không giao được đúng. Chặn ngay từ lúc đăng, giống Shopee bắt khai
    * địa chỉ lấy hàng trước khi mở bán. Kiểm ĐÚNG 6 trường mà createOrder GHN cần.
    */
-  private async assertSellerHasPickup(userId: number): Promise<void> {
+  private async assertSellerHasPickup(userId: number): Promise<Shop> {
     const shop = await this.shopRepository.findOne({
       where: { user: { id: userId } },
     });
@@ -237,6 +249,7 @@ export class ProductsService {
         'Bạn cần khai địa chỉ lấy hàng ở Cài đặt shop trước khi đăng bán.',
       );
     }
+    return shop;
   }
 
   // ── Cache FAIL-OPEN ────────────────────────────────────────────────────────
@@ -423,7 +436,7 @@ export class ProductsService {
   }
 
   async create(createProductDto: CreateProductDto, user: IUser) {
-    await this.assertSellerHasPickup(user.id);
+    const shop = await this.assertSellerHasPickup(user.id);
 
     // DANH SÁCH TRẮNG: trường nào không có tên ở đây thì KHÔNG được lưu, dù DTO
     // đã nhận và đã kiểm hợp lệ. `currency` vừa thêm dính đúng bẫy này — gửi
@@ -442,11 +455,16 @@ export class ProductsService {
       spec,
       stock,
       condition,
+      condition_note,
       is_freeship,
     } = createProductDto;
     const firstImage = image || (images?.length ? images[0] : undefined);
     const newProduct = this.productRepository.create({
-      condition,
+      condition: chuanHoaTinhTrang(condition),
+      condition_note,
+      province_name: shop.pickup_province_name,
+      province_slug: toSlug(shop.pickup_province_name),
+      district_name: shop.pickup_district_name,
       name,
       price,
       // Bỏ trống thì để entity áp mặc định, đừng ghi đè bằng undefined.
@@ -1131,6 +1149,9 @@ export class ProductsService {
     // Nếu trong dữ liệu update có category_id, map nó sang quan hệ Object
     const { category_id, stock, expected_stock, ...restDto } = updateProductDto;
     const updateData: QueryDeepPartialEntity<Product> = { ...restDto };
+    if (restDto.condition !== undefined) {
+      updateData.condition = chuanHoaTinhTrang(restDto.condition);
+    }
     if (category_id) {
       updateData.category = { id: category_id };
     }
