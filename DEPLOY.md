@@ -115,6 +115,36 @@ docker compose down        # dừng, GIỮ dữ liệu
 docker compose down -v     # dừng và XOÁ cả hai volume
 ```
 
+### Prod: MySQL ở máy riêng (từ 06/11/2026)
+
+Dữ liệu 1 triệu dòng chiếm 7,3 GB trên VPS 40 GB, mỗi lần deploy lại cần thêm
+1,8 GB, nên MySQL prod đã chuyển sang `tdatdev` (Oracle ARM Singapore, 24 GB RAM,
+`/opt/zoldify-db`). Web, API, Redis, ảnh vẫn ở VPS. Staging giữ MySQL riêng trên
+VPS, không đổi.
+
+`docker-compose.override.yml` trên VPS (không commit) thay service `mysql` bằng
+một đường hầm SSH mang đúng tên đó, nên `DB_HOST: mysql` của api, worker, migrate
+và backup giữ nguyên. Khóa nằm ở `/opt/zoldify-db-tunnel`, trên `tdatdev` chỉ được
+chuyển tiếp tới `127.0.0.1:3306`, không có shell. Dùng cổng 22 vì Oracle chỉ mở
+cổng đó; MySQL không mở ra Internet.
+
+Ba điều không được quên:
+
+- **Không bật lại host cache** trên `tdatdev`. Mọi kết nối qua đường hầm chung một
+  IP, health check bỏ dở bắt tay nên tính vào `max_connect_errors`; đủ 100 lần là
+  MySQL khóa IP đó, tức là khóa cả prod. Vì vậy có `--host-cache-size=0`.
+- **Đừng thử đường hầm bằng `docker kill`.** Docker coi đó là dừng tay nên
+  `unless-stopped` không dựng lại, prod sẽ nằm đến khi có người `docker start`.
+  Đã dính thật khi thử; muốn giả lập đứt thì giết tiến trình `ssh` từ host.
+- **Mỗi câu SQL tốn thêm khoảng 32 ms** (TP.HCM đến Singapore). Đo 06/11: đọc ở 50
+  kết nối không lỗi và nhanh hơn trước nhờ RAM, nhưng đặt đơn còn 1,2 đến 1,6 giây
+  và 12,5 đơn/giây (trước khoảng 30). Thêm câu SQL tuần tự vào một request là cộng
+  thẳng độ trễ này.
+
+Quay về MySQL cũ: dừng api và worker, `cp docker-compose.override.yml.bak-20261106
+docker-compose.override.yml`, `docker compose -p zoldify up -d`. Chỉ làm được khi
+volume `zoldify_mysql-data` còn, và dữ liệu sinh ra sau 06/11 không theo về.
+
 ---
 
 ## Cập nhật phiên bản mới
