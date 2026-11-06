@@ -277,6 +277,30 @@ function main(): void {
   if (wf.concurrency) ok('có concurrency — push liên tiếp huỷ lần chạy cũ');
   else bad('thiếu concurrency — đẩy 3 commit liên tiếp là 3 lần chạy song song vô ích');
 
+  // ── 8. Deploy tự dọn build cache ─────────────────────────────────────
+  // VPS chỉ 40 GB mà mỗi lần build thêm 1 đến 1,8 GB cache. `docker image prune`
+  // không chạm tới phần đó, `docker builder prune -f` chỉ dọn cache treo: ngày
+  // 06/11 nó lấy lại 0 byte trong khi cache đã 16,76 GB và đĩa còn 1,6 GB.
+  // Phải có `-a` mới tới được, và phải có `--keep-storage`: dọn sạch thì lần
+  // build sau tải lại mọi thứ từ Docker Hub (đã TLS timeout, deploy prod đỏ).
+  // Dọn hỏng không được làm đỏ một lần deploy đã xong, nên có `|| true`.
+  console.log('\n\x1b[1mdeploy tự dọn build cache\x1b[0m');
+  const buocDeploy = fs.existsSync(DEPLOY_PATH)
+    ? fs.readFileSync(DEPLOY_PATH, 'utf8')
+    : '';
+  if (
+    /docker builder prune\b[^\n]*(-a\b|--all\b)[^\n]*--keep-storage[^\n]*\|\|\s*true/.test(
+      buocDeploy,
+    )
+  ) {
+    ok('deploy.yml dọn build cache có giữ lại phần gần nhất');
+  } else {
+    bad(
+      'deploy.yml thiếu `docker builder prune -a --keep-storage ... || true`: ' +
+        'build cache phình tới đầy đĩa VPS',
+    );
+  }
+
   // ── Tổng kết ──────────────────────────────────────────────────────────────
   console.log('');
   if (failures === 0) {
