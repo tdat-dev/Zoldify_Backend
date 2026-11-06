@@ -1,7 +1,7 @@
 # Sơ đồ draw.io: bảng tra
 
-Bốn file, đúng bốn slide có sơ đồ trong `3. Project Templates/Project Presentation Template.pdf`.
-Mở bằng [app.diagrams.net](https://app.diagrams.net) hoặc draw.io desktop.
+Năm file: bốn file đúng bốn slide có sơ đồ trong `3. Project Templates/Project Presentation Template.pdf`.
+và một file bản rút gọn để chiếu. Mở bằng [app.diagrams.net](https://app.diagrams.net) hoặc draw.io desktop.
 
 | Slide | File | Ghi chú |
 |---|---|---|
@@ -9,6 +9,7 @@ Mở bằng [app.diagrams.net](https://app.diagrams.net) hoặc draw.io desktop.
 | 6 Activity Diagram | `activity_zoldify.drawio` | 15 trang, nhóm vẽ tay |
 | 8 Class Diagram | `08-class-diagram.drawio` | 3 trang: Domain Model, Enumerations, Money Services |
 | 9 Sequence Diagram | `Sequence-Diagrams.drawio` | 14 trang, slide 9 dùng trang Payment |
+| Slide chiếu | `12-slide-diagrams.drawio` | 11 trang rút gọn, chữ đủ lớn khi chiếu: deployment, UC02, UC04, activity, class, sequence, ERD tiền, dòng tiền, hai người mua |
 
 Slide 10 (ERD) và 11 (Deployment) nhóm đã bỏ (12/10), cùng 16 sơ đồ cũ khác
 (bảy `06*-activity`, `09-sequence-diagram`, `r1` đến `r8`) và bộ sinh `make-drawio.mjs`.
@@ -17,7 +18,7 @@ Cần lại thì lấy trong lịch sử git; bản ERD crow's foot và deployme
 
 Ảnh xem nhanh từng trang ở `renders/`, mở `renders/index.html` để xem tất cả.
 
-Kiểm trước khi giao: `npm run drawio:check`. Bộ kiểm đòi đủ bốn file trên: ba file đọc
+Kiểm trước khi giao: `npm run drawio:check`. Bộ kiểm đòi đủ các file trên: bốn file đọc
 tên từ bộ sinh, file activity ghi ở `VE_TAY` trong `scripts/check-drawio.mjs`.
 
 ## Use case chi tiết, Class và Sequence: sinh từ script, không sửa tay
@@ -31,6 +32,7 @@ trong draw.io vì lần sinh sau sẽ đè:
 | `05-use-case-diagram.drawio` | Trang tổng quan: `buildOverview` trong script. Trang UC01 đến UC06: `scripts/drawio-specs/usecase/NN-*.json` | `node scripts/drawio-usecase.mjs` |
 | `08-class-diagram.drawio` | `scripts/drawio-class.mjs` (toạ độ, thuộc tính, quan hệ) | `node scripts/drawio-class.mjs` |
 | `Sequence-Diagrams.drawio` | `scripts/drawio-specs/sequence/NN-*.json`, mỗi file một trang | `node scripts/drawio-sequence.mjs` |
+| `12-slide-diagrams.drawio` | `scripts/drawio-slides.mjs` | `node scripts/drawio-slides.mjs` |
 
 Riêng file use case: trang đầu (tổng quan) vẽ ngang 16:9 để chiếu được trên slide, có 5 actor:
 Guest, User kế thừa Guest, Buyer và Seller kế thừa User, Administrator. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
