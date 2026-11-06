@@ -1216,7 +1216,19 @@ export class OrdersService {
     // Chạy TRƯỚC và NGOÀI khoá dòng bên dưới: đây là lời gọi mạng, timeout 10s
     // nhân số lần thử lại. Giữ `FOR UPDATE` suốt quãng đó là bắt mọi thao tác
     // khác trên đơn (huỷ, webhook tiền về) xếp hàng chờ GHN.
-    if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
+    //
+    // Cả bước CHUẨN BỊ HÀNG cũng tạo, vì đơn trả trước không đi qua bước xác
+    // nhận: ví và PayOS đặt thẳng `confirmed` trong transaction tiền, và bảng
+    // trạng thái không cho đi lại `confirmed`. Thiếu nhánh này thì đơn đã trả
+    // không bao giờ có vận đơn (tái hiện trên staging 05/11). Không tạo ngay
+    // lúc tiền về: đơn `confirmed` còn huỷ được, tạo sớm là để lại vận đơn thật
+    // cho đơn đã huỷ, và webhook tiền phải chờ GHN. Đơn COD đã có vận đơn từ
+    // bước xác nhận nên ở đây không tạo thêm.
+    const taoVanDon =
+      (nextStatus === OrderStatus.CONFIRMED ||
+        nextStatus === OrderStatus.PROCESSING) &&
+      !!order.ghn_district_id;
+    if (taoVanDon) {
       await this.createGhnShipmentsPerSeller(order);
     }
 
@@ -1324,7 +1336,7 @@ export class OrdersService {
     }
 
     if (ketQua.doiThanh) {
-      if (nextStatus === OrderStatus.CONFIRMED && order.ghn_district_id) {
+      if (taoVanDon) {
         await this.baoVanDonMoCoi(order.id, ketQua.doiThanh);
       }
       throw new ConflictException(
