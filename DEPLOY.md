@@ -141,9 +141,10 @@ Ba điều không được quên:
   và 12,5 đơn/giây (trước khoảng 30). Thêm câu SQL tuần tự vào một request là cộng
   thẳng độ trễ này.
 
-Quay về MySQL cũ: dừng api và worker, `cp docker-compose.override.yml.bak-20261106
-docker-compose.override.yml`, `docker compose -p zoldify up -d`. Chỉ làm được khi
-volume `zoldify_mysql-data` còn, và dữ liệu sinh ra sau 06/11 không theo về.
+Volume `zoldify_mysql-data` trên VPS đã xoá ngày 06/11 để lấy lại đĩa, nên bảng ở
+mục trên chỉ còn đúng với staging. Muốn đưa MySQL về VPS phải dùng lại
+`docker-compose.override.yml.bak-20261106` rồi khôi phục từ bản backup, theo mục
+"Sao lưu và khôi phục"; 7 GB dữ liệu không còn vừa VPS 40 GB nếu không dọn trước.
 
 ---
 
