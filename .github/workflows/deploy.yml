@@ -58,4 +58,7 @@ jobs:
             git checkout -B "$REF" "origin/$REF"
             docker compose -p "$PROJ" up -d --build
             docker image prune -f || true
+            # Giữ 4 GB cache mới nhất: build vẫn nhanh, không phụ thuộc Docker Hub,
+            # mà cache không phình tới đầy đĩa VPS 40 GB (xem scripts/selfcheck-ci.ts).
+            docker builder prune -a -f --keep-storage 4GB || true
             echo "Deployed $REF to $DIR (project $PROJ)"
