@@ -38,7 +38,7 @@ import { User } from '@identity/users/entities/user.entity';
  *   3. Chia lô KHÔNG được làm mất hay lặp URL nào. Mất là Google không thấy
  *      hàng; lặp là tự báo trùng lặp nội dung.
  *
- * Cộng thêm: định dạng URL sản phẩm phải giữ NGUYÊN `<slug>-p<id>`. Bản trước
+ * Cộng thêm: định dạng URL sản phẩm phải khớp web, `<slug>-i<id>`. Bản trước
  * phát `/product/${slug}` trong khi ứng dụng tra theo id, nên cả 377 URL đều mở
  * ra trang rỗng mà vẫn đáp HTTP 200 — Google gọi đó là soft 404. Sửa hiệu năng
  * mà làm hỏng lại chỗ đó thì lỗ nhiều hơn lãi.
@@ -216,7 +216,7 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
 
     // Không thiếu: mọi id đang bán phải có mặt.
     for (const id of idHang) {
-      expect(tatCa.some((u) => u.endsWith(`-p${id}`))).toBe(true);
+      expect(tatCa.some((u) => u.endsWith(`-i${id}`))).toBe(true);
     }
   });
 
@@ -250,18 +250,19 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
     }
   });
 
-  it('giữ nguyên định dạng URL `<slug>-p<id>` — đừng làm lại lỗi soft 404', async () => {
+  it('URL sản phẩm khớp web: `<slug>-i<id>` — đừng làm lại lỗi 404', async () => {
     const urls = await svc.urlSanPham(0);
     const dau = urls[0].loc;
-    expect(dau).toMatch(/\/product\/[a-z0-9-]+-p\d+$/);
+    expect(dau).toMatch(/\/product\/[a-z0-9-]+-i\d+$/);
     expect(dau).toContain('/product/san-pham-');
   });
 
-  it('file tĩnh có trang chủ, tìm kiếm, danh mục và shop', async () => {
+  it('file tĩnh có trang chủ, danh mục và shop, không có trang tìm kiếm', async () => {
     const urls = await svc.urlTinh();
     const locs = urls.map((u) => u.loc);
     expect(locs.some((l) => l.endsWith('/'))).toBe(true);
-    expect(locs.some((l) => l.endsWith('/search'))).toBe(true);
+    // /search có noindex. Nộp nó trong sitemap là vừa mời vừa đuổi Google.
+    expect(locs.some((l) => l.endsWith('/search'))).toBe(false);
     expect(locs.some((l) => l.includes('/category/'))).toBe(true);
     expect(locs.some((l) => l.includes('/shop/'))).toBe(true);
     // Không được lẫn sản phẩm vào đây — đó là chỗ khiến file tĩnh phình lại.
@@ -275,12 +276,94 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
     ]);
     try {
       const urls = await svc.urlSanPham(0);
-      expect(urls.some((u) => u.loc.endsWith(`-p${idHang[0]}`))).toBe(false);
+      expect(urls.some((u) => u.loc.endsWith(`-i${idHang[0]}`))).toBe(false);
     } finally {
       await ds.query('UPDATE products SET status = ? WHERE id = ?', [
         ProductStatus.ACTIVE,
         idHang[0],
       ]);
+    }
+  });
+
+  it('URL shop khớp web: `<tên>-<id người bán>`, không phải /shop/<id> phải chuyển hướng', async () => {
+    const [u] = await ds.query<Array<{ id: number }>>(
+      "SELECT id FROM users WHERE email = 's@t.local'",
+    );
+    const locs = (await svc.urlTinh()).map((x) => x.loc);
+    expect(locs).toContain(`${SITE_URL}/shop/nguoi-ban-${u.id}`);
+  });
+
+  it('slug sinh từ tên phải khớp hàm toSlug của web', async () => {
+    // Web bỏ hẳn ký tự lạ, không thay bằng gạch: "1.5L" ra "15l". Bản cũ ở đây
+    // thay bằng gạch nên ra "1-5l", và URL trong sitemap phải chuyển hướng thêm
+    // một bước.
+    await ds.query('UPDATE products SET slug = ?, name = ? WHERE id = ?', [
+      '',
+      'Nồi cơm điện 1.5L',
+      idHang[2],
+    ]);
+    try {
+      const locs = (await svc.urlSanPham(0)).map((x) => x.loc);
+      expect(locs).toContain(
+        `${SITE_URL}/product/noi-com-dien-15l-i${idHang[2]}`,
+      );
+    } finally {
+      await ds.query('UPDATE products SET slug = ?, name = ? WHERE id = ?', [
+        'san-pham-2',
+        'San pham 2',
+        idHang[2],
+      ]);
+    }
+  });
+
+  it('dữ liệu thử sp-1m không lên sitemap, kể cả khi nằm chung lô với hàng thật', async () => {
+    await ds.query('UPDATE products SET slug = ? WHERE id = ?', [
+      'sp-1m-1',
+      idHang[1],
+    ]);
+    try {
+      const urls = await svc.urlSanPham(0);
+      expect(urls.some((u) => u.loc.endsWith(`-i${idHang[1]}`))).toBe(false);
+    } finally {
+      await ds.query('UPDATE products SET slug = ? WHERE id = ?', [
+        'san-pham-1',
+        idHang[1],
+      ]);
+    }
+  });
+
+  it('lô chỉ có dữ liệu thử thì không có file con: file đó sẽ là 404', async () => {
+    const lo2 = idHang.filter((id) => id > 2 * LO);
+    await ds.query(
+      `UPDATE products SET slug = CONCAT('sp-1m-', id) WHERE id IN (${lo2.join(',')})`,
+    );
+    try {
+      const muc = await svc.danhSachFileCon();
+      expect(muc.some((m) => m.loc.includes('sitemap-products-2.xml'))).toBe(
+        false,
+      );
+      expect(await svc.urlSanPham(2)).toHaveLength(0);
+    } finally {
+      await ds.query(
+        `UPDATE products SET slug = CONCAT('san-pham-', id - 1) WHERE id IN (${lo2.join(',')})`,
+      );
+    }
+  });
+
+  it('shop thử shop-1m không lên sitemap', async () => {
+    const u2 = await ds.query<{ insertId: number }>(
+      "INSERT INTO users (full_name, email, password, role) VALUES ('nguoi thu','t@t.local','x','seller')",
+    );
+    await ds.query(
+      "INSERT INTO shops (name, slug, status, user_id) VALUES ('Shop 1M 1','shop-1m-1','active',?)",
+      [u2.insertId],
+    );
+    try {
+      const locs = (await svc.urlTinh()).map((x) => x.loc);
+      expect(locs.some((l) => l.endsWith(`-${u2.insertId}`))).toBe(false);
+    } finally {
+      await ds.query("DELETE FROM shops WHERE slug = 'shop-1m-1'");
+      await ds.query("DELETE FROM users WHERE email = 't@t.local'");
     }
   });
 });
