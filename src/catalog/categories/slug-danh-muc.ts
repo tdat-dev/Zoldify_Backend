@@ -25,9 +25,11 @@ const ROUTE_CUA_WEB = new Set([
   'reset-password',
   'search',
   'shop',
+  'uploads',
   'wallet',
 ]);
 
 export function slugDungRouteWeb(slug: string): boolean {
-  return ROUTE_CUA_WEB.has(slug) || /-i[1-9]\d*$/.test(slug);
+  const thuong = slug.toLowerCase();
+  return ROUTE_CUA_WEB.has(thuong) || /-i[1-9]\d*$/.test(thuong);
 }
