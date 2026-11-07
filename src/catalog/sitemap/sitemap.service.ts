@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, IsNull, Like, Not, Repository } from 'typeorm';
+import { Between, IsNull, Like, MoreThan, Not, Repository } from 'typeorm';
 import {
   Product,
   ProductStatus,
@@ -168,6 +168,7 @@ export class SitemapService {
       .select('FLOOR((p.id - 1) / :size)', 'lo')
       .where('p.status = :st', { st: ProductStatus.ACTIVE })
       .andWhere('p.deleted_at IS NULL')
+      .andWhere('p.stock > 0')
       // Lô chỉ toàn dữ liệu thử thì file con của nó sẽ rỗng và trả 404.
       .andWhere('(p.slug IS NULL OR p.slug NOT LIKE :thu)', {
         thu: MAU_SAN_PHAM_THU,
@@ -212,11 +213,18 @@ export class SitemapService {
       });
     }
 
-    const shops = await this.shopRepository.find({
-      where: { status: ShopStatus.ACTIVE, slug: Not(Like(MAU_SHOP_THU)) },
-      select: { id: true, updated_at: true, user: { id: true, full_name: true } },
-      relations: { user: true },
-    });
+    // Shop không có tin đang bán có noindex ở web, nên không nộp vào đây.
+    const shops = await this.shopRepository
+      .createQueryBuilder('s')
+      .innerJoinAndSelect('s.user', 'u')
+      .where('s.status = :st', { st: ShopStatus.ACTIVE })
+      .andWhere('s.slug NOT LIKE :thu', { thu: MAU_SHOP_THU })
+      .andWhere(
+        `EXISTS (SELECT 1 FROM products p WHERE p.seller_id = u.id
+           AND p.status = :ban AND p.stock > 0 AND p.deleted_at IS NULL)`,
+        { ban: ProductStatus.ACTIVE },
+      )
+      .getMany();
     for (const s of shops) {
       if (!s.user) continue;
       urls.push({
@@ -234,7 +242,12 @@ export class SitemapService {
     const dau = lo * this.kichThuocLo + 1;
     const cuoi = (lo + 1) * this.kichThuocLo;
 
-    const dangBan = { status: ProductStatus.ACTIVE, id: Between(dau, cuoi) };
+    // Lọc theo kho chứ không chỉ theo status: bán hết không đổi status sang SOLD.
+    const dangBan = {
+      status: ProductStatus.ACTIVE,
+      id: Between(dau, cuoi),
+      stock: MoreThan(0),
+    };
     const products = await this.productRepository.find({
       // Hai nhánh vì slug có thể NULL, mà NULL NOT LIKE ... không phải TRUE: chỉ
       // một điều kiện thì tin không có slug âm thầm rơi khỏi sitemap.

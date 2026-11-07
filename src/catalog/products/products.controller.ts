@@ -151,6 +151,13 @@ export class ProductsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Khôi phục tin thành công!')
+  @Post(':id/restore')
+  restore(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.productsService.restore(id, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa sản phẩm thành công!')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {

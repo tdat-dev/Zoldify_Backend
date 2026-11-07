@@ -16,6 +16,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Product, ProductStatus } from './entities/product.entity';
 import { Follow } from '@catalog/follows/entities/follow.entity';
 import { Shop } from '@catalog/shop/entities/shop.entity';
+import { randomBytes } from 'crypto';
 import { Repository, Between, In, MoreThan, SelectQueryBuilder } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { IUser } from '@identity/users/users.interface';
@@ -435,8 +436,61 @@ export class ProductsService {
     return kq.affected ?? 0;
   }
 
+  /**
+   * Chặn cùng người bán đăng lại một món còn hàng, kể cả tin đã xoá.
+   *
+   * So tên ở SQL để dùng collation của cột: hoa thường và dấu coi như nhau. Tin
+   * hết hàng không tính: bán hết rồi có món khác cùng tên là chuyện thật của người
+   * bán đồ cũ. Hai request đồng thời vẫn có thể lọt, chấp nhận vì hậu quả chỉ là
+   * một tin thừa; khoá chặt phải thêm cột và index trên bảng 1 triệu dòng.
+   */
+  private async assertKhongTrung(
+    sellerId: number,
+    name: string,
+  ): Promise<void> {
+    const [trung] = await this.productRepository.find({
+      where: {
+        seller: { id: sellerId },
+        name: name.trim(),
+        stock: MoreThan(0),
+      },
+      withDeleted: true,
+      select: { id: true, deleted_at: true },
+      // Ưu tiên tin đang bán: NULL đứng đầu khi sắp tăng dần trên MySQL.
+      order: { deleted_at: 'ASC' },
+      take: 1,
+    });
+    if (!trung) return;
+
+    const daXoa = !!trung.deleted_at;
+    throw new ConflictException({
+      statusCode: 409,
+      error: 'Conflict',
+      message: daXoa
+        ? 'Bạn từng đăng món này và đã xoá. Hãy khôi phục tin cũ thay vì đăng lại.'
+        : 'Bạn đang bán món này rồi. Hãy sửa tin cũ hoặc tăng số lượng.',
+      existing_product_id: trung.id,
+      da_xoa: daXoa,
+    });
+  }
+
+  /**
+   * Slug là duy nhất toàn hệ thống, mà web sinh slug từ tên. Không xử lý thì hai
+   * người bán cùng một model nhận lỗi 409 chung chung, trái luật chỉ chặn trùng
+   * trong cùng người bán. Xét cả tin đã xoá vì chúng vẫn giữ slug.
+   */
+  private async slugKhongDungHang(slug?: string): Promise<string | undefined> {
+    if (!slug) return slug;
+    const daCo = await this.productRepository.exists({
+      where: { slug },
+      withDeleted: true,
+    });
+    return daCo ? `${slug}-${randomBytes(3).toString('hex')}` : slug;
+  }
+
   async create(createProductDto: CreateProductDto, user: IUser) {
     const shop = await this.assertSellerHasPickup(user.id);
+    await this.assertKhongTrung(user.id, createProductDto.name);
 
     // DANH SÁCH TRẮNG: trường nào không có tên ở đây thì KHÔNG được lưu, dù DTO
     // đã nhận và đã kiểm hợp lệ. `currency` vừa thêm dính đúng bẫy này — gửi
@@ -472,7 +526,7 @@ export class ProductsService {
       image: firstImage,
       images: images || (image ? [image] : undefined),
       description,
-      slug,
+      slug: await this.slugKhongDungHang(slug),
       category: { id: category_id },
       seller: { id: user.id },
       brand,
@@ -1132,10 +1186,33 @@ export class ProductsService {
     }
   }
 
-  async update(id: number, updateProductDto: UpdateProductDto, user: IUser) {
+  /** Đưa tin đã xoá về lại. Đường lui của luật chống trùng. */
+  async restore(id: number, user: IUser) {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations: ['seller'],
+      relations: { seller: true },
+      // Phải nêu `deleted_at`: cột này không được tải mặc định, thiếu thì mọi tin
+      // đều giống như chưa xoá.
+      select: { id: true, deleted_at: true, seller: { id: true } },
+      withDeleted: true,
+    });
+    if (!product?.deleted_at) {
+      throw new NotFoundException('Không có tin đã xoá này');
+    }
+    if (user.role !== 'admin' && product.seller.id !== user.id) {
+      throw new ForbiddenException('Bạn không có quyền khôi phục tin này');
+    }
+    await this.productRepository.restore(id);
+    await this.cacheDel(this.detailKey(id));
+    await this.moiDanhSach();
+    return this.findOne(id);
+  }
+
+  async update(id: number, updateProductDto: UpdateProductDto, user: IUser) {
+    const { category_id } = updateProductDto;
+    const product = await this.productRepository.findOne({
+      where: { id },
+      relations: ['seller', 'category'],
     });
     if (!product) {
       throw new NotFoundException(`Không tìm thấy sản phẩm có ID #${id}!`);
@@ -1146,8 +1223,28 @@ export class ProductsService {
       throw new ForbiddenException('Bạn không có quyền sửa sản phẩm này');
     }
 
-    // Nếu trong dữ liệu update có category_id, map nó sang quan hệ Object
-    const { category_id, stock, expected_stock, ...restDto } = updateProductDto;
+    // URL đã vào Google phải giữ nghĩa cũ: sửa tin điện thoại thành quần áo là
+    // mượn thứ hạng của tin cũ cho món khác. Trang sửa của web luôn gửi lại đúng
+    // danh mục cũ, nên chỉ chặn khi thật sự đổi. Chọn nhầm thì admin sửa giúp.
+    if (
+      category_id &&
+      user.role !== 'admin' &&
+      product.category?.id !== category_id
+    ) {
+      throw new BadRequestException(
+        'Không đổi được danh mục sau khi đăng. Nếu là món khác, hãy đăng tin mới.',
+      );
+    }
+
+    // `slug` bị bỏ qua chứ không báo lỗi: URL tin đã đăng không được đổi, còn
+    // client cũ gửi kèm slug thì không có lý do để hỏng cả lần lưu.
+    const {
+      category_id: _categoryId,
+      stock,
+      expected_stock,
+      slug: _slug,
+      ...restDto
+    } = updateProductDto;
     const updateData: QueryDeepPartialEntity<Product> = { ...restDto };
     if (restDto.condition !== undefined) {
       updateData.condition = chuanHoaTinhTrang(restDto.condition);
