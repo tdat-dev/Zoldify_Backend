@@ -297,8 +297,11 @@ async function kiemChay(): Promise<void> {
     const s2 = new ThrottlerStorageRedisService(moKetNoi('thr2'));
     const khoa = `selfcheck-throttler-${Date.now()}`;
 
-    const r1 = await s1.increment(khoa, 60, 100, 0, 'test');
-    const r2 = await s2.increment(khoa, 60, 100, 0, 'test');
+    // `ttl` là mili giây (thư viện dùng PX). Bản trước truyền 60 tưởng là giây:
+    // khoá sống 60ms, máy bận 07/11 thì hết hạn trước lần đếm thứ hai, cổng đỏ
+    // "mỗi bản đếm riêng" dù hai bản vẫn chung bộ đếm.
+    const r1 = await s1.increment(khoa, 60_000, 100, 0, 'test');
+    const r2 = await s2.increment(khoa, 60_000, 100, 0, 'test');
 
     r1.totalHits === 1
       ? ok('storage #1 đếm lần đầu = 1')
