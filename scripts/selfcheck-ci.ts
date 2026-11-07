@@ -163,7 +163,9 @@ function main(): void {
   for (const g of gates) {
     const hit = allScripts.filter(g.khop);
     if (hit.length > 0) {
-      ok(`cổng ${g.ten} — gọi qua: ${hit.map((h) => `npm run ${h}`).join(', ')}`);
+      ok(
+        `cổng ${g.ten} — gọi qua: ${hit.map((h) => `npm run ${h}`).join(', ')}`,
+      );
     } else {
       bad(`THIẾU cổng ${g.ten}`);
     }
@@ -175,12 +177,15 @@ function main(): void {
   console.log('\n\x1b[1m— script được gọi có thật không —\x1b[0m');
   for (const s of allScripts) {
     if (pkg.scripts[s]) ok(`npm run ${s} → có trong package.json`);
-    else bad(`npm run ${s} → KHÔNG có script này trong package.json (gõ nhầm?)`);
+    else
+      bad(`npm run ${s} → KHÔNG có script này trong package.json (gõ nhầm?)`);
   }
 
   // ── 4. Cổng lint không được bị --fix vô hiệu hoá (chốt R1) ────────────────
   console.log('\n\x1b[1m— cổng lint có thật sự chặn không (R1) —\x1b[0m');
-  const lintScripts = allScripts.filter((s) => s === 'lint' || s === 'lint:check');
+  const lintScripts = allScripts.filter(
+    (s) => s === 'lint' || s === 'lint:check',
+  );
   if (lintScripts.length === 0) {
     bad('không có cổng lint nào để kiểm');
   } else {
@@ -234,7 +239,9 @@ function main(): void {
       'ci.yml không khai node-version ở bước setup-node — runner đổi mặc định là CI đổi theo',
     );
   } else if (!fs.existsSync(DEPLOY_PATH)) {
-    ok(`ci.yml pin node-version ${ciNodes.join(', ')} (không có deploy.yml để đối chiếu)`);
+    ok(
+      `ci.yml pin node-version ${ciNodes.join(', ')} (không có deploy.yml để đối chiếu)`,
+    );
   } else {
     const dep = yaml.load(fs.readFileSync(DEPLOY_PATH, 'utf8')) as Workflow;
     const depNodes = [...new Set(nodeVersionsOf(dep))];
@@ -260,7 +267,9 @@ function main(): void {
   if ('pull_request' in on) {
     ok('có on.pull_request — CI chạy trên PR, đúng chỗ nó có tác dụng');
   } else {
-    bad('KHÔNG có on.pull_request — merge vào staging mà không cổng nào chặn trước');
+    bad(
+      'KHÔNG có on.pull_request — merge vào staging mà không cổng nào chặn trước',
+    );
   }
 
   const push = on['push'];
@@ -275,7 +284,10 @@ function main(): void {
   }
 
   if (wf.concurrency) ok('có concurrency — push liên tiếp huỷ lần chạy cũ');
-  else bad('thiếu concurrency — đẩy 3 commit liên tiếp là 3 lần chạy song song vô ích');
+  else
+    bad(
+      'thiếu concurrency — đẩy 3 commit liên tiếp là 3 lần chạy song song vô ích',
+    );
 
   // ── 8. Deploy tự dọn build cache ─────────────────────────────────────
   // VPS chỉ 40 GB mà mỗi lần build thêm 1 đến 1,8 GB cache. `docker image prune`
@@ -301,15 +313,34 @@ function main(): void {
     );
   }
 
+  // ── 9. Job deploy đủ thời gian cho migration chậm ─────────────────────
+  // ssh-action mặc định ngắt sau 10 phút. Ngày 06/11 migration thêm cột vào bảng
+  // products (FULLTEXT, 1 triệu dòng) chạy hơn 10 phút: job bị ngắt, migration vẫn
+  // xong nhưng không ai bật API mới, prod 503 suốt 2 giờ 15 phút.
+  console.log('\n\x1b[1mjob deploy đủ thời gian cho migration\x1b[0m');
+  const thoiHan = /command_timeout:\s*(\d+)m/.exec(buocDeploy);
+  if (thoiHan && Number(thoiHan[1]) >= 30) {
+    ok(`deploy.yml cho job chạy tới ${thoiHan[1]} phút`);
+  } else {
+    bad(
+      'deploy.yml thiếu `command_timeout` từ 30m: migration chậm làm job bị ngắt, ' +
+        'API mới nằm ở trạng thái Created',
+    );
+  }
+
   // ── Tổng kết ──────────────────────────────────────────────────────────────
   console.log('');
   if (failures === 0) {
-    console.log('\x1b[32m\x1b[1m═══ TẤT CẢ PASS ✓ — hợp đồng CI đầy đủ ═══\x1b[0m');
+    console.log(
+      '\x1b[32m\x1b[1m═══ TẤT CẢ PASS ✓ — hợp đồng CI đầy đủ ═══\x1b[0m',
+    );
     console.log(
       '\x1b[2mNghiệm thu cuối vẫn là nhìn CI chạy xanh thật trên PR của nhánh này.\x1b[0m',
     );
   } else {
-    console.log(`\x1b[31m\x1b[1m═══ ${failures} FAIL — xem chi tiết phía trên ═══\x1b[0m`);
+    console.log(
+      `\x1b[31m\x1b[1m═══ ${failures} FAIL — xem chi tiết phía trên ═══\x1b[0m`,
+    );
   }
   process.exit(failures === 0 ? 0 : 1);
 }
