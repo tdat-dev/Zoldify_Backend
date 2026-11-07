@@ -28,6 +28,10 @@ module.exports = {
   // Đánh đổi: suite chậm hơn. Với vài file thì không đáng kể, và test tiền
   // đỏ chập chờn thì tệ hơn nhiều.
   maxWorkers: 1,
+
+  // maxWorkers chỉ gác trong một tiến trình. Hai phiên ở hai worktree được tách
+  // bằng database riêng, xem scripts/jest-db-rieng.ts.
+  globalSetup: '<rootDir>/../scripts/jest-db-rieng.ts',
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, {
     prefix: '<rootDir>/../',
   }),

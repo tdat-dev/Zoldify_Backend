@@ -328,6 +328,17 @@ function main(): void {
     );
   }
 
+  // ── 10. Hai phiên jest không dùng chung database ──
+  // Không có globalSetup thì mọi worktree quay về `zoldify_test`, và beforeAll
+  // của phiên này xoá bảng giữa bài của phiên kia.
+  console.log('\n\x1b[1mjest có database riêng theo worktree không\x1b[0m');
+  const jestCfg = fs.readFileSync(path.join(ROOT, 'jest.config.js'), 'utf8');
+  if (/globalSetup:.*jest-db-rieng/.test(jestCfg)) {
+    ok('jest.config.js đặt database riêng cho từng worktree');
+  } else {
+    bad('jest.config.js thiếu globalSetup jest-db-rieng');
+  }
+
   // ── Tổng kết ──────────────────────────────────────────────────────────────
   console.log('');
   if (failures === 0) {

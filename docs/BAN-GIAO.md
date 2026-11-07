@@ -97,11 +97,12 @@ export TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=3307 TEST_DB_USER=root \
 export TEST_REDIS_URL=redis://127.0.0.1:6380
 ```
 
-### Bốn database, mỗi cái một việc
+### Các database, mỗi cái một việc
 
 | Tên | Dùng để | Dựng bằng |
 |---|---|---|
-| `zoldify_test` | `npm test` (jest tự dựng bảng) | tự động |
+| `zoldify_test` | `npm test` trên CI, hoặc khi khai `TEST_DB_NAME` (jest tự dựng bảng) | tự động |
+| `zoldify_jest_<worktree>` | `npm test` trên máy khi không khai `TEST_DB_NAME`: mỗi worktree một database, hai phiên chạy cùng lúc không xoá bảng của nhau | `scripts/jest-db-rieng.ts` |
 | `zoldify_schema` | `check:index`, `check:race`, `check:boot` | migration |
 | `zoldify_sqlaudit` | `sql:audit`, `loadtest` | migration + `seed` + `seed:products` + `seed:orders` + `sql:audit:seed` |
 | `zoldify_bulk_test` | suite **Epic 0/1/2** (đòi ≥500k đơn) | migration + `seed` + `seed:bulk` (~2 phút) |

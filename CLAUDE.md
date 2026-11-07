@@ -1,7 +1,7 @@
 # Zoldify Backend — đọc trước khi làm gì
 
 > **Đọc `docs/BAN-GIAO.md` trước tiên.** File này chỉ nêu những điều bắt buộc;
-> ngữ cảnh đầy đủ (dựng lại môi trường, bốn database, việc còn lại, các bẫy đã
+> ngữ cảnh đầy đủ (dựng lại môi trường, các database, việc còn lại, các bẫy đã
 > dính) nằm ở đó.
 
 Dự án capstone. Cường (`LMCuong2K1`) là **vai B — Platform · DevOps · Backend
