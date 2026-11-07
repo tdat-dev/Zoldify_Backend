@@ -111,6 +111,40 @@ describe('CategoriesService', () => {
     expect(daLuu[0].name_en).toBeUndefined();
   });
 
+  // ── Slug nằm ngay gốc URL ────────────────────────────────────────────────
+  it.each(['cart', 'shop', 'search', 'dong-ho-i5'])(
+    'slug %s đụng route của web thì không tạo được',
+    async (slug) => {
+      const { service, daLuu } = dungService({ daCoTen: null });
+
+      await expect(service.create({ name: 'X', slug })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(daLuu).toHaveLength(0);
+    },
+  );
+
+  it('slug thường vẫn tạo được', async () => {
+    const { service, daLuu } = dungService({
+      daCoTen: null,
+      theoId: { id: 1, name: 'X' },
+    });
+
+    await service.create({ name: 'X', slug: 'do-gia-dung' });
+    expect(daLuu).toHaveLength(1);
+  });
+
+  it('sửa slug thành route của web cũng bị chặn', async () => {
+    const { service, daCapNhat } = dungService({
+      theoId: { id: 1, name: 'X' },
+    });
+
+    await expect(service.update(1, { slug: 'login' })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(daCapNhat).toHaveLength(0);
+  });
+
   // ── Sửa ──────────────────────────────────────────────────────────────────
   it('không tìm thấy thì không sửa được', async () => {
     const { service, daCapNhat } = dungService({ theoId: null });
