@@ -573,6 +573,10 @@ export function layDongLoi(ra: string): string {
     /vấn đề lint MỚI/,
     /^(Error|TypeError|ReferenceError):/,
     /FAIL src\//,
+    // Tên bài trước chi tiết. Thiếu hai mẫu này thì bài đỏ rồi chạy lại xanh là
+    // mất dấu: 06/11 và 07/11 chỉ còn dòng FAIL, không tìm được gốc.
+    /^\s*● (?!Console)/,
+    /^\s*(Expected|Received):|QueryFailedError|^\s*\w*Error: /,
     /^\s*(ALTER|DROP|CREATE|RENAME) /,
   ];
 
@@ -584,9 +588,9 @@ export function layDongLoi(ra: string): string {
       if (!mau.test(d)) continue;
       const sach = d.trim().slice(0, 200);
       if (sach && !lay.includes(sach)) lay.push(sach);
-      if (lay.length >= 12) break;
+      if (lay.length >= 30) break;
     }
-    if (lay.length >= 12) break;
+    if (lay.length >= 30) break;
   }
   if (lay.length) return lay.join('\n');
 
