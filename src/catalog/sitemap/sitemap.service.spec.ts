@@ -370,6 +370,33 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
     expect(muc.every((m) => m.lastmod === undefined)).toBe(true);
   });
 
+  it('tin đã hết hàng không lên sitemap: bán hết không đổi status sang sold', async () => {
+    await ds.query('UPDATE products SET stock = 0 WHERE id = ?', [idHang[4]]);
+    try {
+      const urls = await svc.urlSanPham(0);
+      expect(urls.some((u) => u.loc.endsWith(`-i${idHang[4]}`))).toBe(false);
+    } finally {
+      await ds.query('UPDATE products SET stock = 5 WHERE id = ?', [idHang[4]]);
+    }
+  });
+
+  it('shop không có tin đang bán thì không lên sitemap: trang đó có noindex', async () => {
+    const u3 = await ds.query<{ insertId: number }>(
+      "INSERT INTO users (full_name, email, password, role) VALUES ('shop rong','r@t.local','x','seller')",
+    );
+    await ds.query(
+      "INSERT INTO shops (name, slug, status, user_id) VALUES ('Rong','shop-rong','active',?)",
+      [u3.insertId],
+    );
+    try {
+      const locs = (await svc.urlTinh()).map((x) => x.loc);
+      expect(locs.some((l) => l.endsWith(`-${u3.insertId}`))).toBe(false);
+    } finally {
+      await ds.query("DELETE FROM shops WHERE slug = 'shop-rong'");
+      await ds.query("DELETE FROM users WHERE email = 'r@t.local'");
+    }
+  });
+
   it('shop thử shop-1m không lên sitemap', async () => {
     const u2 = await ds.query<{ insertId: number }>(
       "INSERT INTO users (full_name, email, password, role) VALUES ('nguoi thu','t@t.local','x','seller')",
