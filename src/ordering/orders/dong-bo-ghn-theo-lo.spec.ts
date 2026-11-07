@@ -217,7 +217,12 @@ describe('ShipmentTrackingService.dongBoTatCa với nhiều lô', () => {
     // Dừng gần đúng hạn, không chạy hết nhóm 200 rồi mới dừng.
     expect(Date.now() - batDau).toBeLessThan(800);
 
-    for (let i = 0; i < 20 && daHoi.length < SO_LO; i++) {
+    // Trần tính theo thời gian chịu được, không theo tốc độ máy: 20 lượt đòi
+    // trung bình 22 lô mỗi lượt, máy bận 07/11 chỉ được 0-36 lô (có lượt 0 vì
+    // câu SELECT ăn hết 200ms) nên đỏ 2/3 lần dù không lô nào bị bỏ sót. 200
+    // lượt x 200ms = 40 giây, còn dưới `jest.setTimeout`; con trỏ kẹt thật thì
+    // vẫn hết trần mà chưa đủ 450 lô và đỏ ở dưới.
+    for (let i = 0; i < 200 && daHoi.length < SO_LO; i++) {
       await svc.dongBoTatCa();
     }
     // Lượt cuối có thể chạm đáy bảng rồi quay vòng hỏi lại từ đầu (vòng mới,
