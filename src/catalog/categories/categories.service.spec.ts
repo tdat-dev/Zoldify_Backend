@@ -112,7 +112,7 @@ describe('CategoriesService', () => {
   });
 
   // ── Slug nằm ngay gốc URL ────────────────────────────────────────────────
-  it.each(['cart', 'shop', 'search', 'dong-ho-i5'])(
+  it.each(['cart', 'Cart', 'shop', 'search', 'uploads', 'dong-ho-i5'])(
     'slug %s đụng route của web thì không tạo được',
     async (slug) => {
       const { service, daLuu } = dungService({ daCoTen: null });
