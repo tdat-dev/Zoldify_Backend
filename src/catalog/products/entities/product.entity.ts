@@ -36,6 +36,8 @@ export enum ProductStatus {
 // thì MySQL gom ~80% bảng (hàng active) rồi filesort để lấy 20 dòng. Số đo
 // trước/sau: scripts/explain-1m.ts. Migration 1788500000000.
 @Index('idx_status_created', ['status', 'created_at'])
+// Tin thật của trang đích, lý do ghi ở migration 1789200000000.
+@Index('idx_province_status', ['province_slug', 'status'])
 @Index('idx_status_price', ['status', 'price'])
 // Đếm có trần theo khoảng giá chạy trọn trong index, không về bảng đọc deleted_at.
 @Index('idx_status_deleted_price', ['status', 'deleted_at', 'price'])

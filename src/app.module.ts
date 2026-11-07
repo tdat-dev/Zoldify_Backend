@@ -35,6 +35,7 @@ import { EscrowsModule } from '@money/escrows/escrows.module';
 import { PayosModule } from '@money/payos/payos.module';
 import { WalletsModule } from '@money/wallets/wallets.module';
 import { SitemapModule } from '@catalog/sitemap/sitemap.module';
+import { LandingModule } from '@catalog/landing/landing.module';
 import { HealthModule } from '@ops/health/health.module';
 import { RequestIdMiddleware } from '@common/request-id.middleware';
 import { AdminModule } from '@ops/admin/admin.module';
@@ -171,6 +172,7 @@ import { RecommendationsModule } from '@catalog/recommendations/recommendations.
     PayosModule,
     WalletsModule,
     SitemapModule,
+    LandingModule,
     HealthModule,
     AdminModule,
     // Người dùng tự xoá tài khoản: DELETE /auth/account (D-14, Google Play).

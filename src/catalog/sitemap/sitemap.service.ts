@@ -9,6 +9,7 @@ import { Category } from '@catalog/categories/entities/category.entity';
 import { Shop, ShopStatus } from '@catalog/shop/entities/shop.entity';
 import { siteUrlChinh } from '@common/site-url';
 import { toSlug } from '@common/slug';
+import { LandingService } from '@catalog/landing/landing.service';
 
 /**
  * Số sản phẩm tối đa trong MỘT file sitemap con.
@@ -134,6 +135,9 @@ export class SitemapService {
     // có tác dụng.
     @Optional()
     private readonly kichThuocLo: number = KICH_THUOC_LO,
+    // @Optional để bài kiểm dựng tay với bốn tham số như cũ.
+    @Optional()
+    private readonly landing?: LandingService,
   ) {
     // KHÔNG đọc thẳng process.env.SITE_URL: trên staging biến đó là một DANH
     // SÁCH ngăn bởi dấu phẩy (main.ts dùng nó cho CORS). Đọc thô thì mọi <loc>
@@ -232,6 +236,10 @@ export class SitemapService {
         lastmod: ngay(s.updated_at),
         priority: '0.7',
       });
+    }
+
+    for (const p of (await this.landing?.duongDan()) ?? []) {
+      urls.push({ loc: `${this.siteUrl}${p}`, priority: '0.7' });
     }
 
     return urls;
