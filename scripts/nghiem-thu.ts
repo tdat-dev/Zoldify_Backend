@@ -565,7 +565,7 @@ async function main(): Promise<void> {
  * Mẫu `^\s*(ALTER|DROP|CREATE|RENAME) ` có mặt vì đó đúng hình dạng đầu ra của
  * `check:drift`, cổng duy nhất kể lỗi bằng SQL chứ không bằng dòng `✗ FAIL`.
  */
-function layDongLoi(ra: string): string {
+export function layDongLoi(ra: string): string {
   const dong = ra.split('\n').map((d) => d.trimEnd());
   const uuTien = [
     /✗ FAIL/,
@@ -682,7 +682,11 @@ function ghiFile(
   fs.writeFileSync(FILE_KET_QUA, d.join('\n') + '\n', 'utf8');
 }
 
-main().catch((e: unknown) => {
-  console.error(`${R}Nghiệm thu chết giữa chừng:${X}`, e);
-  process.exit(2);
-});
+// Chỉ chạy khi gọi thẳng file này: bài kiểm import `layDongLoi` không được kéo
+// theo cả 18 cổng.
+if (require.main === module) {
+  main().catch((e: unknown) => {
+    console.error(`${R}Nghiệm thu chết giữa chừng:${X}`, e);
+    process.exit(2);
+  });
+}
