@@ -1,5 +1,6 @@
 import { DataSource, Logger as TypeOrmLogger } from 'typeorm';
 import { SitemapService } from './sitemap.service';
+import { LandingService } from '@catalog/landing/landing.service';
 import {
   Product,
   ProductStatus,
@@ -395,6 +396,18 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
       await ds.query("DELETE FROM shops WHERE slug = 'shop-rong'");
       await ds.query("DELETE FROM users WHERE email = 'r@t.local'");
     }
+  });
+
+  it('có trang đích đủ điều kiện thì nộp vào file tĩnh', async () => {
+    const co = new SitemapService(
+      ds.getRepository(Product),
+      ds.getRepository(Category),
+      ds.getRepository(Shop),
+      LO,
+      { duongDan: async () => ['/category/do-an/apple'] } as unknown as LandingService,
+    );
+    const locs = (await co.urlTinh()).map((x) => x.loc);
+    expect(locs).toContain(`${SITE_URL}/category/do-an/apple`);
   });
 
   it('shop thử shop-1m không lên sitemap', async () => {
