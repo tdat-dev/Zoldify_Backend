@@ -12,6 +12,7 @@ import {
 import { Category } from '@catalog/categories/entities/category.entity';
 import { User } from '@identity/users/entities/user.entity';
 import { ApiHideProperty } from '@nestjs/swagger';
+import type { DoBen } from '../do-ben';
 
 // Định nghĩa trạng thái sản phẩm
 export enum ProductStatus {
@@ -136,6 +137,12 @@ export class Product {
   // Người bán tự kể tình trạng thật: xước ở đâu, pin còn bao nhiêu, thiếu gì.
   @Column({ type: 'varchar', length: 500, nullable: true })
   condition_note: string | null;
+
+  // Thẻ Độ bền (pin, đã dùng, bảo hành...), xem `do-ben.ts`. JSON chứ không mỗi
+  // trường một cột: mỗi ALTER trên bảng này dựng lại 1 triệu dòng (~3 phút
+  // trên prod, migration 1789100000000), thêm trường sau không phải ALTER nữa.
+  @Column({ type: 'json', nullable: true })
+  condition_details: DoBen | null;
 
   // Chép từ địa chỉ lấy hàng của shop lúc đăng, lý do ghi ở migration
   // 1789100000000. Dữ liệu thử sp-1m-* để trống.

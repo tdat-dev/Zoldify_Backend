@@ -23,6 +23,8 @@ import { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
 import { formatMoney } from '@common/money';
 import { toSlug } from '@common/slug';
+import { Category } from '@catalog/categories/entities/category.entity';
+import { chuanHoaDoBen, DANH_MUC_CO_PIN, type DoBen } from './do-ben';
 import { normalizePagination } from '@common/dto/pagination.dto';
 import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
@@ -99,11 +101,21 @@ interface BoLocSanPham {
 }
 
 /**
- * Thang tình trạng chuẩn, cùng thang với web (lib/product-condition.ts). Bản app
- * đang chạy còn gửi `used` và `refurbished`, không có cập nhật bắt buộc nên phải
- * đổi về thang chuẩn chứ không từ chối. `undefined` giữ nguyên để entity áp mặc định.
+ * Thang tình trạng chuẩn, cùng thang với web (lib/product-condition.ts): Mới
+ * 100%, Như mới 99%, Tốt 95%, Khá 85-90%, Cũ 70-80%, Tân trang. Bản 06/11 chỉ
+ * có 4 mức đầu nên ép `used` và `refurbished` của app cũ về `good`; nay hai
+ * mức đó có thật, giữ nguyên. Giá trị lạ vẫn đổi về `good` chứ không từ chối,
+ * vì app Android không có cập nhật bắt buộc. `undefined` giữ nguyên để entity
+ * áp mặc định.
  */
-const TINH_TRANG_CHUAN = ['new', 'like_new', 'good', 'fair'];
+const TINH_TRANG_CHUAN = [
+  'new',
+  'like_new',
+  'good',
+  'fair',
+  'used',
+  'refurbished',
+];
 function chuanHoaTinhTrang(v: string | undefined): string | undefined {
   if (v === undefined) return undefined;
   return TINH_TRANG_CHUAN.includes(v) ? v : 'good';
@@ -233,6 +245,29 @@ export class ProductsService {
    * người bán không giao được đúng. Chặn ngay từ lúc đăng, giống Shopee bắt khai
    * địa chỉ lấy hàng trước khi mở bán. Kiểm ĐÚNG 6 trường mà createOrder GHN cần.
    */
+  /**
+   * Pin chỉ khai được ở hàng có pin (`DANH_MUC_CO_PIN`). Áo khai "pin 90%" là
+   * dữ liệu rác lên trang công khai, và web lẫn app đã ẩn ô này, nên tới được
+   * đây chỉ có gọi thẳng API hoặc client lỗi.
+   */
+  private async assertPinHopLe(
+    doBen: DoBen | null,
+    categoryId: number | undefined,
+  ): Promise<void> {
+    if (doBen?.battery_health === undefined) return;
+    const cat = categoryId
+      ? await this.productRepository.manager.findOne(Category, {
+          where: { id: categoryId },
+          select: { id: true, slug: true },
+        })
+      : null;
+    if (!cat || !DANH_MUC_CO_PIN.includes(cat.slug)) {
+      throw new BadRequestException(
+        'Loại hàng này không có pin, bỏ trống ô pin rồi lưu lại',
+      );
+    }
+  }
+
   private async assertSellerHasPickup(userId: number): Promise<Shop> {
     const shop = await this.shopRepository.findOne({
       where: { user: { id: userId } },
@@ -510,12 +545,16 @@ export class ProductsService {
       stock,
       condition,
       condition_note,
+      condition_details,
       is_freeship,
     } = createProductDto;
+    const doBen = chuanHoaDoBen(condition_details);
+    await this.assertPinHopLe(doBen, category_id);
     const firstImage = image || (images?.length ? images[0] : undefined);
     const newProduct = this.productRepository.create({
       condition: chuanHoaTinhTrang(condition),
       condition_note,
+      condition_details: doBen,
       province_name: shop.pickup_province_name,
       province_slug: toSlug(shop.pickup_province_name),
       district_name: shop.pickup_district_name,
@@ -1248,6 +1287,11 @@ export class ProductsService {
     const updateData: QueryDeepPartialEntity<Product> = { ...restDto };
     if (restDto.condition !== undefined) {
       updateData.condition = chuanHoaTinhTrang(restDto.condition);
+    }
+    if (restDto.condition_details !== undefined) {
+      const doBen = chuanHoaDoBen(restDto.condition_details);
+      await this.assertPinHopLe(doBen, product.category?.id);
+      updateData.condition_details = doBen;
     }
     if (category_id) {
       updateData.category = { id: category_id };

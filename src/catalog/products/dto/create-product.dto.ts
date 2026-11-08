@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   IsInt,
   IsNotEmpty,
@@ -7,7 +8,9 @@ import {
   Matches,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { ConditionDetailsDto } from './condition-details.dto';
 
 export class CreateProductDto {
   @IsNotEmpty({ message: 'Tên sản phẩm không được để trống' })
@@ -80,7 +83,7 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsString()
-  condition?: string; // new | like_new | good | fair
+  condition?: string; // new | like_new | good | fair | used | refurbished
 
   /**
    * Tuỳ chọn ở đây dù web bắt buộc khi hàng không mới: app Android không có cập
@@ -90,6 +93,15 @@ export class CreateProductDto {
   @IsString({ message: 'Ghi chú tình trạng phải là chuỗi' })
   @MaxLength(500, { message: 'Ghi chú tình trạng tối đa 500 ký tự' })
   condition_note?: string;
+
+  /**
+   * Thẻ Độ bền, xem `../do-ben.ts`. `null` ở PATCH là xoá thẻ; không gửi là giữ
+   * nguyên, để app cũ sửa tin không xoá mất thẻ người bán đã khai trên web.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ConditionDetailsDto)
+  condition_details?: ConditionDetailsDto | null;
 
   @IsOptional()
   is_freeship?: boolean;
