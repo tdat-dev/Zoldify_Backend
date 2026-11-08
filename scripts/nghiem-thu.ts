@@ -50,7 +50,7 @@ const GOC = path.resolve(__dirname, '..');
 const FILE_KET_QUA = path.join(GOC, 'nghiem-thu.md');
 
 /** Mỗi cổng chạy tối đa 10 phút. Lâu hơn thế là treo, không phải chậm. */
-const HAN_MOI_CONG_MS = 10 * 60 * 1000;
+export const HAN_MOI_CONG_MS = 10 * 60 * 1000;
 
 type TrangThai = 'PASS' | 'FAIL' | 'BO_QUA';
 
@@ -74,12 +74,15 @@ function sach(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-function chay(lenh: string): { ma: number | null; ra: string } {
+function chay(
+  lenh: string,
+  hanMs = HAN_MOI_CONG_MS,
+): { ma: number | null; ra: string } {
   const r = spawnSync(lenh, {
     shell: true,
     cwd: GOC,
     encoding: 'utf8',
-    timeout: HAN_MOI_CONG_MS,
+    timeout: hanMs,
     maxBuffer: 64 * 1024 * 1024,
   });
   return {
@@ -198,6 +201,8 @@ function soDoTuPassFail(ra: string): string {
 interface Cong {
   ten: string;
   lenh: string;
+  /** Hạn riêng, ms. Bỏ trống là `HAN_MOI_CONG_MS`. */
+  hanMs?: number;
   /** Trả về null nếu đủ điều kiện, hoặc lý do bỏ qua. */
   dieuKien?: () => Promise<string | null>;
   soDo?: (ra: string) => string;
@@ -308,13 +313,17 @@ async function canDbDev(): Promise<string | null> {
   return null;
 }
 
-const CONG: Cong[] = [
+export const CONG: Cong[] = [
   { ten: 'build', lenh: 'npm run build' },
   { ten: 'lint:check', lenh: 'npm run lint:check', soDo: soDoLint },
   { ten: 'openapi:check', lenh: 'npm run openapi:check', soDo: soDoOpenapi },
   {
     ten: 'test',
     lenh: 'npm test',
+    // Bộ test không treo mà dài: 434 giây khi máy rảnh, 955 giây khi máy bận
+    // (07/11 và 08/11 hai lần bị cắt ở 10 phút dù không bài nào đỏ). 25 phút
+    // vẫn bắt được treo thật. Bộ test còn dài thêm thì đo lại rồi nâng số này.
+    hanMs: 25 * 60 * 1000,
     dieuKien: canMySQL,
     soDo: soDoTest,
   },
@@ -497,7 +506,7 @@ async function main(): Promise<void> {
 
     process.stdout.write(`  ${D}… đang chạy ${c.ten}${X}`);
     const batDau = Date.now();
-    const r = chay(c.lenh);
+    const r = chay(c.lenh, c.hanMs);
     const giay = Math.round((Date.now() - batDau) / 100) / 10;
     const soDo = c.soDo ? c.soDo(r.ra) : '';
     const dat = r.ma === 0;
