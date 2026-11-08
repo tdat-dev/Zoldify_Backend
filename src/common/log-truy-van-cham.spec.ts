@@ -88,6 +88,10 @@ describe('DataSource thật với tuyChonTruyVanCham', () => {
     });
     try {
       await ds.initialize();
+      // initialize() tự chạy `SELECT version()` và câu đó cũng đi qua logger.
+      // Máy bận (CPU 80-100%) thì nó mất 143 ms, vượt ngưỡng 100 ms, nên bài
+      // đỏ ở dòng dưới dù logger đúng. Bài chỉ đo hai câu SLEEP của nó.
+      warn.mockClear();
       await ds.query('SELECT SLEEP(0.01)');
       expect(warn).not.toHaveBeenCalled();
       await ds.query('SELECT SLEEP(0.3)');
