@@ -164,8 +164,7 @@ describe('ProductsService: địa điểm và tình trạng', () => {
   });
 
   it.each([
-    ['used', 'good'],
-    ['refurbished', 'good'],
+    // used, refurbished: thang 6 mức giữ nguyên, xem do-ben.spec.ts.
     ['linh tinh', 'good'],
     ['like_new', 'like_new'],
     ['fair', 'fair'],
@@ -175,7 +174,7 @@ describe('ProductsService: địa điểm và tình trạng', () => {
     expect(p.condition).toBe(ra);
   });
 
-  it('sửa tin: tình trạng lạ được đổi, địa điểm giữ nguyên', async () => {
+  it('sửa tin: tình trạng cũ giữ nguyên, địa điểm giữ nguyên', async () => {
     const p = await dang({ condition: 'good' });
     await ds.query(
       "UPDATE shops SET pickup_province_name = 'Hà Nội' WHERE user_id = ?",
@@ -187,7 +186,7 @@ describe('ProductsService: địa điểm và tình trạng', () => {
         { condition: 'used', condition_note: 'Pin yếu' },
         nguoiBan,
       );
-      expect(sua.condition).toBe('good');
+      expect(sua.condition).toBe('used');
       expect(sua.condition_note).toBe('Pin yếu');
       expect(sua.province_name).toBe('Hồ Chí Minh');
     } finally {
