@@ -8234,6 +8234,10 @@
             "type": "string",
             "nullable": true
           },
+          "condition_details": {
+            "type": "object",
+            "nullable": true
+          },
           "province_name": {
             "type": "string",
             "nullable": true
@@ -8304,6 +8308,7 @@
           "images",
           "condition",
           "condition_note",
+          "condition_details",
           "province_name",
           "province_slug",
           "district_name",
@@ -8359,6 +8364,49 @@
         "type": "object",
         "properties": {}
       },
+      "ConditionDetailsDto": {
+        "type": "object",
+        "properties": {
+          "battery_health": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "used_months": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 600
+          },
+          "warranty_months": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "defects": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "accessories": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          "repaired": {
+            "type": "boolean"
+          },
+          "repair_note": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
       "CreateProductDto": {
         "type": "object",
         "properties": {
@@ -8410,6 +8458,16 @@
           "condition_note": {
             "type": "string",
             "maxLength": 500
+          },
+          "condition_details": {
+            "nullable": true,
+            "description": "Thẻ Độ bền, xem `../do-ben.ts`. `null` ở PATCH là xoá thẻ; không gửi là giữ\nnguyên, để app cũ sửa tin không xoá mất thẻ người bán đã khai trên web.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConditionDetailsDto"
+              }
+            ]
           },
           "is_freeship": {
             "type": "boolean"
