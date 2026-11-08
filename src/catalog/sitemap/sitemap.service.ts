@@ -33,7 +33,7 @@ export const KICH_THUOC_LO = 5000;
  */
 function productPath(p: { id: number; name?: string; slug?: string }): string {
   const slug = toSlug(p.slug || p.name || '');
-  return slug ? `/product/${slug}-i${p.id}` : `/product/${p.id}`;
+  return slug ? `/${slug}-i${p.id}` : `/product/${p.id}`;
 }
 
 function shopPath(u: { id: number; full_name?: string }): string {
@@ -210,8 +210,10 @@ export class SitemapService {
       select: ['id', 'slug', 'updated_at'],
     });
     for (const c of categories) {
+      // Web tìm danh mục theo slug, không có slug thì không có trang để nộp.
+      if (!c.slug) continue;
       urls.push({
-        loc: `${this.siteUrl}/category/${c.slug || c.id}`,
+        loc: `${this.siteUrl}/${c.slug}`,
         lastmod: ngay(c.updated_at),
         priority: '0.6',
       });

@@ -230,7 +230,7 @@ export class LandingService {
     ]);
     return danhMuc.flatMap((c) =>
       this.dungBoLoc(tin.filter((t) => t.category_id === c.id)).map(
-        (n) => `/category/${c.slug}/${n.boLoc.slug}`,
+        (n) => `/${c.slug}/${n.boLoc.slug}`,
       ),
     );
   }

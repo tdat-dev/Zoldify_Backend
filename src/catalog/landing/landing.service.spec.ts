@@ -183,8 +183,8 @@ describe('LandingService', () => {
 
   it('liệt kê đường dẫn cho sitemap', async () => {
     const ds2 = await svc.duongDan();
-    expect(ds2).toContain('/category/dien-thoai-ld/apple');
-    expect(ds2).toContain('/category/dien-thoai-ld/tai-ha-noi');
+    expect(ds2).toContain('/dien-thoai-ld/apple');
+    expect(ds2).toContain('/dien-thoai-ld/tai-ha-noi');
     expect(ds2.some((d) => d.endsWith('/nokia'))).toBe(false);
   });
 });

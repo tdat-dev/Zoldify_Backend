@@ -9,6 +9,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from '@nestjs/cache-manager';
 import { docNho, ghiNho, nhoNgan } from '@common/nho-ngan';
 import { normalizePagination } from '@common/dto/pagination.dto';
+import { slugDungRouteWeb } from './slug-danh-muc';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -49,8 +50,17 @@ export class CategoriesService {
   private async moiDanhSach(): Promise<void> {
     await ghiNho(this.cache, DANH_MUC_DOI, Date.now(), DANH_MUC_DOI_TTL);
   }
+  private chanSlugDungRoute(slug?: string): void {
+    if (slug && slugDungRouteWeb(slug)) {
+      throw new BadRequestException(
+        `Slug "${slug}" trùng đường dẫn của web, hãy chọn slug khác!`,
+      );
+    }
+  }
+
   async create(createCategoryDto: CreateCategoryDto) {
     const { name } = createCategoryDto;
+    this.chanSlugDungRoute(createCategoryDto.slug);
     const isName = await this.categoryRepository.findOne({ where: { name } });
     if (isName) {
       throw new BadRequestException(`Danh mục ${name} đã tồn tại!`);
@@ -162,6 +172,7 @@ export class CategoriesService {
     if (!isExists) {
       throw new BadRequestException(`Không tìm thấy danh mục cần cập nhật`);
     }
+    this.chanSlugDungRoute(updateCategoryDto.slug);
     const patch: Partial<Category> = { ...updateCategoryDto };
     // Đổi tên thì dịch lại tên tiếng Anh. Không đổi tên -> giữ nguyên name_en.
     if (updateCategoryDto.name && updateCategoryDto.name !== isExists.name) {

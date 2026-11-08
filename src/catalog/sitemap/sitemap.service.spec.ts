@@ -254,8 +254,8 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
   it('URL sản phẩm khớp web: `<slug>-i<id>` — đừng làm lại lỗi 404', async () => {
     const urls = await svc.urlSanPham(0);
     const dau = urls[0].loc;
-    expect(dau).toMatch(/\/product\/[a-z0-9-]+-i\d+$/);
-    expect(dau).toContain('/product/san-pham-');
+    expect(dau).toMatch(/\/san-pham-[a-z0-9-]*-i\d+$/);
+    expect(dau).not.toContain('/product/');
   });
 
   it('file tĩnh có trang chủ, danh mục và shop, không có trang tìm kiếm', async () => {
@@ -264,10 +264,15 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
     expect(locs.some((l) => l.endsWith('/'))).toBe(true);
     // /search có noindex. Nộp nó trong sitemap là vừa mời vừa đuổi Google.
     expect(locs.some((l) => l.endsWith('/search'))).toBe(false);
-    expect(locs.some((l) => l.includes('/category/'))).toBe(true);
+    const [c] = await ds.query<Array<{ slug: string }>>(
+      'SELECT slug FROM categories WHERE slug IS NOT NULL LIMIT 1',
+    );
+    expect(locs).toContain(`${SITE_URL}/${c.slug}`);
+    // Nộp URL cũ thì mỗi trang Google phải đi qua một lần chuyển hướng.
+    expect(locs.some((l) => l.includes('/category/'))).toBe(false);
     expect(locs.some((l) => l.includes('/shop/'))).toBe(true);
-    // Không được lẫn sản phẩm vào đây — đó là chỗ khiến file tĩnh phình lại.
-    expect(locs.some((l) => l.includes('/product/'))).toBe(false);
+    // Không được lẫn sản phẩm vào đây: đó là chỗ khiến file tĩnh phình lại.
+    expect(locs.some((l) => /-i\d+$/.test(l))).toBe(false);
   });
 
   it('sản phẩm đã bán thì không lên sitemap', async () => {
@@ -306,7 +311,7 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
     try {
       const locs = (await svc.urlSanPham(0)).map((x) => x.loc);
       expect(locs).toContain(
-        `${SITE_URL}/product/noi-com-dien-15l-i${idHang[2]}`,
+        `${SITE_URL}/noi-com-dien-15l-i${idHang[2]}`,
       );
     } finally {
       await ds.query('UPDATE products SET slug = ?, name = ? WHERE id = ?', [
@@ -404,10 +409,10 @@ describe('SitemapService — chia lô, không nạp cả bảng', () => {
       ds.getRepository(Category),
       ds.getRepository(Shop),
       LO,
-      { duongDan: async () => ['/category/do-an/apple'] } as unknown as LandingService,
+      { duongDan: async () => ['/do-an/apple'] } as unknown as LandingService,
     );
     const locs = (await co.urlTinh()).map((x) => x.loc);
-    expect(locs).toContain(`${SITE_URL}/category/do-an/apple`);
+    expect(locs).toContain(`${SITE_URL}/do-an/apple`);
   });
 
   it('shop thử shop-1m không lên sitemap', async () => {
