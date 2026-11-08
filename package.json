@@ -45,6 +45,7 @@
     "seed:demo": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-demo-catalog.ts",
     "seed:orders": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-orders.ts",
     "seed:products": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-1000-products.ts",
+    "seed:do-ben": "node -r ts-node/register -r tsconfig-paths/register scripts/dien-do-ben-seed.ts",
     "seed:bulk": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-bulk.ts",
     "check": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-all.ts",
     "nghiem-thu": "node -r ts-node/register -r tsconfig-paths/register scripts/nghiem-thu.ts",
