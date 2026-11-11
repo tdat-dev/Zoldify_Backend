@@ -323,6 +323,8 @@ async function main(): Promise<void> {
   const p95S = p95(msSanPham);
   kiem(p95S < 500, `G2 /products p95 = ${p95S.toFixed(1)} ms (< 500 ms, ${msSanPham.length} mẫu)`);
 
+  await nhomPhienVaQuyen();
+
   // -------------------------------------------------------------------------
   muc('H. Throttler đếm CHUNG qua Redis (đặt cuối — cố ý tự dính 429)');
   // Bộ đếm `short` là 10/1s. Đếm chung thì 24 request dồn một lúc chỉ ≤ 10
@@ -342,6 +344,174 @@ async function main(): Promise<void> {
     `H2 lọt ${lot}/24, bị 429 ${chan}/24 (trần chung 10/s)`,
     'lọt > 10 nghĩa là mỗi bản api đếm riêng — throttler không đi qua Redis',
   );
+}
+
+// ---------------------------------------------------------------------------
+// I + J. Phiên đăng nhập và phân quyền — dùng ba tài khoản của `npm run seed`
+// ---------------------------------------------------------------------------
+//
+// NGÂN SÁCH ĐĂNG NHẬP. `/auth/login` có trần riêng: 3/1s và 10/60s mỗi IP
+// (auth.controller.ts). Một lượt chạy tốn 8 lần: E4, E5, năm lần đăng nhập
+// đúng (buyer ×3, seller, admin) và I2 sai mật khẩu. Chạy lại trong vòng một
+// phút là chạm trần → 429. Đó KHÔNG phải lỗi cụm, nên `dangNhap` báo riêng
+// trường hợp đó thay vì để các ca phía sau đỏ dây chuyền.
+const MAT_KHAU_SEED = process.env.SUC_KHOE_MAT_KHAU || '123456';
+
+async function dangNhap(email: string, matKhau = MAT_KHAU_SEED): Promise<PhanHoi> {
+  // Trần 3/1s: giãn hẳn 400 ms giữa hai lần đăng nhập, chứ 300 ms thì bốn lần
+  // liền nhau lọt vào cùng một cửa sổ 1 giây.
+  await ngu(400);
+  return goi('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: matKhau }),
+  });
+}
+const bearer = (t: string) => ({ headers: { Authorization: `Bearer ${t}` } });
+
+async function nhomPhienVaQuyen(): Promise<void> {
+  muc('I. Đăng nhập và phiên');
+  const mua = await dangNhap('buyer@zoldify.com');
+  if (mua.status === 429) {
+    bad('I0 /auth/login trả 429', 'chạm trần đăng nhập 10/phút của IP này — chờ 60 giây rồi chạy lại; không phải lỗi cụm');
+    return;
+  }
+  const tkMua: string | undefined = mua.body?.data?.access_token;
+  kiem(
+    mua.status === 201 && !!tkMua && !!mua.body?.data?.refresh_token && mua.body?.data?.user?.role === 'buyer',
+    `I1 buyer đăng nhập → 201, có access + refresh token, role buyer (${mua.status})`,
+    mua.status === 401 ? 'tài khoản seed không có — chạy `npm run seed` trên database của cụm' : mua.text.slice(0, 200),
+  );
+  if (!tkMua) return;
+
+  const sai = await dangNhap('buyer@zoldify.com', 'sai-mat-khau-' + Date.now());
+  kiem(sai.status === 401 && !sai.body?.data?.access_token, `I2 sai mật khẩu → 401, không có token (${sai.status})`);
+
+  const hs = await goi('/api/v1/auth/profile', bearer(tkMua));
+  kiem(hs.status === 200 && hs.body?.data?.email === 'buyer@zoldify.com', `I3 /auth/profile với token → 200, đúng email (${hs.status})`);
+  // Hồ sơ đi thẳng về app. Lộ băm mật khẩu ở đây thì ai mượn được điện thoại
+  // là có thứ để bẻ ngoại tuyến.
+  const loKhoa = ['password', 'refresh_token', 'refresh_hash', 'token_version'].filter((k) =>
+    hs.text.includes(`"${k}"`),
+  );
+  kiem(loKhoa.length === 0, 'I4 hồ sơ không lộ password / refresh token / token_version', `lộ: ${loKhoa.join(', ')}`);
+
+  // Phiên RIÊNG cho I5–I7: đăng xuất ở đây không được làm chết token mà nhóm
+  // J còn dùng. Đây cũng là cách kiểm luôn "đăng xuất máy này không đá máy kia".
+  const phien2 = await dangNhap('buyer@zoldify.com');
+  const rf: string | undefined = phien2.body?.data?.refresh_token;
+  // `iat` của JWT tính theo GIÂY. Lượt chạy đầu (11/11) gọi refresh 300 ms sau
+  // đăng nhập: payload trùng, `iat` trùng, nên token "mới" giống từng byte
+  // token cũ và I5 báo "chưa xoay" sai. Chờ qua mốc giây rồi mới gọi.
+  await ngu(1100);
+  const lm = await goi('/api/v1/auth/refresh', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ refreshToken: rf }),
+  });
+  const tkMoi: string | undefined = lm.body?.data?.access_token;
+  const rfMoi: string | undefined = lm.body?.data?.refresh_token;
+  const dungDuoc = tkMoi ? (await goi('/api/v1/auth/profile', bearer(tkMoi))).status : 0;
+  kiem(
+    lm.status === 201 && !!tkMoi && rfMoi !== rf && dungDuoc === 200,
+    `I5 refresh → cặp token mới, refresh đã xoay, access mới dùng được (${lm.status}/${dungDuoc})`,
+  );
+  const ra = await goi('/api/v1/auth/logout', { method: 'POST', ...bearer(tkMoi ?? '') });
+  const sauRa = await goi('/api/v1/auth/profile', bearer(tkMoi ?? ''));
+  const rfSauRa = await goi('/api/v1/auth/refresh', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ refreshToken: rfMoi }),
+  });
+  kiem(
+    ra.status === 201 &&
+      sauRa.status === 401 &&
+      rfSauRa.status >= 400 &&
+      rfSauRa.status < 500 &&
+      !rfSauRa.body?.data?.access_token,
+    `I6 đăng xuất → access cũ 401, refresh cũ bị từ chối (logout ${ra.status} · access ${sauRa.status} · refresh ${rfSauRa.status})`,
+    'phiên đã đăng xuất mà token vẫn dùng được nghĩa là thu hồi phiên không có tác dụng',
+  );
+  const vanSong = await goi('/api/v1/auth/profile', bearer(tkMua));
+  kiem(vanSong.status === 200, `I7 đăng xuất phiên này KHÔNG đá phiên khác của cùng người (${vanSong.status})`);
+
+  // -------------------------------------------------------------------------
+  muc('J. Phân quyền (buyer · seller · admin)');
+  // Token buyer MỚI cho nhóm J. Lượt 11/11 dùng lại token của I1, I7 đá phiên
+  // đó, và J1/J3/J6/J7 cùng ra 401 — đỏ dây chuyền che mất câu hỏi thật của
+  // nhóm này là "có bị chặn ĐÚNG MÃ 403 không".
+  const tkMuaJ: string = (await dangNhap('buyer@zoldify.com')).body?.data?.access_token ?? tkMua;
+  const tkBan: string | undefined = (await dangNhap('seller@zoldify.com')).body?.data?.access_token;
+  const tkAdmin: string | undefined = (await dangNhap('admin@zoldify.com')).body?.data?.access_token;
+  if (!tkBan || !tkAdmin) {
+    bad('J0 không đăng nhập được seller/admin seed', 'chạy `npm run seed` trên database của cụm');
+    return;
+  }
+  const ma = async (duong: string, tk: string, init: RequestInit = {}) =>
+    (await goi(duong, { ...init, headers: { ...(init.headers as object), Authorization: `Bearer ${tk}` } })).status;
+
+  const j1 = await ma('/api/v1/admin/stats', tkMuaJ);
+  kiem(j1 === 403, `J1 buyer → /admin/stats bị chặn 403 (${j1})`);
+  const j2 = await ma('/api/v1/admin/users', tkBan);
+  kiem(j2 === 403, `J2 seller → /admin/users bị chặn 403 (${j2})`);
+  const j3 = await ma('/api/v1/users', tkMuaJ);
+  kiem(j3 === 403, `J3 buyer → /users (danh sách mọi người dùng) bị chặn 403 (${j3})`);
+  const j4 = await ma('/api/v1/admin/stats', tkAdmin);
+  kiem(j4 === 200, `J4 admin → /admin/stats → 200 (${j4})`);
+  const dsNd = await goi('/api/v1/users', bearer(tkAdmin));
+  kiem(
+    dsNd.status === 200 && !dsNd.text.includes('"password"'),
+    `J5 admin → /users → 200 và KHÔNG kèm băm mật khẩu (${dsNd.status})`,
+  );
+
+  // Leo quyền qua sửa hồ sơ: controller chỉ nhặt 4 trường đã nêu tên, nên
+  // `role` phải bị bỏ qua. Body chỉ có `role` → không trường nào được ghi,
+  // nên ca này an toàn chạy trên dữ liệu thật kể cả khi nó đỏ.
+  await goi('/api/v1/auth/profile', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${tkMuaJ}` },
+    body: JSON.stringify({ role: 'admin' }),
+  });
+  const sauSua = await goi('/api/v1/auth/profile', bearer(tkMuaJ));
+  const j6 = await ma('/api/v1/admin/stats', tkMuaJ);
+  kiem(
+    sauSua.body?.data?.role === 'buyer' && j6 === 403,
+    `J6 PATCH /auth/profile {"role":"admin"} không leo quyền (role ${sauSua.body?.data?.role}, /admin ${j6})`,
+  );
+
+  // Body rỗng: nếu kiểm chủ sở hữu hỏng thì cũng không có gì bị ghi.
+  const sp = (await goi('/api/v1/products?pageSize=1')).body?.data?.result?.[0];
+  if (sp?.id) {
+    const j7 = await ma(`/api/v1/products/${sp.id}`, tkMuaJ, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    kiem(j7 === 403, `J7 buyer sửa sản phẩm #${sp.id} của người khác → 403 (${j7})`);
+  } else skip('J7 sửa sản phẩm người khác', 'không có sản phẩm');
+
+  const tb = (await goi('/api/v1/notifications', bearer(tkMuaJ))).body?.data;
+  const idTb = (Array.isArray(tb) ? tb : tb?.result)?.[0]?.id;
+  if (idTb) {
+    const j8 = await ma(`/api/v1/notifications/${idTb}`, tkBan);
+    kiem(j8 === 404 || j8 === 403, `J8 seller đọc thông báo #${idTb} của buyer → 404/403 (${j8})`);
+  } else skip('J8 đọc thông báo người khác', 'buyer chưa có thông báo nào');
+
+  const dm = (await goi('/api/v1/orders', bearer(tkMuaJ))).body?.data;
+  const idDon = (Array.isArray(dm) ? dm : dm?.result)?.[0]?.id;
+  if (idDon) {
+    const cuaMua = await goi(`/api/v1/orders/${idDon}`, bearer(tkMuaJ));
+    kiem(cuaMua.status === 200, `J9 buyer xem đơn #${idDon} của chính mình → 200 (${cuaMua.status})`);
+    // Lỗi H-02 (orders.service.ts findOne): người bán chỉ được thấy tên người
+    // nhận, không được thấy email/hồ sơ tài khoản của người mua.
+    const cuaBan = await goi(`/api/v1/orders/${idDon}`, bearer(tkBan));
+    if (cuaBan.status === 200) {
+      kiem(
+        !cuaBan.body?.data?.user?.email,
+        `J10 seller xem đơn #${idDon}: không thấy email người mua (${cuaBan.body?.data?.user?.email ?? 'ẩn'})`,
+      );
+    } else skip('J10 seller xem đơn', `seller không phải người bán của đơn #${idDon} (${cuaBan.status})`);
+  } else skip('J9/J10 xem đơn', 'buyer chưa có đơn nào');
 }
 
 main()
