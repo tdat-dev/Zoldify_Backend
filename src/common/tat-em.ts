@@ -7,24 +7,29 @@ import type { EventEmitter } from 'node:events';
  * bản (`scripts/deploy/lan-luot-api.sh`) mà caddy không trả 502.
  *
  * VÌ SAO CẦN. Node chạy là PID 1 trong container. PID 1 không có bộ bắt thì
- * nhân Linux bỏ qua SIGTERM, nên `docker stop` không làm gì: Docker chờ 10 giây
- * rồi SIGKILL, request đang chạy bị cắt ngang. Caddy thì vẫn đẩy request vào bản
- * đó tới lượt kiểm sức khoẻ kế tiếp (10 giây một lượt, Caddyfile `ban_api`).
- * Trước đây deploy tạo lại cả ba bản cùng lúc nên chuyện này chìm trong khoảng
- * 502 lớn hơn; khởi động lại lần lượt thì nó là chỗ hở còn lại.
+ * nhân Linux bỏ qua SIGTERM, nên `docker stop` không làm gì: Docker chờ hết hạn
+ * rồi SIGKILL, request đang chạy bị cắt ngang.
  *
- * BA BƯỚC KHI NHẬN SIGTERM.
- *  1. `GET /` (đường caddy kiểm sức khoẻ) trả 503: trong tối đa 13 giây (10 giây
- *     một lượt + 3 giây chờ) caddy rút bản này khỏi đội.
- *  2. Request thật vẫn được phục vụ, thêm `Connection: close` để caddy không
- *     giữ kết nối cũ sang bản sắp tắt.
- *  3. Chờ `CHO_MS` cho caddy rút xong, đóng app (Nest gọi các hook tắt, server
- *     chờ request dở chạy nốt), rồi thoát 0. Tổng thời gian dưới
- *     `stop_grace_period` của api trong docker-compose.yml.
+ * VÌ SAO KHÔNG TRẢ 503 CHO CADDY RÚT RA. Caddy không chạy kiểm sức khoẻ chủ động
+ * với upstream `dynamic a` (tài liệu reverse_proxy nói rõ; cụm thử 11/11 không
+ * có một dòng log kiểm nào, kể cả khi bản api đã chết). Bản đang tắt vẫn còn
+ * trong DNS nên caddy vẫn chia request cho nó tới lúc nó đóng cổng. Bản đầu
+ * của file này trả 503 ở `GET /` và cụm thử vẫn dính một 502: caddy gửi POST
+ * vào một kết nối rảnh đúng lúc server đóng nó, và không thử lại POST đã gửi.
+ *
+ * NÊN LÀM HAI BƯỚC KHI NHẬN SIGTERM.
+ *  1. Mọi response kèm `Connection: close`: caddy đóng kết nối sau response đó
+ *     thay vì để vào bể dùng lại. Kết nối rảnh sẵn trong bể thì caddy tự bỏ
+ *     sau `keepalive 5s` (Caddyfile). Chờ `CHO_MS`, lâu hơn hạn đó, để không
+ *     còn kết nối cũ nào tới bản này.
+ *  2. Đóng app: server thôi nhận kết nối, request dở chạy nốt, Nest gọi các
+ *     hook tắt. Từ đây caddy nối vào là bị từ chối ngay, và nối hỏng thì caddy
+ *     thử bản khác (`lb_try_duration`) vì request chưa gửi đi, kể cả POST.
+ * Tổng thời gian dưới `stop_grace_period` của api trong docker-compose.yml.
  *
  * Tham số thứ hai chỉ để bài kiểm thay `process`, đồng hồ và `process.exit`.
  */
-export const CHO_MS = 15_000;
+export const CHO_MS = 10_000;
 const TRAN_DONG_MS = 15_000;
 
 export function ganTatEm(
@@ -48,7 +53,9 @@ export function ganTatEm(
   tienTrinh.on('SIGTERM', () => {
     if (dangTat) return;
     dangTat = true;
-    logger.log(`nhận SIGTERM: rút khỏi caddy, ${CHO_MS / 1000} giây nữa đóng`);
+    logger.log(
+      `nhận SIGTERM: bỏ kết nối giữ lại, ${CHO_MS / 1000} giây nữa đóng`,
+    );
     void (async () => {
       await cho(CHO_MS);
       // Kết nối socket.io hay request treo có thể giữ server mãi: quá trần thì
@@ -66,13 +73,8 @@ export function ganTatEm(
   });
 
   return {
-    chanKhiTat: (req, res, next) => {
-      if (!dangTat) return next();
-      if (req.method === 'GET' && req.path === '/') {
-        res.status(503).send('dang tat');
-        return;
-      }
-      res.setHeader('Connection', 'close');
+    chanKhiTat: (_req, res, next) => {
+      if (dangTat) res.setHeader('Connection', 'close');
       next();
     },
   };

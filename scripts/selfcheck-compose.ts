@@ -268,7 +268,7 @@ kiem(
   'api có REDIS_URL khi chạy nhiều bản',
   'thiếu Redis thì throttler/socket/cache rơi về RAM từng tiến trình: rate limit đếm sai, socket rơi',
 );
-// api nhận SIGTERM thì chờ 15 giây cho caddy rút ra, rồi tối đa 15 giây đóng
+// api nhận SIGTERM thì chờ 10 giây cho caddy bỏ kết nối cũ, rồi tối đa 15 giây đóng
 // app (src/common/tat-em.ts). Docker mặc định SIGKILL sau 10 giây, tức giết
 // bản đó ngay giữa lúc chờ, cắt luôn request đang chạy.
 const tatApi = /^(\d+)s$/.exec(String(S.api?.stop_grace_period ?? ''));
