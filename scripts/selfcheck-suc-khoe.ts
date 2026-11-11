@@ -178,6 +178,28 @@ function nhomContainer(): void {
   const mg = theo('migrate')[0];
   if (mg) kiem(mg.tt === 'exited' && mg.ma === 0, 'A5 migrate đã chạy xong, mã thoát 0', `${mg.tt}, mã ${mg.ma}`);
   else skip('A5 migrate', 'cụm này không có dịch vụ migrate');
+
+  // Đo lúc 11/11: image api build 12/10, còn cơ chế phiên `sid` vào `src/`
+  // sau đó (commit auth gần nhất 04/11). Token cụm phát ra không có `sid`, nên
+  // I6/I7 đo MÃ CŨ một tháng mà nhìn vào thì tưởng mã hiện tại hỏng. Kiểm
+  // cụm mà không biết cụm chạy bản nào thì kết luận nào cũng có thể sai.
+  try {
+    const anh = execFileSync('docker', ['inspect', '-f', '{{.Image}}', api[0] ? ids[dong.indexOf(api[0])] : ''], {
+      encoding: 'utf8',
+    }).trim();
+    const lucBuild = new Date(
+      execFileSync('docker', ['image', 'inspect', '-f', '{{.Created}}', anh], { encoding: 'utf8' }).trim(),
+    );
+    const lucMa = new Date(execFileSync('git', ['log', '-1', '--format=%cI', '--', 'src'], { encoding: 'utf8' }).trim());
+    const muoiPhut = 10 * 60 * 1000;
+    kiem(
+      lucBuild.getTime() + muoiPhut >= lucMa.getTime(),
+      `A6 image api không cũ hơn src/ (build ${lucBuild.toISOString().slice(0, 16)} · mã ${lucMa.toISOString().slice(0, 16)})`,
+      'cụm đang chạy mã cũ — kết quả các nhóm I/J đo bản cũ, không phải HEAD. Dựng lại: npm run docker:up',
+    );
+  } catch (e) {
+    skip('A6 tuổi image api', (e as Error).message.split('\n')[0]);
+  }
 }
 
 async function main(): Promise<void> {
