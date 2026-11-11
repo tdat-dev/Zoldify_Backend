@@ -65,6 +65,21 @@ if [ "${#KHAC[@]}" -eq 0 ] || ! echo "$DICH_VU" | grep -qx api; then
 fi
 dc up -d "${KHAC[@]}"
 
+# Caddyfile gắn bằng bind mount MỘT file: git checkout ghi file mới (inode mới)
+# nên container caddy vẫn đọc bản cũ, `caddy reload` không thấy gì. Có đổi thì
+# phải tạo lại container, mất kết nối khoảng 1 giây, chỉ ở lần deploy đó.
+#
+# Làm TRƯỚC khi thay api: cấu hình caddy mới (thử lại khi nối hỏng) phải có
+# mặt lúc tắt bản api cũ. Làm sau thì lần deploy đầu tiên vẫn 502.
+echo "== caddy =="
+if [ -n "$(dc ps -q caddy)" ] \
+  && ! dc exec -T caddy cat /etc/caddy/Caddyfile | cmp -s - Caddyfile; then
+  echo "Caddyfile đổi: tạo lại container caddy"
+  dc up -d --no-deps --force-recreate caddy
+else
+  dc up -d --no-deps caddy
+fi
+
 mapfile -t CU < <(dc ps -q api)
 N=${#CU[@]}
 if [ "$N" -eq 0 ]; then
@@ -91,18 +106,6 @@ else
     docker stop -t "$TAT_GIAY" "$cu" >/dev/null
     docker rm "$cu" >/dev/null
   done
-fi
-
-# Caddyfile gắn bằng bind mount MỘT file: git checkout ghi file mới (inode mới)
-# nên container caddy vẫn đọc bản cũ, `caddy reload` không thấy gì. Có đổi thì
-# phải tạo lại container, mất kết nối khoảng 1 giây, chỉ ở lần deploy đó.
-echo "== caddy =="
-if [ -n "$(dc ps -q caddy)" ] \
-  && ! dc exec -T caddy cat /etc/caddy/Caddyfile | cmp -s - Caddyfile; then
-  echo "Caddyfile đổi: tạo lại container caddy"
-  dc up -d --no-deps --force-recreate caddy
-else
-  dc up -d --no-deps caddy
 fi
 
 dc ps api

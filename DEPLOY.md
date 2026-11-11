@@ -165,11 +165,12 @@ ba bản api cùng lúc và API trả 502 khoảng 5 giây. Script làm theo th�
 
 1. build ảnh;
 2. bật lại mọi dịch vụ trừ api và caddy (migration chạy xong ở bước này);
-3. với từng bản api cũ: bật một bản mới, chờ `/health`, chờ caddy thấy nó, rồi
+3. caddy: Caddyfile có đổi thì tạo lại container (mất kết nối khoảng 1 giây),
+   làm trước bước 4 để cấu hình thử lại khi nối hỏng có mặt lúc tắt bản cũ;
+4. với từng bản api cũ: bật một bản mới, chờ `/health`, chờ caddy thấy nó, rồi
    `docker stop` bản cũ. Bản cũ trả mọi response kèm `Connection: close` 10 giây
    cho caddy bỏ kết nối cũ, rồi đóng cổng và phục vụ nốt request đang chạy
-   (`src/common/tat-em.ts`). Caddy nối vào bản đã đóng thì thử bản khác;
-4. caddy: Caddyfile có đổi thì tạo lại container (mất kết nối khoảng 1 giây).
+   (`src/common/tat-em.ts`). Caddy nối vào bản đã đóng thì thử bản khác.
 
 Bản mới không khoẻ sau 120 giây thì script xoá nó và dừng với mã 1, các bản cũ
 vẫn chạy. Migration đã chạy ở bước 2 nên phải tương thích với code cũ trong lúc
