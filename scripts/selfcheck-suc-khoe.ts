@@ -326,11 +326,25 @@ async function main(): Promise<void> {
     bay.headers.get('x-request-id') !== '"}{"level":"fatal' && /^[A-Za-z0-9-]+$/.test(bay.headers.get('x-request-id') ?? ''),
     `F5 X-Request-Id chứa ký tự lạ bị thay (${bay.headers.get('x-request-id')})`,
   );
-  const cors = await goi('/api/v1/categories', { headers: { Origin: 'https://ke-gian.example' } });
+  // F6 tách hai ý. Bản đầu đòi "không có ACAO" cho /categories ẩn danh và
+  // xanh trên image 12/10, rồi ĐỎ ngay khi dựng lại từ HEAD 11/11: cache-bien.ts
+  // cố ý trả `*` (bỏ credentials) cho danh sách công khai để Cloudflare dùng
+  // chung một bản cho mọi origin (docs/bao-cao/cache-cloudflare.md). Thứ thật
+  // sự phải giữ: request CÓ danh tính không mở cho origin lạ, và `*` không bao
+  // giờ đi cùng Allow-Credentials.
+  const corsDanhTinh = await goi('/api/v1/categories', {
+    headers: { Origin: 'https://ke-gian.example', Authorization: 'Bearer rac' },
+  });
+  const acaoDanhTinh = corsDanhTinh.headers.get('access-control-allow-origin');
   kiem(
-    cors.headers.get('access-control-allow-origin') !== 'https://ke-gian.example' &&
-      cors.headers.get('access-control-allow-origin') !== '*',
-    `F6 CORS không mở cho origin lạ (${cors.headers.get('access-control-allow-origin') ?? 'không có header'})`,
+    acaoDanhTinh !== 'https://ke-gian.example' && acaoDanhTinh !== '*',
+    `F6 CORS không mở cho origin lạ khi có Authorization (${acaoDanhTinh ?? 'không có header'})`,
+  );
+  const corsAnDanh = await goi('/api/v1/categories', { headers: { Origin: 'https://ke-gian.example' } });
+  kiem(
+    corsAnDanh.headers.get('access-control-allow-origin') !== 'https://ke-gian.example' &&
+      corsAnDanh.headers.get('access-control-allow-credentials') !== 'true',
+    `F6b ẩn danh: không phản chiếu origin lạ, không kèm credentials (ACAO ${corsAnDanh.headers.get('access-control-allow-origin') ?? '—'}, credentials ${corsAnDanh.headers.get('access-control-allow-credentials') ?? '—'})`,
   );
   const docs = await goi('/api/docs');
   kiem(docs.status === 404 || docs.status === 401, `F7 /api/docs đóng với request ở xa (${docs.status})`, 'xem src/core/swagger-guard.ts');
