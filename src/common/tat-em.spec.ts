@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ganTatEm } from './tat-em';
+import { CHO_MS, ganTatEm } from './tat-em';
 
 /**
  * BÀI KIỂM ĐỎ: deploy làm API trả 502 khoảng 5 giây (đo trên staging 11/11,
@@ -58,20 +58,32 @@ describe('ganTatEm', () => {
     expect(res.header).toEqual({});
   });
 
-  it('nhận SIGTERM: GET / trả 503 để caddy rút bản này khỏi đội', () => {
+  // Caddy KHÔNG chạy kiểm sức khoẻ chủ động với upstream `dynamic a` (tài liệu
+  // reverse_proxy, và cụm thử 11/11 không có dòng log kiểm nào), nên trả 503 ở
+  // `GET /` không rút được bản này ra. Thứ duy nhất làm được: mọi response kèm
+  // `Connection: close` để caddy bỏ kết nối cũ tới bản này, rồi mới đóng cổng.
+  it('đang tắt: mọi request, kể cả GET /, vẫn được phục vụ kèm Connection: close', () => {
     const { tienTrinh, tat } = dung();
     tienTrinh.emit('SIGTERM');
-    const { res, quaTiep } = goi(tat, 'GET', '/');
-    expect(quaTiep).toBe(false);
-    expect(res.ma).toBe(503);
+    for (const [method, path] of [
+      ['GET', '/'],
+      ['POST', '/api/v1/orders'],
+    ]) {
+      const { res, quaTiep } = goi(tat, method, path);
+      expect(quaTiep).toBe(true);
+      expect(res.ma).toBe(200);
+      expect(res.header.Connection).toBe('close');
+    }
   });
 
-  it('đang tắt: request thật vẫn được phục vụ, kèm Connection: close', () => {
-    const { tienTrinh, tat } = dung();
-    tienTrinh.emit('SIGTERM');
-    const { res, quaTiep } = goi(tat, 'POST', '/api/v1/orders');
-    expect(quaTiep).toBe(true);
-    expect(res.header.Connection).toBe('close');
+  it('chờ lâu hơn hạn giữ kết nối rảnh của caddy (keepalive 5s) rồi mới đóng', () => {
+    const caddy = readFileSync(
+      join(__dirname, '..', '..', 'Caddyfile'),
+      'utf8',
+    );
+    const giu = /\bkeepalive\s+(\d+)s\b/.exec(caddy);
+    expect(giu).not.toBeNull();
+    expect(CHO_MS).toBeGreaterThan(Number(giu![1]) * 1000 * 1.5);
   });
 
   it('chờ caddy rút xong mới đóng app, rồi thoát mã 0', async () => {
