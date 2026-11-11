@@ -452,22 +452,29 @@ async function nhomPhienVaQuyen(): Promise<void> {
     lm.status === 201 && !!tkMoi && rfMoi !== rf && dungDuoc === 200,
     `I5 refresh → cặp token mới, refresh đã xoay, access mới dùng được (${lm.status}/${dungDuoc})`,
   );
-  const ra = await goi('/api/v1/auth/logout', { method: 'POST', ...bearer(tkMoi ?? '') });
-  const sauRa = await goi('/api/v1/auth/profile', bearer(tkMoi ?? ''));
-  const rfSauRa = await goi('/api/v1/auth/refresh', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ refreshToken: rfMoi }),
-  });
-  kiem(
-    ra.status === 201 &&
-      sauRa.status === 401 &&
-      rfSauRa.status >= 400 &&
-      rfSauRa.status < 500 &&
-      !rfSauRa.body?.data?.access_token,
-    `I6 đăng xuất → access cũ 401, refresh cũ bị từ chối (logout ${ra.status} · access ${sauRa.status} · refresh ${rfSauRa.status})`,
-    'phiên đã đăng xuất mà token vẫn dùng được nghĩa là thu hồi phiên không có tác dụng',
-  );
+  // Không có token từ I5 thì I6 không đo được gì. Lượt tiêm lỗi Redis trên
+  // HEAD (11/11): refresh treo, I6 gửi `Bearer ` rỗng, nhận "logout 401" rồi
+  // báo đỏ như thể đăng xuất hỏng. Đó là đỏ dây chuyền, không phải phát hiện.
+  if (!tkMoi) {
+    skip('I6 đăng xuất thu hồi phiên', 'I5 không lấy được token mới để đăng xuất');
+  } else {
+    const ra = await goi('/api/v1/auth/logout', { method: 'POST', ...bearer(tkMoi) });
+    const sauRa = await goi('/api/v1/auth/profile', bearer(tkMoi));
+    const rfSauRa = await goi('/api/v1/auth/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rfMoi }),
+    });
+    kiem(
+      ra.status === 201 &&
+        sauRa.status === 401 &&
+        rfSauRa.status >= 400 &&
+        rfSauRa.status < 500 &&
+        !rfSauRa.body?.data?.access_token,
+      `I6 đăng xuất → access cũ 401, refresh cũ bị từ chối (logout ${ra.status} · access ${sauRa.status} · refresh ${rfSauRa.status})`,
+      'phiên đã đăng xuất mà token vẫn dùng được nghĩa là thu hồi phiên không có tác dụng',
+    );
+  }
   const vanSong = await goi('/api/v1/auth/profile', bearer(tkMua));
   kiem(vanSong.status === 200, `I7 đăng xuất phiên này KHÔNG đá phiên khác của cùng người (${vanSong.status})`);
 
