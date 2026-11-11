@@ -10,7 +10,7 @@
 |---|---|
 | Bộ kiểm | `scripts/selfcheck-suc-khoe.ts` |
 | Lệnh | `npm run check:suc-khoe` (đo cụm ở xa: `SUC_KHOE_URL=https://… npm run check:suc-khoe`) |
-| Nhánh · commit | `test/kiem-suc-khoe` · `dc07144` |
+| Nhánh · commit | `test/kiem-suc-khoe` · `dc07144` (nhóm A–H) · `9af9d65` (thêm A6, I, J) |
 | Đích | `http://localhost:8080` — Caddy → `api` ×3 → MySQL + Redis của cụm compose |
 | Dữ liệu | 1015 sản phẩm, 9 danh mục |
 
@@ -52,6 +52,7 @@ Có hai cột kết quả:
 | A3 | redis | running + healthy | ✅ | ❌ exited (đúng như chủ ý) |
 | A4 | worker, caddy | running | ✅ ✅ | ✅ ✅ |
 | A5 | migrate | đã thoát, mã 0 | ✅ | ✅ |
+| A6 | Tuổi image api so với `src/` | không cũ hơn commit mới nhất của `src/` | ❌ **build 12/10, mã 08/11** (xem mục 4b) | — (ca thêm sau) |
 
 ### B. Sống và khoẻ
 
@@ -114,6 +115,36 @@ Có hai cột kết quả:
 Ngưỡng đặt rộng có chủ ý. Đây là câu hỏi "còn khoẻ không", không phải bài đo
 tải; đo tải đã có `npm run loadtest`.
 
+### I. Đăng nhập và phiên (tài khoản seed `buyer@zoldify.com`)
+
+Cột "Redis chết" không có, vì hai nhóm I và J được thêm sau lượt tiêm lỗi.
+Kết quả lấy từ lượt chạy trên commit `9af9d65`.
+
+| ID | Ca kiểm | Kỳ vọng | Kết quả |
+|---|---|---|---|
+| I1 | Đăng nhập đúng | 201, có access + refresh token, `role = buyer` | ✅ |
+| I2 | Sai mật khẩu | 401, không có token | ✅ 401 |
+| I3 | `GET /auth/profile` có token | 200, đúng email | ✅ |
+| I4 | Hồ sơ trả về | không lộ `password`, `refresh_token`, `refresh_hash`, `token_version` | ✅ |
+| I5 | `POST /auth/refresh` | cặp token mới, refresh token đã đổi, access mới dùng được | ✅ |
+| I6 | Sau `POST /auth/logout` | access cũ ra 401, refresh cũ bị từ chối | ✅ (access 401, refresh 400) |
+| I7 | Đăng xuất phiên B | phiên A của cùng người **vẫn sống** | ❌ **401: phiên A bị đá theo** (do image cũ, xem mục 4b) |
+
+### J. Phân quyền (buyer · seller · admin)
+
+| ID | Ca kiểm | Kỳ vọng | Kết quả |
+|---|---|---|---|
+| J1 | buyer gọi `/admin/stats` | 403 | ✅ 403 |
+| J2 | seller gọi `/admin/users` | 403 | ✅ 403 |
+| J3 | buyer gọi `/users` (danh sách mọi người dùng) | 403 | ✅ 403 |
+| J4 | admin gọi `/admin/stats` | 200 | ✅ 200 |
+| J5 | admin gọi `/users` | 200, không kèm băm mật khẩu | ✅ |
+| J6 | buyer `PATCH /auth/profile {"role":"admin"}` | không leo quyền: role vẫn `buyer`, `/admin` vẫn 403 | ✅ |
+| J7 | buyer `PATCH /products/{id}` sản phẩm của người khác (body rỗng) | 403 | ✅ 403 |
+| J8 | seller đọc thông báo của buyer | 404 hoặc 403 | ⊘ bỏ qua: database chưa có thông báo nào |
+| J9 | buyer xem đơn của chính mình | 200 | ✅ đơn #3 |
+| J10 | seller xem đơn có hàng của mình | 200, **không** thấy email người mua (lỗi H-02) | ✅ email bị ẩn |
+
 ### H. Throttler đếm chung qua Redis
 
 | ID | Ca kiểm | Kỳ vọng | Bình thường | Redis chết |
@@ -132,6 +163,7 @@ không request nào bị 429.
 | Bình thường | 37 | 0 | 0 | **KHOẺ** |
 | Redis chết | 18 | 18 | 1 | **HỎNG** |
 | Sau khi bật lại Redis | 37 | 0 | 0 | **KHOẺ**, cụm tự hồi phục |
+| Đủ 10 nhóm A–J (`9af9d65`) | 52 | 2 | 1 | **HỎNG**: A6 và I7, cùng một gốc là image cũ (mục 4b) |
 
 ## 4. Tiêm lỗi: dừng Redis của cụm
 
@@ -180,11 +212,42 @@ tiếp.
 "API không đọc được MySQL", trong khi MySQL vẫn sống. Giờ khi không có phản hồi,
 B2 báo **TREO** và chỉ thẳng sang cache.
 
+## 4b. Cụm chạy mã cũ hơn mã nguồn một tháng
+
+**Dấu hiệu:** I7 đỏ. Đăng xuất phiên B làm phiên A của cùng người ra 401.
+
+**Truy:** giải mã phần payload JWT do cụm phát ra (chỉ đọc tên trường), được
+`sub, full_name, email, role, token_version, iat, exp`. Payload **không có
+`sid`**, trong khi `src/identity/auth/auth.service.ts:187` có gắn `sid`.
+Không có `sid` thì `logout()` rơi vào nhánh cũ: tăng `token_version`, đá mọi
+máy (`auth.service.ts:348-353`).
+
+**Gốc:** image của `api` build ngày **12/10/2026 17:34**. Bản build trong
+container có 0 chỗ nhắc `sid`. Commit mới nhất chạm `src/` là ngày
+**08/11/2026**.
+
+**Kết luận:** I7 đang đo **bản cũ**, chưa nói được gì về mã hiện tại. Phải
+dựng lại cụm (`npm run docker:up`) rồi chạy lại mới biết HEAD có lỗi này
+không. Ca A6 sinh ra để lần sau thấy điều này ngay, không phải lần ra như lần
+này.
+
+Bài kiểm cũng có ba lỗi tìm ra trong lượt đầu chạy nhóm I/J, đã sửa ở
+`8ad03b9`:
+
+- J dùng chung token với I, nên khi I7 đá phiên thì J1, J3, J6, J7 ra 401 thay
+  vì 403 (đỏ dây chuyền).
+- I5 gọi refresh 300 ms sau khi đăng nhập. `iat` tính theo giây, nên token
+  "mới" trùng từng byte với token cũ và ca báo "chưa xoay" sai.
+- I6 đòi đúng 401, trong khi bản đang chạy trả 400 cho refresh token đã thu
+  hồi. Giờ ca nhận mọi mã 4xx.
+
 ## 5. Việc tiếp theo
 
 | Việc | Ghi chú |
 |---|---|
 | Sửa lỗi treo khi Redis chết | Vai B (cache, health). Bài kiểm đỏ đã có sẵn: dừng Redis rồi chạy `check:suc-khoe`. Hướng sửa: truyền tuỳ chọn cho `createKeyv` để lệnh ném lỗi ngay khi mất kết nối (bản đang cài có `throwOnConnectError`, `disableOfflineQueue`, `connectionTimeout`), và đặt trần thời gian cho `kiemRedis()`. Nghiệm thu: lượt "Redis chết" chỉ còn A3-redis và B5 đỏ, và B5 phải đọc được `redis = down` kèm mã 200 |
+| Dựng lại cụm từ HEAD rồi chạy lại | Để biết I7 (đăng xuất đá mọi máy) còn trên mã hiện tại không |
+| Ngân sách đăng nhập | Một lượt chạy tốn 8/10 lần đăng nhập mỗi phút của một IP. Chạy lại trong vòng 60 giây thì I0 báo 429 (có ghi rõ, không phải lỗi cụm) |
 | Kiểm đăng nhập lúc Redis chết | Thêm một ca gọi `POST /auth/login` trong lượt tiêm lỗi |
 | Throttler lúc Redis chết | Theo thiết kế, H2 đỏ khi Redis chết là chấp nhận được (fail-open). Cần quyết rõ đây là chủ ý, rồi ghi lại |
 | Đưa vào quy trình | Chạy `check:suc-khoe` sau mỗi lần `docker:up` hoặc deploy. Có thể thêm vào `nghiem-thu`, kèm điều kiện "cụm đang chạy" |
