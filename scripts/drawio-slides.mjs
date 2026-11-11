@@ -36,6 +36,40 @@ const ST = {
   row: (fs_) => `text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=10;whiteSpace=nowrap;overflow=hidden;fontSize=${fs_};${FONT}`,
 };
 
+const NAVY = '#002060', TINT = '#EAF0FA', AMBER = '#C97A00', AMBER_T = '#FDF1DC';
+const GREEN = '#1E7B45';
+
+/** Ô nền màu, chữ căn giữa. */
+const tileStyle = (fill, line = 'none') =>
+  `rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=${fill};strokeColor=${line};${FONT}`;
+
+/** Chữ tự do, không khung. */
+function words(s, value, x, y, w, h, size, { bold = false, color = '#000000', align = 'center', italic = false } = {}) {
+  const st = `text;html=1;whiteSpace=wrap;verticalAlign=middle;align=${align};fontSize=${size};fontStyle=${(bold ? 1 : 0) + (italic ? 2 : 0)};fontFamily=Helvetica;fontColor=${color};`;
+  return vertex(s, { value, style: st, x, y, w, h });
+}
+
+/** Thẻ: tiêu đề đậm và một dòng giải thích, tất cả nằm trong một ô nền. */
+function card(s, x, y, w, h, head, sub, { fill = TINT, color = NAVY, headSize = 30, subSize = 23, align = 'center', split = 0.42 } = {}) {
+  vertex(s, { value: '', style: tileStyle(fill), x, y, w, h });
+  const pad = align === 'left' ? 18 : 10;
+  words(s, head, x + pad, y + 8, w - 2 * pad, h * split, headSize, { bold: true, color, align });
+  words(s, sub, x + pad, y + h * split, w - 2 * pad, h * (1 - split) - 8, subSize, { align });
+}
+
+/** Bảng: hàng đầu là tiêu đề, `hl` là các hàng tô màu cam nhạt. */
+function grid(s, x, y, widths, rows, { rowH = 62, size = 22, head = NAVY, hl = [] } = {}) {
+  rows.forEach((row, r) => {
+    let cx = x;
+    row.forEach((val, i) => {
+      const fill = r === 0 ? head : hl.includes(r) ? AMBER_T : r % 2 ? TINT : '#FFFFFF';
+      const st = `rounded=0;whiteSpace=wrap;html=1;align=left;spacingLeft=14;verticalAlign=middle;fontSize=${size};fontStyle=${r === 0 ? 1 : 0};fillColor=${fill};strokeColor=#FFFFFF;strokeWidth=2;fontFamily=Helvetica;fontColor=${r === 0 ? '#FFFFFF' : '#000000'};`;
+      vertex(s, { value: val, style: st, x: cx, y: y + r * rowH, w: widths[i], h: rowH });
+      cx += widths[i];
+    });
+  });
+}
+
 function sheet(name, w, h) {
   const s = createSheet(name);
   s.w = w;
@@ -240,7 +274,7 @@ function classMoney() {
 }
 
 function erd() {
-  const s = sheet('ERD Money', 1265, 410);
+  const s = sheet('ERD Money', 1265, 545);
   const C = [10, 435, 860], W = 395;
   const ER = (a, b) => `edgeStyle=none;html=1;rounded=0;startArrow=${a};startFill=0;startSize=16;endArrow=${b};endFill=0;endSize=16;${LINE}`;
   const payments = table(s, 'payments', 'payments', ['id PK', 'order_id FK', 'amount, status'], C[0], 10, W);
@@ -254,6 +288,13 @@ function erd() {
   wire(s, 'orders', 'escrows', [r(orders), 75], [escrows.x, 75], ER('ERone', 'ERmany'));
   wire(s, 'lt', 'le', [r(lt), 310], [le.x, 310], ER('ERone', 'ERmany'));
   wire(s, 'le', 'la', [r(le), 310], [la.x, 310], ER('ERmany', 'ERone'));
+  // 27 bảng chia 4 nhóm, trang này vẽ nhóm tiền.
+  [['8', 'Identity and catalogue'], ['3', 'Ordering'], ['8', 'Money'], ['8', 'Messaging and ops']].forEach(([n, lab], i) => {
+    const x = 10 + i * 312;
+    vertex(s, { value: '', style: tileStyle(i === 2 ? AMBER_T : TINT), x, y: 440, w: 300, h: 100 });
+    words(s, n, x + 10, 440, 70, 100, 40, { bold: true, color: NAVY });
+    words(s, lab, x + 82, 440, 210, 100, 21, { align: 'left' });
+  });
   return s;
 }
 
@@ -325,7 +366,7 @@ function deployment() {
 
 // ------------------------------------------------------------- dòng tiền và tranh chấp
 function moneyFlow() {
-  const s = sheet('Escrow Flow', 1265, 415);
+  const s = sheet('Escrow Flow', 1265, 550);
   const c = (fill, line) => `rounded=1;arcSize=10;whiteSpace=wrap;html=1;fontSize=23;fontStyle=1;fillColor=${fill};strokeColor=${line};strokeWidth=1.5;${FONT}`;
   const b = (k, v, x, y, w, h, fill = '#EAF0FA', line = '#002060') => node(s, k, v, c(fill, line), x, y, w, h);
   b('buyer', 'Buyer\nPayOS or wallet', 20, 135, 200, 125);
@@ -342,11 +383,17 @@ function moneyFlow() {
   wire(s, 'hold', 'refund', [830, 245], [945, 340], arrow('#B42318'));
   vertex(s, { value: 'Receipt, or 3 days after delivery', style: ST.text(21, 'fontStyle=1;fontColor=#1E7B45;'), x: 560, y: 55, w: 380, h: 34 });
   vertex(s, { value: 'Order cancelled', style: ST.text(21, 'fontStyle=1;fontColor=#B42318;'), x: 580, y: 300, w: 250, h: 34 });
+  [['Σ = 0', 'Every posting balances'], ['1 key', 'Posted only once'], ['Check', 'Balances recomputed']].forEach(([k, d_], i) => {
+    const x = 20 + i * 415;
+    vertex(s, { value: '', style: tileStyle('#F4F6FA'), x, y: 440, w: 395, h: 105 });
+    words(s, k, x + 15, 440, 130, 105, 31, { bold: true, color: NAVY, align: 'left' });
+    words(s, d_, x + 150, 440, 235, 105, 21, { align: 'left' });
+  });
   return s;
 }
 
 function race() {
-  const s = sheet('Two Buyers', 760, 530);
+  const s = sheet('Two Buyers', 1265, 530);
   const c = (fill, line) => `rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=21;fillColor=${fill};strokeColor=${line};strokeWidth=1.5;${FONT}`;
   const b = (k, v, x, y, fill = '#EAF0FA', line = '#002060') => node(s, k, v, c(fill, line), x, y, 340, 80);
   vertex(s, { value: 'Buyer A', style: ST.text(25, 'fontStyle=1;'), x: 40, y: 0, w: 340, h: 36 });
@@ -359,6 +406,40 @@ function race() {
   b('b2', 'Reads stock again: 0', 415, 330);
   b('b3', '400: out of stock', 415, 425, '#FBE6E4', '#B42318');
   wire(s, 'a3', 'b2', [380, 275], [415, 370], ST.flow);
+  [['SELECT FOR UPDATE', 'row lock'], ['stock >= n', 'conditional UPDATE'], ['CHECK stock >= 0', 'in MySQL'], ['20 buyers', 'check:race, real MySQL']].forEach(([h, d_], i) => {
+    const last = i === 3;
+    card(s, 805, 5 + i * 130, 455, 115, h, d_, { fill: last ? AMBER_T : TINT, color: last ? AMBER : NAVY, headSize: 25, subSize: 21, align: 'left', split: 0.5 });
+  });
+  return s;
+}
+
+function ledgerPosting() {
+  const s = sheet('Ledger Posting', 1265, 545);
+  words(s, 'Goods 380,000 + shipping 82,500 = 462,500 VND. Fee: 5% of goods.', 10, 0, 1245, 56, 28, { bold: true, color: NAVY, align: 'left' });
+  grid(s, 10, 80, [370, 230], [
+    ['1. Buyer pays', 'Amount'],
+    ['Gateway clearing', '-462,500'],
+    ['Escrow hold', '+462,500'],
+    ['Sum', '0'],
+  ], { hl: [3] });
+  grid(s, 655, 80, [370, 230], [
+    ['2. Buyer confirms receipt', 'Amount'],
+    ['Escrow hold', '-462,500'],
+    ['Seller wallet', '+443,500'],
+    ['Platform revenue', '+19,000'],
+    ['Sum', '0'],
+  ], { head: GREEN, hl: [4] });
+  words(s, 'Unique key per posting. Accounts locked in id order.', 10, 435, 1245, 50, 25);
+  words(s, 'Amounts from a staging test order, 05/11/2026', 10, 488, 1245, 40, 17, { italic: true, color: '#5B6472' });
+  return s;
+}
+
+function operations() {
+  const s = sheet('Operations', 1265, 530);
+  [['API x 3', 'Stateless, Redis shared'], ['Worker', 'Scheduled jobs run once'], ['Chat and push', 'Socket.IO, FCM'],
+    ['GHN', 'Quote, waybill per seller'], ['Images', 'WebP on Cloudflare R2'], ['Backups', 'Daily, copied off-site']].forEach(([h, d_], i) => {
+    card(s, 10 + (i % 3) * 418, 10 + Math.floor(i / 3) * 265, 400, 245, h, d_, { headSize: 33, subSize: 25, split: 0.48 });
+  });
   return s;
 }
 
@@ -406,6 +487,8 @@ const pages = [
   erd(),
   moneyFlow(),
   race(),
+  ledgerPosting(),
+  operations(),
 ];
 
 const body = pages
