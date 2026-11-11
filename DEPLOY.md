@@ -158,9 +158,27 @@ npm run docker:up          # dựng lại ảnh, chạy migration, khởi độn
 Chưa có CI nên chưa có ảnh dựng sẵn trên registry — máy chủ tự dựng lấy. Xem
 `r8-cicd-pipeline` để biết phần nào của quy trình đã có, phần nào chưa.
 
+**Deploy thay lần lượt từng bản api, không tắt cả cụm.** CI chạy
+`bash scripts/deploy/lan-luot-api.sh <zoldify|zoldify-staging>`. Deploy tay trên VPS
+cũng dùng lệnh này, đừng dùng `docker compose up -d --build`: lệnh đó tạo lại cả
+ba bản api cùng lúc và API trả 502 khoảng 5 giây. Script làm theo thứ tự:
+
+1. build ảnh;
+2. bật lại mọi dịch vụ trừ api và caddy (migration chạy xong ở bước này);
+3. với từng bản api cũ: bật một bản mới, chờ `/health`, chờ caddy thấy nó, rồi
+   `docker stop` bản cũ. Bản cũ trả mọi response kèm `Connection: close` 10 giây
+   cho caddy bỏ kết nối cũ, rồi đóng cổng và phục vụ nốt request đang chạy
+   (`src/common/tat-em.ts`). Caddy nối vào bản đã đóng thì thử bản khác;
+4. caddy: Caddyfile có đổi thì tạo lại container (mất kết nối khoảng 1 giây).
+
+Bản mới không khoẻ sau 120 giây thì script xoá nó và dừng với mã 1, các bản cũ
+vẫn chạy. Migration đã chạy ở bước 2 nên phải tương thích với code cũ trong lúc
+thay, như trước đây (đổi tên hay xoá cột thì tách hai lần deploy).
+
 **Có sửa `Caddyfile` thì phải tạo lại container caddy.** File gắn vào bằng bind
 mount một file, nên `git checkout` thay file mới mà container vẫn đọc bản cũ, và
-`docker compose up -d` thấy cấu hình dịch vụ không đổi nên không làm gì:
+`docker compose up -d` thấy cấu hình dịch vụ không đổi nên không làm gì. Script
+deploy tự so và tạo lại; làm tay thì:
 
 ```bash
 docker compose -p <zoldify|zoldify-staging> up -d --force-recreate --no-deps caddy
