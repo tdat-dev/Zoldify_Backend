@@ -106,7 +106,7 @@ function layoutX(spec) {
   return { idx, w, x: x.map(Math.round) };
 }
 
-function render(spec) {
+export function render(spec) {
   const sheet = createSheet(spec.name);
   const L = spec.lifelines;
   const { idx, w, x } = layoutX(spec);
@@ -314,12 +314,11 @@ function frameRights(sheet) {
     .map((m) => Number(m[1]) + Number(m[2]));
 }
 
-const files = fs.readdirSync(SPEC_DIR).filter((f) => f.endsWith('.json')).sort();
 /**
  * Labels are rendered as HTML (html=1), so text such as `?q=giay&current=1` would turn
  * `&curren` into a currency sign. Escape every user-visible string once, here.
  */
-function htmlText(spec) {
+export function htmlText(spec) {
   // numeric references: drawio renders them the same, and check-drawio never mistakes them for double escaping
   const h = (t) => String(t).replace(/&/g, '&#38;').replace(/</g, '&#60;').replace(/>/g, '&#62;');
   const walk = (steps) => steps.forEach((st) => {
@@ -331,7 +330,11 @@ function htmlText(spec) {
   return spec;
 }
 
+// drawio-payment-parts.mjs nhập render() để vẽ các phần của trang Payment; chỉ ghi file khi chạy trực tiếp
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const files = fs.readdirSync(SPEC_DIR).filter((f) => f.endsWith('.json')).sort();
 const sheets = files.map((f) => render(htmlText(JSON.parse(fs.readFileSync(path.join(SPEC_DIR, f), 'utf8')))));
 const W = Math.max(...sheets.map((s) => s.size.w)), H = Math.max(...sheets.map((s) => s.size.h));
 fs.writeFileSync(OUT, buildFile(sheets, { width: Math.ceil(W), height: Math.ceil(H) }));
 console.log(`${OUT}: ${sheets.length} trang (${sheets.map((s) => s.name).join(', ')})`);
+}
