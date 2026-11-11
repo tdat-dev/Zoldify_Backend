@@ -328,6 +328,29 @@ function main(): void {
     );
   }
 
+  // ── 9b. Deploy không tắt cả ba bản api cùng lúc ───────────────────────
+  // `docker compose up -d --build` tạo lại MỌI bản api một lượt: không còn bản
+  // nào nghe, caddy trả 502 khoảng 5 giây mỗi lần deploy, và trang đích web gọi
+  // API lúc đó từng trả 404 giả cho Google (11/11). Deploy phải gọi script khởi
+  // động lại lần lượt từng bản.
+  console.log('\n\x1b[1mdeploy khởi động lại lần lượt từng bản api\x1b[0m');
+  const goiLanLuot = /scripts\/deploy\/lan-luot-api\.sh/.test(buocDeploy);
+  const upCaCum = /docker compose[^\n]*\bup -d --build\s*$/m.test(buocDeploy);
+  if (goiLanLuot && !upCaCum) {
+    ok(
+      'deploy.yml gọi scripts/deploy/lan-luot-api.sh, không tạo lại cả cụm một lượt',
+    );
+  } else {
+    bad(
+      'deploy.yml phải gọi `scripts/deploy/lan-luot-api.sh` thay cho ' +
+        '`docker compose up -d --build`: tạo lại cả ba bản api cùng lúc là 502',
+    );
+  }
+  const scriptLanLuot = path.join(ROOT, 'scripts', 'deploy', 'lan-luot-api.sh');
+  if (!fs.existsSync(scriptLanLuot)) {
+    bad('thiếu scripts/deploy/lan-luot-api.sh');
+  }
+
   // ── 10. Hai phiên jest không dùng chung database ──
   // Không có globalSetup thì mọi worktree quay về `zoldify_test`, và beforeAll
   // của phiên này xoá bảng giữa bài của phiên kia.

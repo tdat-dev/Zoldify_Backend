@@ -1,7 +1,8 @@
 name: Deploy Backend
 
 # CD kiểu "pull rồi build trên VPS": gate lint+build xanh mới SSH vào VPS,
-# git reset --hard về đúng nhánh, rồi docker compose up -d --build.
+# git reset --hard về đúng nhánh, rồi scripts/deploy/lan-luot-api.sh build và
+# thay lần lượt từng bản api để API không trả 502 trong lúc deploy.
 #   - nhánh chore/soat-cau-hinh-payos-firebase  -> PRODUCTION (api.zoldify.com)
 #   - nhánh staging                             -> STAGING   (api-staging.zoldify.com)
 # Secrets cần: VPS_HOST, VPS_USER, VPS_SSH_KEY (đã set sẵn trong repo).
@@ -59,7 +60,9 @@ jobs:
             cd "$DIR"
             git fetch origin "$REF"
             git checkout -B "$REF" "origin/$REF"
-            docker compose -p "$PROJ" up -d --build
+            # Thay lần lượt từng bản api thay vì `up -d --build` tạo lại cả ba
+            # cùng lúc (502 khoảng 5 giây mỗi lần deploy). Xem đầu script.
+            bash scripts/deploy/lan-luot-api.sh "$PROJ"
             docker image prune -f || true
             # Giữ 4 GB cache mới nhất: build vẫn nhanh, không phụ thuộc Docker Hub,
             # mà cache không phình tới đầy đĩa VPS 40 GB (xem scripts/selfcheck-ci.ts).

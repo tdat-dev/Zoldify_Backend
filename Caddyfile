@@ -55,18 +55,34 @@
 	# của task này, vì mọi thứ đều "chạy".
 	#
 	# `dynamic a` hỏi lại DNS mỗi `refresh`, nên bản api mới dựng lên là
-	# vào đội ngay, và bản chết bị loại khỏi danh sách.
+	# vào đội sau tối đa 10 giây, và container đã xoá bị loại khỏi danh sách.
 	dynamic a {
 		name api
 		port 3000
 		refresh 10s
 	}
 
-	# Bản api chết thì loại khỏi đội trong 10 giây thay vì cứ đẩy request
-	# vào. `GET /` là healthcheck rẻ nhất, không chạm database.
-	health_uri /
-	health_interval 10s
-	health_timeout 3s
+	# KHÔNG có kiểm sức khoẻ chủ động (`health_uri`): caddy không chạy nó với
+	# upstream động. Tài liệu reverse_proxy nói rõ, và cụm thử 11/11 không có một
+	# dòng log kiểm nào kể cả khi bản api đã chết. Ba dòng `health_uri /` đặt từ
+	# task #6 vì thế chưa từng có tác dụng, đã bỏ để khỏi ai tin vào nó.
+	#
+	# Thay vào đó là kiểm THỤ ĐỘNG: nối vào một bản mà hỏng thì caddy thử bản
+	# khác trong tối đa 5 giây, và bỏ qua bản hỏng 30 giây cho request sau.
+	# Deploy cần đúng điều này (scripts/deploy/lan-luot-api.sh): bản vừa tắt còn
+	# trong DNS tới `refresh` ở trên. Caddy chỉ thử lại khi CHƯA gửi được request
+	# (nối hỏng), nên POST đặt đơn không bao giờ bị gửi hai lần.
+	lb_try_duration 5s
+	lb_try_interval 250ms
+	fail_duration 30s
+
+	# Kết nối rảnh tới api chỉ giữ 5 giây (mặc định 2 phút). Bản api đang tắt
+	# trả `Connection: close` và chờ lâu hơn hạn này rồi mới đóng cổng
+	# (src/common/tat-em.ts), để caddy không gửi request vào một kết nối đúng
+	# lúc nó bị đóng: lỗi đó là 502 và caddy không thử lại POST đã gửi.
+	transport http {
+		keepalive 5s
+	}
 }
 
 # `{$BIEN:mặc định}` của Caddy CHỈ chạy khi biến KHÔNG ĐƯỢC ĐẶT. Biến được đặt

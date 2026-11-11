@@ -231,6 +231,21 @@ if (coCaddyfile) {
     'polling socket.io được ghim vào một bản api theo IP thật của khách',
     'thiếu thì 2/3 phiên polling mất session khi chạy ba bản api',
   );
+
+  // Deploy khởi động lại lần lượt từng bản api (scripts/deploy/lan-luot-api.sh).
+  // Bản vừa tắt vẫn nằm trong danh sách DNS của caddy tới 10 giây; thiếu
+  // `lb_try_duration` thì caddy trả 502 ngay lần nối hỏng đầu tiên thay vì thử
+  // bản bên cạnh, và cả việc khởi động lần lượt thành vô ích.
+  kiem(
+    /\blb_try_duration\s+\d+m?s\b/.test(cf),
+    'caddy thử bản api khác khi nối hỏng (`lb_try_duration`)',
+    'thiếu thì mỗi lần deploy, request rơi vào bản đang tắt nhận 502',
+  );
+  kiem(
+    /\bfail_duration\s+\d+m?s\b/.test(cf),
+    'caddy loại bản api vừa nối hỏng (`fail_duration`), không chờ lượt kiểm 10 giây',
+    'thiếu thì mỗi request tới bản đã tắt đều tốn một lần nối hỏng rồi mới thử lại',
+  );
 }
 
 // ─── 3. Nhiều bản api ───────────────────────────────────────────────────────
@@ -252,6 +267,15 @@ kiem(
   banApi < 2 || !!env(S.api, 'REDIS_URL'),
   'api có REDIS_URL khi chạy nhiều bản',
   'thiếu Redis thì throttler/socket/cache rơi về RAM từng tiến trình: rate limit đếm sai, socket rơi',
+);
+// api nhận SIGTERM thì chờ 10 giây cho caddy bỏ kết nối cũ, rồi tối đa 15 giây đóng
+// app (src/common/tat-em.ts). Docker mặc định SIGKILL sau 10 giây, tức giết
+// bản đó ngay giữa lúc chờ, cắt luôn request đang chạy.
+const tatApi = /^(\d+)s$/.exec(String(S.api?.stop_grace_period ?? ''));
+kiem(
+  !!tatApi && Number(tatApi[1]) >= 35,
+  `api có stop_grace_period ≥35s (đang khai ${String(S.api?.stop_grace_period ?? 'mặc định 10s')})`,
+  'Docker giết api sau 10 giây trong khi api cần tới 30 giây để tắt êm',
 );
 
 // ─── 4. Worker phải đúng MỘT bản ────────────────────────────────────────────

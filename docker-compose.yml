@@ -309,6 +309,10 @@ services:
     # limit, rơi socket, và huỷ đơn ba lần.
     deploy:
       replicas: ${API_REPLICAS:-3}
+    # Nhận SIGTERM, api chờ 10 giây cho caddy bỏ hết kết nối cũ tới nó rồi mới
+    # đóng, đóng tối đa 15 giây nữa (src/common/tat-em.ts). Mặc định Docker SIGKILL
+    # sau 10 giây, tức giết ngay giữa lúc chờ và cắt request đang chạy.
+    stop_grace_period: 40s
     mem_limit: ${API_MEM:-512m}
     logging: *default-logging
     depends_on:
