@@ -443,16 +443,17 @@ function operations() {
   return s;
 }
 
+// 12/10 nhóm bỏ actor hệ thống (GHN, PayOS, FCM) khỏi sơ đồ use case, bản chiếu theo đúng vậy
 const UC02 = [
   ['Browse & search items', [['extend', 'View item details'], ['extend', 'Filter items']]],
   ['Manage cart', []],
-  ['Place an order', [['include', 'Choose address'], ['include', 'Quote shipping fee', 'GHN'], ['extend', 'Pay online', 'PayOS']]],
+  ['Place an order', [['include', 'Choose address'], ['include', 'Quote shipping fee'], ['extend', 'Pay online']]],
   ['Track an order', [['extend', 'Confirm receipt']]],
   ['Cancel an order', [['extend', 'Refund to wallet']]],
   ['Review a product', []],
 ];
 const UC04 = [
-  ['Top up wallet', [['include', 'Create payment link', 'PayOS'], ['extend', 'Cancel payment link', 'PayOS']]],
+  ['Top up wallet', [['include', 'Create payment link'], ['extend', 'Cancel payment link']]],
   ['View wallet history', []],
   ['Request a withdrawal', [['include', 'Enter bank details']]],
   ['View withdrawal history', []],

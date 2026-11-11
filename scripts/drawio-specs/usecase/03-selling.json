@@ -39,13 +39,11 @@
       "rel": [
         {
           "kind": "include",
-          "label": "Create GHN shipment",
-          "system": "Shipping Provider\n«system» GHN"
+          "label": "Create GHN shipment"
         },
         {
           "kind": "extend",
-          "label": "Retry failed shipment",
-          "system": "Shipping Provider\n«system» GHN"
+          "label": "Retry failed shipment"
         }
       ]
     },

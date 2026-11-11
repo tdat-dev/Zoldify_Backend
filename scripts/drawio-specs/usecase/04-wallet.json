@@ -8,13 +8,11 @@
       "rel": [
         {
           "kind": "include",
-          "label": "Create payment link",
-          "system": "Payment Gateway\n«system» PayOS"
+          "label": "Create payment link"
         },
         {
           "kind": "extend",
-          "label": "Cancel payment link",
-          "system": "Payment Gateway\n«system» PayOS"
+          "label": "Cancel payment link"
         }
       ]
     },

@@ -30,8 +30,7 @@
       "rel": [
         {
           "kind": "include",
-          "label": "Register device token",
-          "system": "Notification Service\n«system» FCM"
+          "label": "Register device token"
         }
       ]
     },

@@ -28,13 +28,11 @@
         },
         {
           "kind": "include",
-          "label": "Quote shipping fee",
-          "system": "Shipping Provider\n«system» GHN"
+          "label": "Quote shipping fee"
         },
         {
           "kind": "extend",
-          "label": "Pay online",
-          "system": "Payment Gateway\n«system» PayOS"
+          "label": "Pay online"
         }
       ]
     },
