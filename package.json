@@ -69,6 +69,7 @@
     "check:constraints": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-constraints.ts",
     "check:drift": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-schema-drift.ts",
     "check:stock": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-stock.ts",
+    "check:suc-khoe": "node -r ts-node/register -r tsconfig-paths/register scripts/selfcheck-suc-khoe.ts",
     "log:summary": "node scripts/log-summary.mjs",
     "notifications:purge": "node -r ts-node/register -r tsconfig-paths/register scripts/don-thong-bao-cu.ts"
   },
