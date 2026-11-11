@@ -20,16 +20,22 @@
  * cha bắn tải và hỏi con qua IPC. Khuôn này lấy từ `loadtest.ts`.
  *
  * ─── Chạy thật cần gì ────────────────────────────────────────────────────────
- * Docker Desktop bật + MySQL test (cổng 3307) + DB `zoldify_sqlaudit` đã seed
- * (có `buyer@zoldify.com` / `admin@zoldify.com`). Thiếu thì runner TỪ CHỐI sạch,
- * không báo "khoẻ" trên bảng rỗng (K6). Bộ phân tích thì kiểm riêng, không cần
- * Docker: `npm run check:chiu-dung`.
+ * Docker Desktop bật +
+ *   - MySQL test 3307, DB `zoldify_sqlaudit` đã seed (buyer@/admin@) — thiếu thì
+ *     TỪ CHỐI, không báo "khoẻ" trên bảng rỗng (K6).
+ *   - Redis test 6380 — BẮT BUỘC: không có Redis thì route có cache treo 10s mỗi
+ *     request (xem chú thích REDIS_URL). Runner ping Redis trước, chết thì TỪ CHỐI.
+ *       docker run -d --name zoldify-test-mysql -p 3307:3306 \
+ *         -e MYSQL_ROOT_PASSWORD=testpw -e MYSQL_DATABASE=zoldify_sqlaudit mysql:8
+ *       docker run -d --name zoldify-test-redis -p 6380:6379 redis:7
+ * Bộ phân tích kiểm riêng, KHÔNG cần Docker: `npm run check:chiu-dung`.
  */
 import { fork, ChildProcess } from 'child_process';
 import { monitorEventLoopDelay, IntervalHistogram } from 'perf_hooks';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as net from 'net';
 import {
   danhGiaChiuDung,
   MauChiuDung,
@@ -48,9 +54,16 @@ E.JWT_REFRESH_TOKEN_SECRET ??= 'do-tai-refresh';
 E.JWT_ACCESS_EXPIRE ??= '1d';
 E.JWT_REFRESH_EXPIRE ??= '7d';
 E.SITE_URL ??= 'http://localhost:3001';
-// Soak đo CPU/bộ nhớ của tiến trình api; thêm chặng mạng Redis chỉ làm mờ. Giữ
-// nguyên lựa chọn của loadtest: mặc định KHÔNG Redis.
-if (E.LOADTEST_REDIS !== '1') delete E.REDIS_URL;
+// ─── Redis BẮT BUỘC cho soak (đo thật, đã dính) ─────────────────────────────
+// Chép mặc định "không Redis" của loadtest vào đây là SAI. Đo được: KHÔNG Redis
+// thì các route có cache treo trên offline-queue của ioredis — mỗi request đợi
+// tới trần 10s rồi chết, cả bài chỉ qua ~6 request/mẫu, lỗi 83%, p95 ghim 10s
+// TRONG KHI event loop lag chỉ 16ms (process rảnh, đang đợi async, không nghẽn
+// CPU). CÓ Redis thì cùng tải SONG=5: ~5.600 req/10s, p95 17ms, lỗi 0%, ĐẠT.
+// Nên soak mặc định trỏ Redis test 6380 (giống cách mặc định DB 3307). Muốn cố
+// ý đo nhánh KHÔNG cache thì đặt SOAK_NO_REDIS=1 (biết trước là sẽ treo).
+if (E.SOAK_NO_REDIS === '1') delete E.REDIS_URL;
+else E.REDIS_URL ??= 'redis://127.0.0.1:6380';
 
 // Chặn cứng: không bao giờ bắn tải dài vào DB thật (K8). Tên phải chứa "audit".
 const DB = E.DB_DATABASE ?? '';
@@ -215,7 +228,36 @@ async function banTai(
   return { do: dos, loi, tong };
 }
 
+/** TCP tới host:port trong `giay` giây — true nếu bắt tay được. */
+function thongMang(host: string, port: number, giay: number): Promise<boolean> {
+  return new Promise((ok) => {
+    const s = net.connect({ host, port });
+    const xong = (kq: boolean): void => { s.destroy(); ok(kq); };
+    s.setTimeout(giay * 1000);
+    s.once('connect', () => xong(true));
+    s.once('timeout', () => xong(false));
+    s.once('error', () => xong(false));
+  });
+}
+
 async function main(): Promise<void> {
+  // Fail-fast Redis: nếu KHÔNG ping được Redis trước khi tốn ~60s dựng app thì
+  // mọi route có cache sẽ treo 10s/request (xem chú thích REDIS_URL). Thà từ chối
+  // ngay còn hơn chạy xong mới thấy lỗi 83%. Bỏ qua khi SOAK_NO_REDIS=1.
+  if (E.REDIS_URL) {
+    const u = new URL(E.REDIS_URL);
+    const host = u.hostname || '127.0.0.1';
+    const port = Number(u.port || 6379);
+    if (!(await thongMang(host, port, 3))) {
+      console.error(
+        `Từ chối: không nối được Redis ${host}:${port} (REDIS_URL=${E.REDIS_URL}).\n` +
+          `  Dựng: docker run -d --name zoldify-test-redis -p 6380:6379 redis:7\n` +
+          `  Hoặc SOAK_NO_REDIS=1 để cố ý đo nhánh KHÔNG cache (sẽ treo ở route có cache).`,
+      );
+      process.exit(1);
+    }
+  }
+
   console.log('▶ Dựng server ở tiến trình riêng (để phép đo không tự làm nghẽn nó)…');
   const con: ChildProcess = fork(__filename, [], {
     // --expose-gc để con ép GC trước khi đọc heap, cho số heap sạch nhiễu GC.
