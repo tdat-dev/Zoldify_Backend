@@ -194,9 +194,17 @@ async function main(): Promise<void> {
   kiem(goc.status === 200, `B1 GET / → 200 (${goc.status})`);
 
   const h = await goi('/health');
-  kiem(h.status === 200, `B2 GET /health → 200 (${h.status})`, h.text.slice(0, 200));
+  // Treo khác hẳn trả lời "down". Lượt tiêm lỗi 11/11 (dừng Redis của cụm):
+  // `/health` không trả lời trong 20 giây, mà B4 lại in "API không đọc được
+  // MySQL" — trong khi MySQL vẫn sống. Gợi ý sai thì người trực đi sửa nhầm chỗ.
+  if (h.status === 0) {
+    bad(
+      `B2 GET /health TREO — không trả lời sau ${(h.ms / 1000).toFixed(1)} s`,
+      'route này chạm DB và cache; GET / vẫn sống thì nghi cache (Redis) đang treo chứ không ném lỗi',
+    );
+  } else kiem(h.status === 200, `B2 GET /health → 200 (${h.status})`, h.text.slice(0, 200));
   kiem(h.body?.status === 'ok', `B3 /health status = ok (${h.body?.status})`);
-  kiem(h.body?.db === 'up', `B4 /health db = up (${h.body?.db})`, 'API không đọc được MySQL');
+  kiem(h.body?.db === 'up', `B4 /health db = up (${h.body?.db})`, h.status ? 'API không đọc được MySQL' : 'không có phản hồi để đọc');
   kiem(
     h.body?.redis === 'up', // R3
     `B5 /health redis = up (${h.body?.redis})`,
