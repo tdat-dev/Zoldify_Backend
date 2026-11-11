@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * Sinh 05-use-case-diagram.drawio: trang tổng quan và các trang CHI TIẾT (UC01,
- * UC02, ...), mỗi trang chi tiết một nhóm chức năng, có «include» / «extend».
+ * Sinh các trang use case CHI TIẾT (UC01, UC02, ...) vào 05-use-case-diagram.drawio,
+ * mỗi trang một nhóm chức năng, có «include» / «extend».
  *
- * Trang tổng quan vẽ ngang 16:9 để chiếu được trên slide (xem buildOverview).
- * Spec trang chi tiết ở scripts/drawio-specs/usecase/*.json, mỗi file một trang.
+ * Trang đầu (tổng quan) là bản vẽ tay của nhóm, script giữ nguyên nó và chỉ thay
+ * các trang phía sau. a1fb166 từng thay nó bằng bản sinh tự động; user muốn đúng
+ * bản vẽ tay nên 11/11 trả lại (Guest thêm thẳng trong trang đó).
+ * Spec ở scripts/drawio-specs/usecase/*.json, mỗi file một trang.
  * Mỗi use case gốc có thể ghi `actor` riêng, không ghi thì lấy `actor` của trang.
  *
  * Bố cục ba cột: actor | use case gốc | use case được include hoặc extend.
@@ -132,85 +134,13 @@ function buildPage(spec) {
   return { name: title, cells, w: right + 40, h: bottom + 40 };
 }
 
-/**
- * Trang tổng quan, tỉ lệ khoảng 16:9 và chữ lớn để đọc được khi chiếu.
- *
- * Actor đứng giữa, toả sang hai bên: Guest và User nối cả hai cột, Seller nối
- * cột trái, Buyer nối cột phải, Administrator ở mép phải có cột riêng. Nhờ vậy
- * mọi đường đều thẳng, không cắt nhau và không xuyên qua hình nào.
- */
-function buildOverview() {
-  const FS = 21;
-  const uc = `ellipse;whiteSpace=wrap;html=1;fontSize=${FS};fontStyle=1;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.2;spacing=2;${FONT}`;
-  const actor = `shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=${FS};fontStyle=1;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.4;${FONT}`;
-  const dep = ST.dep.replace('fontSize=11', 'fontSize=18');
-  const W = 270, H = 54, PITCH = 68, Y0 = 24;
-  const X_L = 20, X_R = 760, X_RR = 1150;
-  const yRow = (r) => Y0 + r * PITCH;
-  const cells = [];
-  let n = 0;
-  const put = (key, label, x, row) => {
-    cells.push(cell(key, escLabel(label), uc, x, yRow(row), W, H));
-    return key;
-  };
-  const man = (key, label, cx, top) => cells.push(cell(key, esc(label), actor, cx - 20, top, 40, 76));
-  const link = (from, to, exit, entry, style = ST.assoc, value = '') => cells.push(edge(`e${++n}`, value, style, from, to, exit, entry));
-  const L = [0, 0.5], R = [1, 0.5];
-
-  man('guest', 'Guest', 525, 22);
-  man('user', 'User', 525, 170);
-  man('seller', 'Seller', 415, 430);
-  man('buyer', 'Buyer', 635, 430);
-  man('admin', 'Administrator', 1610, 200);
-  link('user', 'guest', [0.5, 0], [0.5, 1.42], ST.gen);
-  link('seller', 'user', [0.5, 0], [0.5, 1.42], ST.gen);
-  link('buyer', 'user', [0.5, 0], [0.5, 1.42], ST.gen);
-
-  const fan = (who, side, items) => {
-    for (const [label, row, x] of items) {
-      const key = `uc${++n}`;
-      put(key, label, x, row);
-      if (side === 'left') link(who, key, [0, 0.25], R);
-      else link(who, key, [1, 0.25], L);
-    }
-  };
-  fan('guest', 'left', [['Register an account', 0, X_L], ['Sign in', 1, X_L]]);
-  fan('guest', 'right', [['Browse & search items', 0, X_R], ['View item details', 1, X_R]]);
-  fan('user', 'left', [['Manage profile', 2, X_L]]);
-  fan('user', 'right', [['Exchange messages', 2, X_R]]);
-  fan('seller', 'left', [
-    ['List an item for sale', 3.4, X_L], ['Manage sales orders', 4.8, X_L], ['Cancel a sale', 6.2, X_L],
-    ['View wallet history', 7.6, X_L], ['Request a withdrawal', 9, X_L],
-  ]);
-  fan('buyer', 'right', [
-    ['Manage cart', 3, X_R], ['Place an order', 4, X_R], ['Top up wallet', 5, X_R], ['Track an order', 6, X_R],
-    ['Cancel an order', 7, X_R],
-  ]);
-  put('confirm', 'Confirm delivery', X_R, 8);
-  link('buyer', 'confirm', [1, 0.25], L);
-  fan('buyer', 'right', [['Review a product', 9, X_R]]);
-
-  const admin = [['Review withdrawals', 0.6], ['Manage users', 2], ['Moderate listings', 3.4], ['Reconcile the ledger', 4.8]];
-  for (const [label, row] of admin) {
-    const key = `uc${++n}`;
-    put(key, label, X_RR, row);
-    link('admin', key, [0, 0.25], R);
-  }
-  put('refund', 'Issue a refund', X_RR, 6.2);
-  link('admin', 'refund', [0, 0.25], R);
-  put('escrow', 'Manage escrow funds', X_RR, 8);
-  link('refund', 'escrow', [0.5, 1], [0.5, 0], dep, esc('«include»'));
-  link('confirm', 'escrow', R, L, dep, esc('«include»'));
-  return { name: 'Use Case Diagram', cells, w: 1720, h: yRow(10) + 14 };
-}
-
 const specs = fs
   .readdirSync(SPEC_DIR)
   .filter((f) => f.endsWith('.json'))
   .sort()
   .map((f) => JSON.parse(fs.readFileSync(path.join(SPEC_DIR, f), 'utf8')));
 
-const pages = [buildOverview(), ...specs.map(buildPage)];
+const pages = specs.map(buildPage);
 const body = pages
   .map(
     (p, i) =>
@@ -220,11 +150,12 @@ const body = pages
   )
   .join('\n');
 
-// Giữ phần mở đầu của file, thay toàn bộ các trang.
+// Giữ nguyên trang tổng quan (trang đầu), thay toàn bộ các trang sau nó.
 const xml = fs.readFileSync(OUT, 'utf8');
-const head = xml.slice(0, xml.indexOf('<diagram')).trimEnd();
+const firstEnd = xml.indexOf('</diagram>') + '</diagram>'.length;
+const head = xml.slice(0, firstEnd);
 // Theo kiểu xuống dòng của file gốc (CRLF khi lưu từ draw.io trên Windows),
 // không thì một file lẫn hai kiểu xuống dòng.
 const eol = head.includes('\r\n') ? '\r\n' : '\n';
 fs.writeFileSync(OUT, `${head}\n${body}\n</mxfile>\n`.replace(/\r?\n/g, eol));
-console.log(`${path.relative(ROOT, OUT)}: ${pages.map((p) => p.name).join(', ')}`);
+console.log(`${path.relative(ROOT, OUT)}: tổng quan + ${pages.map((p) => p.name).join(', ')}`);

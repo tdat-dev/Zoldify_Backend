@@ -10,7 +10,7 @@ ERD, và hai file chỉ để chiếu (bản rút gọn, trang Payment tách đ�
 | 8 Class Diagram | `08-class-diagram.drawio` | 3 trang: Domain Model, Enumerations, Money Services |
 | 9 Sequence Diagram | `Sequence-Diagrams.drawio` | 14 trang, slide 9 dùng trang Payment |
 | ERD | `10-entity-relationship-diagram.drawio` | 4 trang theo vùng, 27 bảng, crow's foot |
-| Slide chiếu | `12-slide-diagrams.drawio` | 13 trang rút gọn, chữ đủ lớn khi chiếu: deployment, UC02, UC04, activity, class, sequence, ERD tiền, dòng tiền, hai người mua, bút toán, vận hành |
+| Slide chiếu | `12-slide-diagrams.drawio` | 11 trang rút gọn, chữ đủ lớn khi chiếu: deployment, activity, class, sequence, ERD tiền, dòng tiền, hai người mua, bút toán, vận hành |
 | Slide dự phòng | `13-payment-parts.drawio` | trang Payment tách hai trang: webhook, ghi sổ |
 
 Slide 11 (Deployment) nhóm đã bỏ (12/10), cùng 16 sơ đồ cũ khác (bảy `06*-activity`,
@@ -36,15 +36,16 @@ trong draw.io vì lần sinh sau sẽ đè:
 
 | File | Nguồn | Lệnh |
 |---|---|---|
-| `05-use-case-diagram.drawio` | Trang tổng quan: `buildOverview` trong script. Trang UC01 đến UC06: `scripts/drawio-specs/usecase/NN-*.json` | `node scripts/drawio-usecase.mjs` |
+| `05-use-case-diagram.drawio` | Trang tổng quan: vẽ tay, script giữ nguyên. Trang UC01 đến UC06: `scripts/drawio-specs/usecase/NN-*.json` | `node scripts/drawio-usecase.mjs` |
 | `08-class-diagram.drawio` | `scripts/drawio-class.mjs` (toạ độ, thuộc tính, quan hệ) | `node scripts/drawio-class.mjs` |
 | `Sequence-Diagrams.drawio` | `scripts/drawio-specs/sequence/NN-*.json`, mỗi file một trang | `node scripts/drawio-sequence.mjs` |
 | `10-entity-relationship-diagram.drawio` | entity TypeORM qua `scripts/drawio-erd-model.mjs`, bố cục ở `scripts/drawio-erd.mjs` | `node scripts/drawio-erd.mjs` |
 | `12-slide-diagrams.drawio` | `scripts/drawio-slides.mjs` | `node scripts/drawio-slides.mjs` |
 | `13-payment-parts.drawio` | `scripts/drawio-specs/sequence/07-payment.json` | `node scripts/drawio-payment-parts.mjs` |
 
-Riêng file use case: trang đầu (tổng quan) vẽ ngang 16:9 để chiếu được trên slide, có 5 actor:
-Guest, User kế thừa Guest, Buyer và Seller kế thừa User, Administrator. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
+Riêng file use case: trang đầu (tổng quan) là bản nhóm vẽ tay, có 5 actor: Guest, User kế thừa
+Guest, Buyer và Seller kế thừa User, Administrator (Guest thêm tay ngày 11/11, giữ nguyên bố cục).
+Slide use case xuất thẳng trang tổng quan, UC02 và UC04 của file này, không vẽ lại. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
 giữa, use case `«include»` / `«extend»` bên phải. Không vẽ actor hệ thống ngoài (GHN, PayOS,
 FCM): nhóm bỏ ngày 12/10.
 

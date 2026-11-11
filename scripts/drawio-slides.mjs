@@ -5,7 +5,8 @@
  * Sơ đồ đầy đủ trong báo cáo có chữ khoảng 5pt khi đặt lên slide 16:9, hội đồng
  * không đọc được. Mỗi trang ở đây vẽ cho khung slide: rộng 1265 đơn vị, một đơn
  * vị bằng 0,72pt trên slide, nên chữ 18px thành khoảng 13pt. Số liệu và quan hệ
- * lấy từ các sơ đồ gốc, bản đầy đủ vẫn là 05, 08, Sequence-Diagrams.
+ * lấy từ các sơ đồ gốc, bản đầy đủ vẫn là 05, 08, Sequence-Diagrams. Use case
+ * không vẽ lại: slide xuất thẳng các trang của 05-use-case-diagram.
  *
  *   node scripts/drawio-slides.mjs
  */
@@ -20,8 +21,6 @@ const OUT = path.join(ROOT, 'docs', 'system-design', 'drawio', '12-slide-diagram
 const FONT = 'fontFamily=Helvetica;fontColor=#000000;';
 const LINE = 'strokeColor=#000000;strokeWidth=1.5;';
 const ST = {
-  uc: (fs_, bold) => `ellipse;whiteSpace=wrap;html=1;fontSize=${fs_};fontStyle=${bold ? 1 : 0};fillColor=#FFFFFF;${LINE}spacing=2;${FONT}`,
-  actor: (fs_) => `shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=${fs_};fontStyle=1;fillColor=#FFFFFF;${LINE}${FONT}`,
   assoc: `edgeStyle=none;html=1;rounded=0;endArrow=none;${LINE}`,
   dep: `edgeStyle=none;html=1;rounded=0;dashed=1;dashPattern=6 4;endArrow=open;endFill=0;endSize=12;strokeColor=#000000;strokeWidth=1.2;fontSize=16;labelBackgroundColor=#FFFFFF;${FONT}`,
   flow: `edgeStyle=none;html=1;rounded=0;endArrow=block;endFill=1;endSize=9;${LINE}`,
@@ -102,48 +101,6 @@ const mid = (s, k) => {
   const g = s.at[k];
   return { l: [g.x, g.y + g.h / 2], r: [g.x + g.w, g.y + g.h / 2], t: [g.x + g.w / 2, g.y], b: [g.x + g.w / 2, g.y + g.h] };
 };
-
-// ------------------------------------------------------------- use case chi tiết
-function ucPage(name, actor, cases, fs_) {
-  const s = sheet(name, 1265, 550);
-  const W = 320, X_ACTOR = 90, X_BASE = 220, X_CHILD = 680, X_SYS = 1180, TOP = 5, H = 540;
-  const rows = cases.reduce((t, [, rels]) => t + Math.max(1, rels.length), 0);
-  const pitch = H / rows;
-  const h = Math.min(66, pitch - 8);
-  const my = TOP + H / 2;
-  node(s, 'actor', actor, ST.actor(21), X_ACTOR - 20, my - 50, 40, 76);
-  const sys = new Map();
-  let r = 0, n = 0;
-  for (const [title, rels] of cases) {
-    const span = Math.max(1, rels.length);
-    const cy = TOP + (r + span / 2) * pitch;
-    const b = `b${++n}`;
-    node(s, b, title, ST.uc(fs_, true), X_BASE, cy - h / 2, W, h);
-    wire(s, 'actor', b, [X_ACTOR + 20, my - 30], [X_BASE, cy]);
-    rels.forEach(([kind, text, system], i) => {
-      const y = TOP + (r + i + 0.5) * pitch;
-      const c = `c${++n}`;
-      node(s, c, text, ST.uc(fs_, false), X_CHILD, y - h / 2, W, h);
-      const tag = `«${kind}»`;
-      if (kind === 'include') wire(s, b, c, [X_BASE + W, cy], [X_CHILD, y], ST.dep, { value: tag });
-      else wire(s, c, b, [X_CHILD, y], [X_BASE + W, cy], ST.dep, { value: tag });
-      if (system) {
-        if (!sys.has(system)) sys.set(system, []);
-        sys.get(system).push({ c, y });
-      }
-    });
-    r += span;
-  }
-  let prev = -Infinity;
-  for (const [label_, links] of sys) {
-    const y = Math.max(links.reduce((t, l) => t + l.y, 0) / links.length, prev + 165);
-    prev = y;
-    const k = `s${++n}`;
-    node(s, k, label_, ST.actor(19), X_SYS - 20, y - 50, 40, 76);
-    for (const l of links) wire(s, l.c, k, [X_CHILD + W, l.y], [X_SYS - 20, y - 30]);
-  }
-  return s;
-}
 
 // ------------------------------------------------------------- activity
 function activity() {
@@ -443,26 +400,9 @@ function operations() {
   return s;
 }
 
-// 12/10 nhóm bỏ actor hệ thống (GHN, PayOS, FCM) khỏi sơ đồ use case, bản chiếu theo đúng vậy
-const UC02 = [
-  ['Browse & search items', [['extend', 'View item details'], ['extend', 'Filter items']]],
-  ['Manage cart', []],
-  ['Place an order', [['include', 'Choose address'], ['include', 'Quote shipping fee'], ['extend', 'Pay online']]],
-  ['Track an order', [['extend', 'Confirm receipt']]],
-  ['Cancel an order', [['extend', 'Refund to wallet']]],
-  ['Review a product', []],
-];
-const UC04 = [
-  ['Top up wallet', [['include', 'Create payment link'], ['extend', 'Cancel payment link']]],
-  ['View wallet history', []],
-  ['Request a withdrawal', [['include', 'Enter bank details']]],
-  ['View withdrawal history', []],
-];
-
 const pages = [
   deployment(),
-  ucPage('UC02 Buying', 'Buyer', UC02, 19),
-  ucPage('UC04 Wallet', 'User', UC04, 22),
+  // Slide use case dùng thẳng trang của 05-use-case-diagram (bản nhóm vẽ), không vẽ lại ở đây.
   activity(),
   classCore(),
   classMoney(),
