@@ -10,8 +10,7 @@
           "kind": "include",
           "label": "Verify email with OTP"
         }
-      ],
-      "actor": "Guest"
+      ]
     },
     {
       "label": "Sign in",
@@ -20,8 +19,7 @@
           "kind": "extend",
           "label": "Sign in with Google"
         }
-      ],
-      "actor": "Guest"
+      ]
     },
     {
       "label": "Reset password",
@@ -30,8 +28,7 @@
           "kind": "include",
           "label": "Verify reset OTP"
         }
-      ],
-      "actor": "Guest"
+      ]
     },
     {
       "label": "Manage profile",

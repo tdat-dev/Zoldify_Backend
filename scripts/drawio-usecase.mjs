@@ -3,11 +3,10 @@
  * Sinh các trang use case CHI TIẾT (UC01, UC02, ...) vào 05-use-case-diagram.drawio,
  * mỗi trang một nhóm chức năng, có «include» / «extend».
  *
- * Trang đầu (tổng quan) là bản vẽ tay của nhóm, script giữ nguyên nó và chỉ thay
- * các trang phía sau. a1fb166 từng thay nó bằng bản sinh tự động; user muốn đúng
- * bản vẽ tay nên 11/11 trả lại (Guest thêm thẳng trong trang đó).
- * Spec ở scripts/drawio-specs/usecase/*.json, mỗi file một trang.
- * Mỗi use case gốc có thể ghi `actor` riêng, không ghi thì lấy `actor` của trang.
+ * Trang đầu (tổng quan) là bản vẽ tay, script giữ nguyên nó và chỉ thay các
+ * trang phía sau. Spec ở scripts/drawio-specs/usecase/*.json, mỗi file một trang.
+ * Lưu ý: trang UC02 đến UC06 hiện có chỉnh tay của nhóm (4da2d59), chạy lại script
+ * sẽ đè mất, nên chỉ chạy khi chủ ý vẽ lại cả các trang đó.
  *
  * Bố cục ba cột: actor | use case gốc | use case được include hoặc extend.
  * Mỗi use case gốc chiếm một dải hàng riêng, use case con nằm trong đúng dải
@@ -31,7 +30,6 @@ const ST = {
   actor: `shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;fontStyle=1;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.2;${FONT}`,
   uc: `ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#FFFFFF;strokeColor=#000000;strokeWidth=1.2;spacing=8;${FONT}`,
   assoc: 'edgeStyle=none;html=1;rounded=0;endArrow=none;strokeColor=#000000;strokeWidth=1.2;',
-  gen: 'edgeStyle=none;html=1;rounded=0;endArrow=block;endFill=0;endSize=14;strokeColor=#000000;strokeWidth=1.2;',
   dep: `edgeStyle=none;html=1;rounded=0;dashed=1;dashPattern=6 4;endArrow=open;endFill=0;endSize=10;strokeColor=#000000;strokeWidth=1;fontSize=11;labelBackgroundColor=#FFFFFF;${FONT}`,
 };
 
@@ -75,20 +73,9 @@ function buildPage(spec) {
   const frame = () =>
     `<mxCell id="frame" value="${esc(title)}" style="${ST.frame}width=${Math.round(title.length * 7.2 + 40)};" vertex="1" parent="1"><mxGeometry x="40" y="40" width="${right - 40}" height="${bottom - 40}" as="geometry"/></mxCell>`;
 
-  // Mỗi actor đứng giữa chiều cao các use case gốc của nó. Use case của một
-  // actor phải nằm liền nhau trong spec, nếu không đường nối sẽ cắt nhau.
-  const actorOf = (b) => b.actor ?? spec.actor;
-  const actors = [...new Set(bases.map(actorOf))].map((name, i) => {
-    const mine = bases.filter((b) => actorOf(b) === name);
-    const last = mine[mine.length - 1];
-    return { name, id: i === 0 ? 'actor' : `actor${i + 1}`, midY: (yOf(mine[0].first) + yOf(last.first + last.span)) / 2 };
-  });
-  for (const a of actors) cells.push(cell(a.id, esc(a.name), ST.actor, X_ACTOR, a.midY - 40, 34, 64));
-  const actorId = (b) => actors.find((a) => a.name === actorOf(b)).id;
-  // Actor đứng dưới là trường hợp riêng của actor đứng trên (User kế thừa Guest).
-  for (let i = 1; i < actors.length; i++) {
-    cells.push(edge(id('g'), '', ST.gen, actors[i].id, actors[i - 1].id, [0.5, 0], [0.5, 1.45]));
-  }
+  // Actor chính đứng giữa chiều cao các use case gốc.
+  const midY = (yOf(0) + yOf(rows)) / 2;
+  cells.push(cell('actor', esc(spec.actor), ST.actor, X_ACTOR, midY - 40, 34, 64));
 
   const systems = new Map(); // nhãn -> { id, rows: [] }
 
@@ -98,7 +85,7 @@ function buildPage(spec) {
     cells.push(cell(bid, escLabel(b.label), ST.uc, X_BASE, by, UC_W, UC_H));
     // Xuất phát ngang vai chứ không giữa thân: nhãn actor dài (Administrator)
     // tràn sang phải, đường đi xuống dốc nhất sẽ cắt qua chữ nếu bắt đầu thấp hơn.
-    cells.push(edge(id('a'), '', ST.assoc, actorId(b), bid, [1, 0.25], [0, 0.5]));
+    cells.push(edge(id('a'), '', ST.assoc, 'actor', bid, [1, 0.25], [0, 0.5]));
 
     b.rels.forEach((r, i) => {
       const cid = id('c');

@@ -43,8 +43,8 @@ trong draw.io vì lần sinh sau sẽ đè:
 | `12-slide-diagrams.drawio` | `scripts/drawio-slides.mjs` | `node scripts/drawio-slides.mjs` |
 | `13-payment-parts.drawio` | `scripts/drawio-specs/sequence/07-payment.json` | `node scripts/drawio-payment-parts.mjs` |
 
-Riêng file use case: trang đầu (tổng quan) là bản nhóm vẽ tay, có 5 actor: Guest, User kế thừa
-Guest, Buyer và Seller kế thừa User, Administrator (Guest thêm tay ngày 11/11, giữ nguyên bố cục).
+Riêng file use case: trang đầu (tổng quan) là bản nhóm vẽ tay, có 4 actor: User, Buyer và Seller
+kế thừa User, Administrator. Trang UC02 đến UC06 có chỉnh tay, đừng chạy lại script cho cả file.
 Slide use case xuất thẳng trang tổng quan, UC02 và UC04 của file này, không vẽ lại. Mỗi trang UC là một nhóm chức năng: actor bên trái, use case gốc ở
 giữa, use case `«include»` / `«extend»` bên phải. Không vẽ actor hệ thống ngoài (GHN, PayOS,
 FCM): nhóm bỏ ngày 12/10.
