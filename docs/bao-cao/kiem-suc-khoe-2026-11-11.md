@@ -1,16 +1,18 @@
 # Kiểm sức khoẻ cụm Backend — 11/11/2026
 
-> **Kết luận:** lúc mọi dịch vụ đều sống thì cụm **KHOẺ**: 37/37 ca qua.
-> Nhưng chỉ cần **Redis chết** thì cụm **HỎNG**: mọi route có chạm cache treo
-> vô thời hạn, và Docker đánh dấu cả 3 bản api là unhealthy. Lỗi này ngược với
-> thiết kế ghi trong `src/ops/health/health.service.ts`. Mục 4 có số đo và
-> nguyên nhân.
+> **Kết luận (dựng lại từ HEAD, 19:20):** lúc mọi dịch vụ đều sống thì cụm
+> **KHOẺ**: 55 PASS · 0 FAIL · 1 BỎ QUA. Nhưng chỉ cần **Redis chết** thì cụm
+> **HỎNG**: mọi route có chạm cache treo vô thời hạn, và Docker đánh dấu cả 3
+> bản api là unhealthy. Lỗi này ngược với thiết kế ghi trong
+> `src/ops/health/health.service.ts`. Đã đo trên cả image cũ (18 đỏ) lẫn HEAD
+> (22 đỏ). Mục 4 có số đo và nguyên nhân.
 
 | | |
 |---|---|
 | Bộ kiểm | `scripts/selfcheck-suc-khoe.ts` |
 | Lệnh | `npm run check:suc-khoe` (đo cụm ở xa: `SUC_KHOE_URL=https://… npm run check:suc-khoe`) |
-| Nhánh · commit | `test/kiem-suc-khoe` · `dc07144` (nhóm A–H) · `9af9d65` (thêm A6, I, J) |
+| Nhánh · commit | `test/kiem-suc-khoe` · `dc07144` (nhóm A–H) · `9af9d65` (thêm A6, I, J) · `d49cf7d` (F6 tách hai ý) · `98e457f` (I6 không đỏ dây chuyền) |
+| Image api | Lượt đầu: build 12/10 (cũ). Từ 19:20: dựng lại từ HEAD `b161132`, migrate chạy thêm 12 migration (26 → 38). Bản sao `zoldify_dev` trước khi dựng lại nằm ở scratchpad của phiên, không đưa vào repo |
 | Đích | `http://localhost:8080` — Caddy → `api` ×3 → MySQL + Redis của cụm compose |
 | Dữ liệu | 1015 sản phẩm, 9 danh mục |
 
@@ -52,7 +54,7 @@ Có hai cột kết quả:
 | A3 | redis | running + healthy | ✅ | ❌ exited (đúng như chủ ý) |
 | A4 | worker, caddy | running | ✅ ✅ | ✅ ✅ |
 | A5 | migrate | đã thoát, mã 0 | ✅ | ✅ |
-| A6 | Tuổi image api so với `src/` | không cũ hơn commit mới nhất của `src/` | ❌ **build 12/10, mã 08/11** (xem mục 4b) | — (ca thêm sau) |
+| A6 | Tuổi image api so với `src/` | không cũ hơn commit mới nhất của `src/` | ❌ **build 12/10, mã 08/11** (xem mục 4b) → ✅ sau khi dựng lại (build 11/11 12:21 UTC) | — (ca thêm sau) |
 
 ### B. Sống và khoẻ
 
@@ -102,8 +104,17 @@ Có hai cột kết quả:
 | F3 | `X-Powered-By` | không lộ | ✅ | ✅ |
 | F4 | `X-Request-Id` hợp lệ do client gửi | trả lại nguyên vẹn | ✅ | ❌ treo |
 | F5 | `X-Request-Id: "}{"level":"fatal` (dạng chèn dòng log giả) | bị thay bằng mã hợp lệ | ✅ `8b83ba6b-5k` | ❌ treo |
-| F6 | CORS với `Origin: https://ke-gian.example` | không có `Access-Control-Allow-Origin` cho origin đó | ✅ không có header | ✅ |
+| F6 | CORS với `Origin: https://ke-gian.example` **kèm `Authorization`** | không có `Access-Control-Allow-Origin` | ✅ không có header | — |
+| F6b | Cùng origin đó, **ẩn danh** (`/categories`) | không phản chiếu origin lạ, không kèm `Allow-Credentials` | ✅ `*`, không credentials | — |
 | F7 | `/api/docs` gọi từ xa qua Caddy | 404 hoặc 401 | ✅ 404 | ✅ |
+
+F6 bản đầu chỉ có một ý ("ẩn danh không có ACAO"). Nó xanh trên image cũ rồi
+**đỏ ngay khi dựng lại từ HEAD** (`ACAO: *`). Đó không phải lỗi: từ khi có
+cache Cloudflare, `src/common/cache-bien.ts:87` cố ý trả `*` và bỏ credentials
+cho danh sách công khai, để Cloudflare dùng một bản cho mọi origin (spec
+`cache-bien.spec.ts:151`, tài liệu `docs/bao-cao/cache-cloudflare.md`). Bài
+kiểm sai nên được tách thành F6 và F6b (`d49cf7d`), canh đúng hai điều thật sự
+phải giữ.
 
 ### G. Độ trễ (qua Caddy, gọi tuần tự, không tải)
 
@@ -128,7 +139,7 @@ Kết quả lấy từ lượt chạy trên commit `9af9d65`.
 | I4 | Hồ sơ trả về | không lộ `password`, `refresh_token`, `refresh_hash`, `token_version` | ✅ |
 | I5 | `POST /auth/refresh` | cặp token mới, refresh token đã đổi, access mới dùng được | ✅ |
 | I6 | Sau `POST /auth/logout` | access cũ ra 401, refresh cũ bị từ chối | ✅ (access 401, refresh 400) |
-| I7 | Đăng xuất phiên B | phiên A của cùng người **vẫn sống** | ❌ **401: phiên A bị đá theo** (do image cũ, xem mục 4b) |
+| I7 | Đăng xuất phiên B | phiên A của cùng người **vẫn sống** | ❌ **401: phiên A bị đá theo** trên image cũ (mục 4b) → ✅ **200 trên HEAD** |
 
 ### J. Phân quyền (buyer · seller · admin)
 
@@ -164,6 +175,10 @@ không request nào bị 429.
 | Redis chết | 18 | 18 | 1 | **HỎNG** |
 | Sau khi bật lại Redis | 37 | 0 | 0 | **KHOẺ**, cụm tự hồi phục |
 | Đủ 10 nhóm A–J (`9af9d65`) | 52 | 2 | 1 | **HỎNG**: A6 và I7, cùng một gốc là image cũ (mục 4b) |
+| Dựng lại từ HEAD, F6 bản đầu | 53 | 1 | 1 | F6 đỏ: bài kiểm sai, không phải mã (mục F) |
+| Dựng lại từ HEAD, sau `d49cf7d` | 55 | 0 | 1 | **KHOẺ**: A6 và I7 xanh |
+| HEAD, Redis chết | 31 | 22 | 3 | **HỎNG**: vẫn treo (mục 4, "Lặp lại trên HEAD") |
+| HEAD, sau khi bật lại Redis | 55 | 0 | 1 | **KHOẺ**, cụm tự hồi phục, 3 api healthy trở lại |
 
 ## 4. Tiêm lỗi: dừng Redis của cụm
 
@@ -205,8 +220,31 @@ t=231s  /health=000 20.0s   /products=000 20.0s   /=200 0.005s
 - `HealthService.kiemRedis()` (`src/ops/health/health.service.ts:93`) `await`
   cache mà không đặt trần thời gian, nên `/health` treo theo.
 
-Đăng nhập (`auth.service`) nhiều khả năng cũng treo theo, nhưng chưa đo trực
-tiếp.
+### Lặp lại trên HEAD (19:25 – 19:32)
+
+Lượt trên chạy trên image cũ, nên phải đo lại trước khi báo. Dừng Redis 65
+giây rồi mới chạy bộ kiểm. Kết quả: **31 PASS · 22 FAIL · 3 BỎ QUA, vẫn treo**,
+và đỏ nhiều hơn lượt trên image cũ:
+
+```
+t=19:30:13  /health=000 20.0s   /products=000 20.0s
+t=19:30:53  /health=000 20.0s   /products=000 20.0s
+t=19:31:33  /health=000 20.0s   /products=000 20.0s
+api-1, api-2, api-3: unhealthy
+POST /auth/login (seller): 201 trong 0,064 s
+```
+
+So với image cũ:
+
+- **Mới đỏ:** D6 `/categories` (trước vẫn trả lời, giờ có cache nên treo theo),
+  I5 refresh (treo), J4 `/admin/stats` (treo). H1: cả 24/24 request rớt (trước là
+  5).
+- **Đăng nhập KHÔNG treo:** 201 trong 64 ms. Điều mục trên đoán là "nhiều khả
+  năng treo" thì sai với HEAD; refresh mới là thứ treo.
+- I6 lượt này đỏ dây chuyền từ I5: refresh treo nên không có token, logout
+  nhận `Bearer` rỗng và ra 401. Bài kiểm đã sửa để I6 ghi BỎ QUA trong trường
+  hợp đó (`98e457f`).
+- Bật Redis lại thì cụm tự hồi phục: lượt sau ra 55/0/1, cả 3 api healthy.
 
 **Bộ kiểm cũng có lỗi, đã sửa ở `dc07144`:** khi `/health` treo, B4 lại gợi ý
 "API không đọc được MySQL", trong khi MySQL vẫn sống. Giờ khi không có phản hồi,
@@ -226,10 +264,12 @@ máy (`auth.service.ts:348-353`).
 container có 0 chỗ nhắc `sid`. Commit mới nhất chạm `src/` là ngày
 **08/11/2026**.
 
-**Kết luận:** I7 đang đo **bản cũ**, chưa nói được gì về mã hiện tại. Phải
-dựng lại cụm (`npm run docker:up`) rồi chạy lại mới biết HEAD có lỗi này
-không. Ca A6 sinh ra để lần sau thấy điều này ngay, không phải lần ra như lần
-này.
+**Kết luận:** I7 đang đo **bản cũ**, chưa nói được gì về mã hiện tại. Ca A6
+sinh ra để lần sau thấy điều này ngay, không phải lần ra như lần này.
+
+**Đã kiểm lại (19:20):** dựng lại cụm từ HEAD (`npm run docker:up`, migrate
+chạy thêm 12 migration, mã thoát 0). A6 xanh, **I7 xanh (200)**: đăng xuất máy
+này không còn đá máy kia. Lỗi chỉ có ở bản cũ, HEAD không có.
 
 Bài kiểm cũng có ba lỗi tìm ra trong lượt đầu chạy nhóm I/J, đã sửa ở
 `8ad03b9`:
@@ -245,9 +285,9 @@ Bài kiểm cũng có ba lỗi tìm ra trong lượt đầu chạy nhóm I/J, đ
 
 | Việc | Ghi chú |
 |---|---|
-| Sửa lỗi treo khi Redis chết | Vai B (cache, health). Bài kiểm đỏ đã có sẵn: dừng Redis rồi chạy `check:suc-khoe`. Hướng sửa: truyền tuỳ chọn cho `createKeyv` để lệnh ném lỗi ngay khi mất kết nối (bản đang cài có `throwOnConnectError`, `disableOfflineQueue`, `connectionTimeout`), và đặt trần thời gian cho `kiemRedis()`. Nghiệm thu: lượt "Redis chết" chỉ còn A3-redis và B5 đỏ, và B5 phải đọc được `redis = down` kèm mã 200 |
-| Dựng lại cụm từ HEAD rồi chạy lại | Để biết I7 (đăng xuất đá mọi máy) còn trên mã hiện tại không |
+| Sửa lỗi treo khi Redis chết | Vai B (cache, health). **Đã xác nhận còn trên HEAD** (22 đỏ). Bài kiểm đỏ đã có sẵn: dừng Redis rồi chạy `check:suc-khoe`. Hướng sửa: truyền tuỳ chọn cho `createKeyv` để lệnh ném lỗi ngay khi mất kết nối (bản đang cài có `throwOnConnectError`, `disableOfflineQueue`, `connectionTimeout`), và đặt trần thời gian cho `kiemRedis()`. Nghiệm thu: lượt "Redis chết" chỉ còn A3-redis, B5 và H2 đỏ, và B5 phải đọc được `redis = down` kèm mã 200 |
+| ~~Dựng lại cụm từ HEAD rồi chạy lại~~ | Xong 19:20: I7 xanh trên HEAD |
 | Ngân sách đăng nhập | Một lượt chạy tốn 8/10 lần đăng nhập mỗi phút của một IP. Chạy lại trong vòng 60 giây thì I0 báo 429 (có ghi rõ, không phải lỗi cụm) |
-| Kiểm đăng nhập lúc Redis chết | Thêm một ca gọi `POST /auth/login` trong lượt tiêm lỗi |
+| ~~Kiểm đăng nhập lúc Redis chết~~ | Đo tay trên HEAD: login 201 trong 64 ms. Refresh thì treo. Có thể đưa thành ca tự động trong lượt tiêm lỗi |
 | Throttler lúc Redis chết | Theo thiết kế, H2 đỏ khi Redis chết là chấp nhận được (fail-open). Cần quyết rõ đây là chủ ý, rồi ghi lại |
 | Đưa vào quy trình | Chạy `check:suc-khoe` sau mỗi lần `docker:up` hoặc deploy. Có thể thêm vào `nghiem-thu`, kèm điều kiện "cụm đang chạy" |
