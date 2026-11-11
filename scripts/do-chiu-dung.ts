@@ -64,6 +64,10 @@ const MAU_GIAY = Number(E.SOAK_MAU_GIAY ?? 30);
 const WARMUP_PHUT = Number(E.SOAK_WARMUP_PHUT ?? 3);
 const SONG = Number(E.SOAK_SONG ?? 20);
 const RO_CO_Y = E.SOAK_LEAK === '1';
+// Trần thời gian MỘT request. Đã dính: không có trần thì một request đứng là
+// một worker kẹt `await fetch` mãi, `Promise.all` không bao giờ xong → cả bài
+// soak treo im, 15 kết nối nằm im 49s mà không ghi được gì. Quá trần tính là lỗi.
+const TIMEOUT_REQ_MS = Number(E.SOAK_REQ_TIMEOUT_MS ?? 10000);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TIẾN TRÌNH CON — dựng app, tự đo vòng lặp sự kiện + bộ nhớ của chính mình
@@ -195,7 +199,9 @@ async function banTai(
       const headers: Record<string, string> = r.token ? { Authorization: 'Bearer ' + r.token } : {};
       const t0 = process.hrtime.bigint();
       try {
-        const res = await fetch(base + r.duong, { headers });
+        // signal: cắt request quá TIMEOUT_REQ_MS → ném AbortError → tính 1 lỗi,
+        // worker đi tiếp, không khoá cả bài đo (xem chú thích TIMEOUT_REQ_MS).
+        const res = await fetch(base + r.duong, { headers, signal: AbortSignal.timeout(TIMEOUT_REQ_MS) });
         await res.arrayBuffer();
         if (res.status >= 400) loi++;
       } catch {
@@ -214,7 +220,16 @@ async function main(): Promise<void> {
   const con: ChildProcess = fork(__filename, [], {
     // --expose-gc để con ép GC trước khi đọc heap, cho số heap sạch nhiễu GC.
     execArgv: [...process.execArgv, '--expose-gc'],
-    env: { ...process.env, SOAK_ROLE: 'server' },
+    env: {
+      ...process.env,
+      SOAK_ROLE: 'server',
+      // Con kế thừa `-r ts-node/register` của cha, nên nó typecheck CẢ đồ thị
+      // AppModule. Đồ thị đó kéo theo lỗi type có sẵn ở các file chẳng liên
+      // quan gì soak (vd `nen-anh.ts` thiếu kiểu `sharp`, các file .spec) —
+      // đủ để con chết lúc biên dịch trước cả khi chạm DB. Soak chỉ cần app
+      // CHẠY, không cần typecheck; bật transpile-only để bỏ qua các lỗi đó.
+      TS_NODE_TRANSPILE_ONLY: '1',
+    },
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
   });
   const cong = await new Promise<number>((ok, hong) => {
@@ -253,9 +268,16 @@ async function main(): Promise<void> {
   ];
 
   const hoiDo = (): Promise<TinDo> =>
-    new Promise((ok) => {
+    new Promise((ok, loi) => {
+      // Con không trả 'do' trong 20s thì coi phép đo hỏng — thà chết TO còn hơn
+      // treo im (lần đầu cha kẹt chờ, 15 kết nối nằm im 49s mà không báo gì).
+      const h = setTimeout(() => {
+        con.off('message', nghe as never);
+        con.kill();
+        loi(new Error('con không trả số đo sau 20s — server có thể đã kẹt/chết'));
+      }, 20000);
       const nghe = (m: TinDo): void => {
-        if (m.type === 'do') { con.off('message', nghe as never); ok(m); }
+        if (m.type === 'do') { clearTimeout(h); con.off('message', nghe as never); ok(m); }
       };
       con.on('message', nghe as never);
       con.send({ type: 'bao' } satisfies TinCha);
