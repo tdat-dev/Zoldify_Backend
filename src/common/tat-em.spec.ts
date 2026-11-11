@@ -18,8 +18,9 @@ describe('ganTatEm', () => {
     const viec: string[] = [];
     let moCho: () => void = () => undefined;
     const tat = ganTatEm(
-      async () => {
+      () => {
         viec.push('dong');
+        return Promise.resolve();
       },
       {
         tienTrinh,
@@ -32,26 +33,22 @@ describe('ganTatEm', () => {
   }
 
   function goi(tat: ReturnType<typeof ganTatEm>, method: string, path: string) {
+    const ketQua = { ma: 200, header: {} as Record<string, string> };
     const res = {
-      ma: 200,
-      header: {} as Record<string, string>,
-      body: undefined as unknown,
-      status(m: number) {
-        this.ma = m;
-        return this;
+      status: (m: number) => {
+        ketQua.ma = m;
+        return res;
       },
-      setHeader(k: string, v: string) {
-        this.header[k] = v;
+      setHeader: (k: string, v: string) => {
+        ketQua.header[k] = v;
       },
-      send(b: unknown) {
-        this.body = b;
-      },
+      send: () => undefined,
     };
     let quaTiep = false;
     tat.chanKhiTat({ method, path } as never, res as never, () => {
       quaTiep = true;
     });
-    return { res, quaTiep };
+    return { res: ketQua, quaTiep };
   }
 
   it('chưa tắt: GET / đi tiếp như thường, không đổi header', () => {

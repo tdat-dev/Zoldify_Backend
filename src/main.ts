@@ -20,6 +20,7 @@ import { JsonLogger } from './common/json-logger';
 import { chanTaiLieu, taiKhoanTuMoiTruong } from './core/swagger-guard';
 import { ganBatLoiTienTrinh } from './common/loi-tien-trinh';
 import { ganTinProxy } from './common/tin-proxy';
+import { ganTatEm } from './common/tat-em';
 
 // Gắn TRƯỚC khi dựng app. Tới lúc `daKhoiDong()` (ngay sau app.listen) mọi
 // lời hứa mồ côi đều làm tiến trình thoát mã 1: hỏng lúc boot thì phải chết
@@ -32,6 +33,11 @@ async function bootstrap() {
   // Gắn NGAY sau khi dựng: từ đây mọi `new Logger(...)` sẵn có trong service
   // đi qua đây và tự mang mã request, không phải sửa dòng nào trong nghiệp vụ.
   app.useLogger(new JsonLogger());
+
+  // Middleware ĐẦU TIÊN: lúc đang tắt, `GET /` phải trả 503 trước khi helmet
+  // hay bất cứ gì khác chạm vào, để caddy rút bản này ra (xem tat-em.ts).
+  const tatEm = ganTatEm(() => app.close());
+  app.use(tatEm.chanKhiTat);
 
   // CORS strict - chỉ allow domain trong env, không dùng '*' (CSRF protection)
   const allowedOrigins = (process.env.SITE_URL || 'http://localhost:3001')
