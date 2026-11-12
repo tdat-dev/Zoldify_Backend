@@ -3,6 +3,13 @@ import { ProductsService } from '../products/products.service';
 import { AssistantFilters, buildReply, rankByName } from './assistant-filters';
 import { AssistantModel, ChatMessage } from './assistant-model';
 
+/**
+ * Ngân sách cho mô hình. Chủ dự án đặt trần: tìm phải dưới 10 giây, không thì
+ * người mua dùng ô tìm kiếm cho nhanh. Mô hình 6 giây + truy vấn (thường dưới 1
+ * giây, có cache) + mạng vẫn dưới 10. Quá ngân sách thì tìm bằng câu gõ.
+ */
+export const MODEL_BUDGET_MS = 6_000;
+
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
 /**
@@ -76,7 +83,15 @@ export class AssistantService {
 
     let understood: { filters?: AssistantFilters; text?: string } = {};
     try {
-      understood = await this.model.understand(history);
+      understood = await Promise.race([
+        this.model.understand(history),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`quá ${MODEL_BUDGET_MS} ms`)),
+            MODEL_BUDGET_MS,
+          ),
+        ),
+      ]);
     } catch (e) {
       this.log.warn(`Mô hình lỗi, tìm bằng câu gõ: ${(e as Error).message}`);
     }

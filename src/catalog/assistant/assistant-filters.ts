@@ -137,22 +137,66 @@ function words(s: string): string[] {
 }
 
 /**
- * Xếp món theo số chữ của câu hỏi có trong tên, nhiều hơn đứng trước. Tìm
+ * Chữ chung chung không nói lên món gì: "giày chạy bộ như mới" mà tính cả
+ * "như", "mới" thì áo khoác như mới cũng được điểm. Viết không dấu vì so sau
+ * khi bỏ dấu.
+ */
+const STOP_WORDS = new Set([
+  'cu',
+  'moi',
+  'nhu',
+  'con',
+  'dep',
+  're',
+  'gia',
+  'hang',
+  'mua',
+  'ban',
+  'tim',
+  'cho',
+  'minh',
+  'toi',
+  'can',
+  'duoi',
+  'tren',
+  'o',
+  'tai',
+  'va',
+  'loai',
+  'cai',
+]);
+
+/**
+ * Món có ít hơn ngần này phần chữ của câu hỏi bị bỏ khi đã có món khớp tốt.
+ * 0,5: hỏi "nồi cơm điện Nhật" (mô hình hay giữ chữ xuất xứ) thì nồi cơm điện
+ * khớp 3/4 vẫn giữ, nồi áp suất 1/4 bị bỏ.
+ */
+const MIN_COVERAGE = 0.5;
+
+/**
+ * Xếp món theo phần chữ của câu hỏi có trong tên, rồi bỏ món khớp kém. Tìm
  * FULLTEXT trả món chỉ cần trùng MỘT chữ: hỏi "nồi cơm điện" thì nồi áp suất
- * và máy xay (trùng "nồi", "điện") đứng trước nồi cơm thật (staging 12/11).
- * Điểm bằng nhau giữ thứ tự gốc (Array.prototype.sort ổn định từ ES2019).
+ * và máy xay (trùng "nồi", "điện") lẫn vào top (staging 12/11). Thà trả một
+ * món đúng còn hơn sáu món sai. Không món nào khớp quá nửa thì giữ hết, chỉ
+ * sắp lại, để vẫn có gì đó cho người mua xem. Điểm bằng nhau giữ thứ tự gốc.
  */
 export function rankByName<T extends { name: string }>(
   items: T[],
   q: string,
 ): T[] {
-  const want = new Set(words(q));
+  const want = new Set(words(q).filter((w) => !STOP_WORDS.has(w)));
   if (!want.size) return items;
-  const score = (name: string) => words(name).filter((w) => want.has(w)).length;
-  return items
-    .map((item, i) => ({ item, i, s: score(item.name) }))
-    .sort((a, b) => b.s - a.s || a.i - b.i)
-    .map((x) => x.item);
+  const coverage = (name: string) => {
+    const have = new Set(words(name));
+    return [...want].filter((w) => have.has(w)).length / want.size;
+  };
+  const scored = items
+    .map((item, i) => ({ item, i, c: coverage(item.name) }))
+    .sort((a, b) => b.c - a.c || a.i - b.i);
+  const best = scored[0]?.c ?? 0;
+  const kept =
+    best >= MIN_COVERAGE ? scored.filter((x) => x.c >= MIN_COVERAGE) : scored;
+  return kept.map((x) => x.item);
 }
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + ' đ';

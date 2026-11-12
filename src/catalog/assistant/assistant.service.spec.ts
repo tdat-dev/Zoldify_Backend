@@ -117,13 +117,19 @@ describe('AssistantService.ask', () => {
     jest.useFakeTimers();
     try {
       const understand = jest.fn(() => new Promise<never>(() => undefined));
-      const { svc, products } = build({ understand }, [product(1, { name: 'Máy ảnh Canon' })]);
+      const { svc, products } = build({ understand }, [
+        product(1, { name: 'Máy ảnh Canon' }),
+      ]);
       const pending = svc.ask([{ role: 'user', content: 'máy ảnh canon' }]);
       await jest.advanceTimersByTimeAsync(MODEL_BUDGET_MS + 10);
       const kq = await pending;
       expect(kq.fallback).toBe(true);
       expect(kq.products.map((p) => p.id)).toEqual([1]);
-      expect(products.findAll).toHaveBeenCalledWith('1', '40', expect.objectContaining({ q: 'máy ảnh canon' }));
+      expect(products.findAll).toHaveBeenCalledWith(
+        '1',
+        '40',
+        expect.objectContaining({ q: 'máy ảnh canon' }),
+      );
       expect(MODEL_BUDGET_MS).toBeLessThanOrEqual(6000);
     } finally {
       jest.useRealTimers();
