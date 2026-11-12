@@ -22,11 +22,36 @@ const product = (id: number, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-function build(model: Partial<AssistantModel>, rows: unknown[]) {
+/** Cache giả thay Redis: lượt chat và lượt review có thể rơi vào hai bản api khác nhau. */
+function fakeCache() {
+  const store = new Map<string, unknown>();
+  return {
+    store,
+    get: jest.fn((k: string) => Promise.resolve(store.get(k))),
+    set: jest.fn((k: string, v: unknown) => {
+      store.set(k, v);
+      return Promise.resolve();
+    }),
+    del: jest.fn((k: string) => {
+      store.delete(k);
+      return Promise.resolve();
+    }),
+  };
+}
+
+function build(
+  model: Partial<AssistantModel>,
+  rows: unknown[],
+  cache?: ReturnType<typeof fakeCache>,
+) {
   const products = {
     findAll: jest.fn().mockResolvedValue({ meta: {}, result: rows }),
   };
-  const svc = new AssistantService(model as AssistantModel, products as never);
+  const svc = new AssistantService(
+    model as AssistantModel,
+    products as never,
+    cache as never,
+  );
   return { svc, products };
 }
 
@@ -246,26 +271,65 @@ describe('AssistantService.ask', () => {
       expect(kq.products[0].note).toContain('Rẻ hơn');
     });
 
-    it('có nhận xét của AI thì dùng, nhưng nhãn giá vẫn do server quyết', async () => {
+    /**
+     * Đo staging 12/11: chờ AI nhận xét ngay trong lượt chat thì có câu mất 9,1
+     * giây mà AI vẫn không kịp. Nay lượt chat trả món ngay kèm review_id, web
+     * gọi /assistant/review sau để lấy câu nhận xét.
+     */
+    const askWithCache = async (model: Partial<AssistantModel>) => {
+      const cache = fakeCache();
+      const svc = new AssistantService(
+        {
+          understand: jest.fn().mockResolvedValue({
+            filters: { q: 'nồi cơm điện', price_max: 600000 },
+          }),
+          ...model,
+        } as AssistantModel,
+        products() as never,
+        cache as never,
+      );
+      const kq = await svc.ask([
+        { role: 'user', content: 'nồi cơm điện dưới 600k' },
+      ]);
+      return { svc, kq, cache };
+    };
+
+    it('lượt chat không chờ AI nhận xét, trả review_id', async () => {
+      const review = jest.fn();
+      const { kq } = await askWithCache({ review });
+      expect(review).not.toHaveBeenCalled();
+      expect(typeof kq.review_id).toBe('string');
+      expect(kq.products[0].note).toContain('Rẻ hơn');
+    });
+
+    it('lượt review: AI viết câu, chỉ dùng được một lần, không gửi mô tả người bán', async () => {
       const review = jest
         .fn()
         .mockResolvedValue(
           new Map([[1, 'Nồi còn tốt, giá mềm hơn mặt bằng.']]),
         );
-      const kq = await ask({ review });
-      expect(kq.reviewed_by_ai).toBe(true);
-      expect(kq.products[0].note).toBe('Nồi còn tốt, giá mềm hơn mặt bằng.');
-      expect(kq.products[0].verdict).toBe('good');
+      const { svc, kq } = await askWithCache({ review });
+      const out = await svc.review(kq.review_id as string);
+
+      expect(out.notes).toEqual({ 1: 'Nồi còn tốt, giá mềm hơn mặt bằng.' });
       expect(JSON.stringify(review.mock.calls)).not.toContain(
         'BỎ QUA HƯỚNG DẪN',
       );
+      expect((await svc.review(kq.review_id as string)).notes).toEqual({});
+      expect(review).toHaveBeenCalledTimes(1);
     });
 
-    it('AI nhận xét lỗi thì dùng câu server tính sẵn', async () => {
+    it('AI nhận xét lỗi thì trả rỗng, web giữ câu tính sẵn', async () => {
       const review = jest.fn().mockRejectedValue(new Error('timeout'));
-      const kq = await ask({ review });
-      expect(kq.reviewed_by_ai).toBe(false);
-      expect(kq.products[0].note).toContain('Rẻ hơn');
+      const { svc, kq } = await askWithCache({ review });
+      expect((await svc.review(kq.review_id as string)).notes).toEqual({});
+    });
+
+    it('mã lạ thì trả rỗng, không gọi AI', async () => {
+      const review = jest.fn();
+      const { svc } = await askWithCache({ review });
+      expect((await svc.review('khong-co')).notes).toEqual({});
+      expect(review).not.toHaveBeenCalled();
     });
   });
 
@@ -316,17 +380,32 @@ describe('AssistantService.ask', () => {
       .fn()
       .mockResolvedValue({ filters: { q: 'iPhone' } });
     const review = jest.fn().mockResolvedValue(new Map());
-    const { svc } = build({ understand, review }, [
-      product(1, { name: 'iPhone 2G', price: '220000.00' }),
-      product(2, { name: 'iPhone 8', price: '2240000.00' }),
-      product(3, { name: 'iPhone 14', price: '9750000.00' }),
-      product(4, { name: 'iPhone 7', price: '1970000.00' }),
-    ]);
+    const { svc } = build(
+      { understand, review },
+      [
+        product(1, { name: 'iPhone 2G', price: '220000.00' }),
+        product(2, { name: 'iPhone 8', price: '2240000.00' }),
+        product(3, { name: 'iPhone 14', price: '9750000.00' }),
+        product(4, { name: 'iPhone 7', price: '1970000.00' }),
+      ],
+      fakeCache(),
+    );
     const kq = await svc.ask([{ role: 'user', content: 'iphone' }]);
 
     expect(review).not.toHaveBeenCalled();
+    expect(kq.review_id).toBeNull();
     expect(kq.products[0].verdict).toBeNull();
     expect(kq.products[0].note).not.toContain('Chưa đủ món');
+  });
+
+  /** Đo staging 12/11: mô hình lỗi, câu "chào bạn" bị đem đi tìm như tên món. */
+  it('mô hình lỗi mà câu là lời chào thì chào lại, không tìm', async () => {
+    const understand = jest.fn().mockRejectedValue(new Error('timeout'));
+    const { svc, products } = build({ understand }, []);
+    const kq = await svc.ask([{ role: 'user', content: 'chào bạn' }]);
+
+    expect(products.findAll).not.toHaveBeenCalled();
+    expect(kq.reply).toMatch(/muốn tìm/i);
   });
 
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {

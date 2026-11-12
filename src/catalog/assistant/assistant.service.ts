@@ -1,4 +1,13 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from '@nestjs/cache-manager';
 import { ProductsService } from '../products/products.service';
 import {
   AssistantFilters,
@@ -8,7 +17,7 @@ import {
   isGreeting,
   rankByName,
 } from './assistant-filters';
-import { AssistantModel, ChatMessage } from './assistant-model';
+import { AssistantModel, ChatMessage, ReviewInput } from './assistant-model';
 import { baseReview, marketPrice, Verdict } from './assistant-review';
 
 /**
@@ -22,13 +31,19 @@ export const MODEL_BUDGET_MS = 6_000;
 const RELAX_DEADLINE_MS = 7_500;
 
 /**
- * Lượt nhận xét của AI phải xong trước mốc này (tính từ lúc nhận câu), để cả
- * lượt trả lời vẫn dưới trần 10 giây; còn ít hơn MIN_REVIEW_MS thì bỏ, dùng câu
- * server tính sẵn. Đo staging 12/11 với mốc 9 giây: câu chậm nhất mất 8,2 giây
- * tính ở máy người dùng, nên hạ xuống 8,5 để dư chỗ cho mạng.
+ * Nhận xét của AI đi lượt gọi riêng (POST /assistant/review), web gọi sau khi
+ * đã hiện món. Đo staging 12/11 khi còn chờ chung một lượt: lượt nhận xét lúc 3
+ * giây lúc hơn 5 giây, câu chậm nhất mất 9,1 giây mà AI vẫn không kịp. Tách ra
+ * thì món hiện sau khoảng 3 giây, câu AI đến sau, chậm cũng không chặn ai.
+ *
+ * Dữ liệu cho lượt nhận xét lưu ở Redis chứ không nhận từ trình duyệt: staging
+ * và prod chạy 3 bản api, hai lượt gọi có thể rơi vào hai bản khác nhau; và
+ * nếu nhận tên món từ trình duyệt thì ai cũng dùng được khoá AI để hỏi chuyện
+ * khác. Mỗi mã chỉ dùng một lần.
  */
-const REVIEW_DEADLINE_MS = 8_500;
-const MIN_REVIEW_MS = 1_500;
+const REVIEW_TTL_MS = 120_000;
+const REVIEW_TIMEOUT_MS = 8_000;
+const reviewKey = (id: string) => `assistant:review:${id}`;
 
 /**
  * Ít món trong tầm giá thì thêm món vượt tối đa chừng này. Đo 12/11: "nồi cơm
@@ -100,6 +115,8 @@ export class AssistantService {
   constructor(
     private readonly model: AssistantModel,
     private readonly products: ProductsService,
+    // Tuỳ chọn để bài kiểm không cần Redis; thiếu thì không có lượt nhận xét.
+    @Optional() @Inject(CACHE_MANAGER) private readonly cache?: Cache,
   ) {}
 
   /**
@@ -172,6 +189,14 @@ export class AssistantService {
       fallback = true;
       filters = { q: lastUserText.replace(/\s+/g, ' ').trim().slice(0, 80) };
     }
+    // Mô hình lỗi mà câu chỉ là lời chào: chào lại, không đem đi tìm.
+    if (fallback && isGreeting(filters.q)) {
+      return {
+        reply: GREETING_REPLY,
+        products: [] as SuggestedProduct[],
+        filters: null,
+      };
+    }
     filters = { ...filters, q: dropGenericPhrase(filters.q) };
 
     // Tìm, xếp hạng; rỗng thì nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ"
@@ -241,7 +266,7 @@ export class AssistantService {
         over_budget: over,
       };
     });
-    const reviewedByAi = await this.addAiNotes(products, startedAt);
+    const reviewId = await this.saveForReview(products);
 
     let reply =
       picked.length || !extras.length
@@ -255,53 +280,65 @@ export class AssistantService {
       products,
       filters,
       fallback,
-      reviewed_by_ai: reviewedByAi,
+      review_id: reviewId,
     };
   }
 
   /**
-   * Thay câu nhận xét tính sẵn bằng câu của AI nếu còn thời gian. Chỉ gửi trường
-   * có cấu trúc; nhãn giá giữ nguyên của server. Lỗi hay hết giờ thì giữ câu
-   * tính sẵn, người mua vẫn thấy đánh giá.
+   * Lưu dữ liệu cho lượt nhận xét, trả mã để web gọi /assistant/review. Không
+   * có nhãn giá thì không lưu: AI không có gì để nói thêm ngoài tình trạng (đo
+   * staging 12/11: iPhone dưới 10 triệu vẫn gọi AI, hết giờ, chẳng được câu nào).
    */
-  private async addAiNotes(
+  private async saveForReview(
     products: SuggestedProduct[],
-    startedAt: number,
-  ): Promise<boolean> {
-    const left = REVIEW_DEADLINE_MS - (Date.now() - startedAt);
-    // Không có nhãn giá thì AI không có gì để nói thêm ngoài tình trạng. Đo
-    // staging 12/11: iPhone dưới 10 triệu vẫn gọi, AI hết giờ, lượt mất 8,9 giây.
-    if (!products.some((p) => p.verdict)) return false;
-    if (left < MIN_REVIEW_MS) return false;
+  ): Promise<string | null> {
+    if (!this.cache || !products.some((p) => p.verdict)) return null;
+    const id = randomUUID();
+    const inputs: ReviewInput[] = products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      condition: p.condition,
+      market_price: p.market_price,
+      verdict: p.verdict,
+      over_budget: p.over_budget,
+    }));
+    try {
+      await this.cache.set(reviewKey(id), inputs, REVIEW_TTL_MS);
+      return id;
+    } catch (e) {
+      // Redis lỗi: vẫn trả món với câu tính sẵn, chỉ thiếu câu AI.
+      this.log.warn(`Không lưu được dữ liệu nhận xét: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Lượt hai: AI viết một câu cho từng món đã trả ở lượt chat. Mã dùng một lần
+   * (xoá trước khi gọi AI) để không ai bấm lặp tốn lượt gọi. Lỗi, hết giờ hay
+   * mã lạ thì trả rỗng: web giữ câu server tính sẵn.
+   */
+  async review(id: string): Promise<{ notes: Record<number, string> }> {
+    if (!this.isEnabled()) throw new NotFoundException();
+    if (!this.cache) return { notes: {} };
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      const inputs = await this.cache.get<ReviewInput[]>(reviewKey(id));
+      if (!inputs?.length) return { notes: {} };
+      await this.cache.del(reviewKey(id));
       const notes = await Promise.race([
-        this.model.review(
-          products.map((p) => ({
-            id: p.id,
-            name: p.name,
-            price: p.price,
-            condition: p.condition,
-            market_price: p.market_price,
-            verdict: p.verdict,
-            over_budget: p.over_budget,
-          })),
-          left,
-        ),
+        this.model.review(inputs, REVIEW_TIMEOUT_MS),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`quá ${left} ms`)), left);
+          timer = setTimeout(
+            () => reject(new Error(`quá ${REVIEW_TIMEOUT_MS} ms`)),
+            REVIEW_TIMEOUT_MS,
+          );
         }),
       ]);
-      for (const p of products) {
-        const note = notes.get(p.id);
-        if (note) p.note = note;
-      }
-      return notes.size > 0;
+      return { notes: Object.fromEntries(notes) };
     } catch (e) {
-      this.log.warn(
-        `AI nhận xét lỗi, dùng câu tính sẵn: ${(e as Error).message}`,
-      );
-      return false;
+      this.log.warn(`AI nhận xét lỗi: ${(e as Error).message}`);
+      return { notes: {} };
     } finally {
       clearTimeout(timer);
     }
