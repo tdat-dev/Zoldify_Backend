@@ -9,7 +9,7 @@ import { UpdateShopDto } from './dto/update-shop.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Shop, ShopStatus } from './entities/shop.entity';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import {
   Product,
   ProductStatus,
@@ -53,8 +53,20 @@ export class ShopService {
       ...createShopDto,
       user: { id: user.id },
     });
+    const saved = await this.shopRepository.save(shop);
 
-    return this.shopRepository.save(shop);
+    // Có shop là thành người bán (issue #41). Server không cần vai trò để bán,
+    // nhưng app đọc `role` để hiện khu Người bán: thiếu dòng này thì người vừa
+    // mở shop trên app không thấy chỗ bán (đo staging 12/11: vẫn `buyer` cả sau
+    // khi đăng nhập lại). Ghim `role = buyer` trong chính câu UPDATE để admin
+    // hay moderator tự mở shop không bị hạ quyền, và không tin role trong token
+    // (có thể đã cũ). Không tăng token_version: nâng quyền không cần đá phiên.
+    await this.userRepository.update(
+      { id: user.id, role: UserRole.BUYER },
+      { role: UserRole.SELLER },
+    );
+
+    return saved;
   }
 
   async getMyShop(user: IUser) {
@@ -155,7 +167,15 @@ export class ShopService {
       size: limit,
       offset,
     } = normalizePagination(rawPage, rawLimit, 20);
-    const where = { seller: { id: sellerId }, status: ProductStatus.ACTIVE };
+    // Hàng ĐÃ BÁN vẫn hiện (khách xem shop từng bán gì) nhưng xuống cuối: test
+    // staging 12/11 thấy hàng hết nằm đầu trang shop. Nháp, chờ duyệt, bị từ
+    // chối thì không bao giờ hiện (lỗi 2752f41). Sắp `status ASC` đặt active
+    // trước sold vì cột là ENUM khai `active` trước `sold`; một shop chỉ vài
+    // trăm tin nên sắp lại không đáng kể, khác với danh sách toàn sàn.
+    const where = {
+      seller: { id: sellerId },
+      status: In([ProductStatus.ACTIVE, ProductStatus.SOLD]),
+    };
     // Trần độ sâu như /products (?page=9000 không thành OFFSET 179980), và
     // đếm có trần: shop lớn không phải đếm hết kho ở mỗi lần lật trang.
     const { rows, ...tong } = await trangCoTran({
@@ -167,7 +187,7 @@ export class ShopService {
           relations: ['category'],
           skip: offset,
           take,
-          order: { created_at: 'DESC' },
+          order: { status: 'ASC', created_at: 'DESC' },
         }),
       dem: () =>
         demCoTran(

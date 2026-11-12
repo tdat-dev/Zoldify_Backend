@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
   Headers,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiHeader } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
@@ -21,6 +22,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { ShippingQuoteDto } from './dto/shipping-quote.dto';
 import { SimGhnDto } from './dto/sim-ghn.dto';
+import { ChangePaymentMethodDto } from './dto/change-payment-method.dto';
 import { ResponseMessage } from '@common/decorators/response.decorator';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
 import { User } from '@common/decorators/user.decorator';
@@ -127,10 +129,10 @@ export class OrdersController {
   // Quyền theo phase (shipping: người bán hoặc admin; delivered: chỉ admin) và
   // công tắc GHN_SIMULATOR nằm trong OrdersService.simulateGhnStatus.
   @UseGuards(JwtAuthGuard)
-  @ResponseMessage("Gia lap trang thai GHN thanh cong")
-  @Patch(":id/sim-ghn")
+  @ResponseMessage('Gia lap trang thai GHN thanh cong')
+  @Patch(':id/sim-ghn')
   simGhn(
-    @Param("id") id: string,
+    @Param('id') id: string,
     @Body() body: SimGhnDto,
     @User() user: IUser,
   ) {
@@ -162,6 +164,17 @@ export class OrdersController {
     @User() user: IUser,
   ) {
     return this.ordersService.confirmShipmentReceived(+id, +sellerId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ResponseMessage('Đã đổi cách thanh toán')
+  @Patch(':id/payment-method')
+  changePaymentMethod(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ChangePaymentMethodDto,
+    @User() user: IUser,
+  ) {
+    return this.ordersService.changePaymentMethod(id, dto.payment_method, user);
   }
 
   @UseGuards(JwtAuthGuard)

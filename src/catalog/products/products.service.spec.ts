@@ -274,13 +274,15 @@ describe('ProductsService — cache danh sách phải mới lại sau khi ghi', 
 
   it('đổi kho xong thì danh sách cũng mới lại', async () => {
     await ten();
-    await svc.updateStock(idHang[0], 0, sellerId, false);
+    // Không dùng 0: kho về 0 thì tin thành đã bán và rời danh sách công khai
+    // (status-by-stock.ts), bài này chỉ đo cache được làm mới.
+    await svc.updateStock(idHang[0], 3, sellerId, false);
 
     const r = (await svc.findAll('1', '10', {})) as {
       result: Array<{ id: number; stock: number }>;
     };
     const mon = r.result.find((p) => p.id === idHang[0]);
-    expect(mon?.stock).toBe(0);
+    expect(mon?.stock).toBe(3);
   });
 
   it('đăng sản phẩm mới thì nó có mặt trong danh sách NGAY', async () => {

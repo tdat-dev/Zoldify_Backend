@@ -30,6 +30,7 @@ import { demCoTran, metaCoTran, trangCoTran } from '@common/dem-co-tran';
 import { NotificationsService } from '@messaging/notifications/notifications.service';
 import Redis from 'ioredis';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
+import { STATUS_BY_STOCK_SQL } from './status-by-stock';
 import {
   DuLieuBaoHangMoi,
   HangDoiViecNen,
@@ -1354,7 +1355,8 @@ export class ProductsService {
     const kq = await this.productRepository
       .createQueryBuilder()
       .update(Product)
-      .set({ stock })
+      // Kho về 0 là đã bán, có lại là mở bán (status-by-stock.ts).
+      .set({ stock, status: () => STATUS_BY_STOCK_SQL })
       .where('id = :id AND stock = :kyVong', { id: productId, kyVong })
       .execute();
     if (kq.affected !== 1) {

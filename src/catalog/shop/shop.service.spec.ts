@@ -3,7 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import type { Repository } from 'typeorm';
+import { In, type Repository } from 'typeorm';
 import type { IUser } from '@identity/users/users.interface';
 import { User } from '@identity/users/entities/user.entity';
 import {
@@ -41,9 +41,10 @@ describe('ShopService', () => {
     shopTrungSlug?: Partial<Shop> | null;
     nguoiDung?: Partial<User> | null;
   }) {
-    const daLuu: Array<Partial<Shop>> = [];
+    const saved: Array<Partial<Shop>> = [];
     const dieuKienDem: Array<Record<string, unknown>> = [];
     const dieuKienTim: Array<Record<string, unknown>> = [];
+    const listOrders: Array<Record<string, string>> = [];
 
     const shopRepo = {
       findOne: ({ where }: { where: Record<string, unknown> }) =>
@@ -54,7 +55,7 @@ describe('ShopService', () => {
         ),
       create: (s: Partial<Shop>) => s,
       save: (s: Partial<Shop>) => {
-        daLuu.push(s);
+        saved.push(s);
         return Promise.resolve(s);
       },
       update: () => Promise.resolve({ affected: 1 }),
@@ -67,8 +68,15 @@ describe('ShopService', () => {
       },
       // getShopProducts lấy dòng bằng `find` rồi mới đếm có trần
       // (dem-tong-co-tran.spec.ts); trang rỗng ở trang đầu thì không đếm.
-      find: ({ where }: { where: Record<string, unknown> }) => {
+      find: ({
+        where,
+        order,
+      }: {
+        where: Record<string, unknown>;
+        order?: Record<string, string>;
+      }) => {
         dieuKienTim.push(where);
+        listOrders.push(order ?? {});
         return Promise.resolve([]);
       },
     } as unknown as Repository<Product>;
@@ -97,29 +105,31 @@ describe('ShopService', () => {
       shopRepo,
       {
         findOne: () => Promise.resolve(opts.nguoiDung ?? null),
+        // create() nâng buyer lên seller sau khi lưu shop (shop-create-promotes-seller.spec.ts).
+        update: () => Promise.resolve({ affected: 1 }),
       } as unknown as Repository<User>,
       productRepo,
       { count: () => Promise.resolve(5) } as unknown as Repository<Follow>,
       orderItemRepo,
     );
 
-    return { service, daLuu, dieuKienDem, dieuKienTim };
+    return { service, saved, dieuKienDem, dieuKienTim, listOrders };
   }
 
   // ── Một người một shop ───────────────────────────────────────────────────
   it('đã có shop thì không tạo thêm được', async () => {
-    const { service, daLuu } = dungService({ shopCuaToi: { id: 1 } });
+    const { service, saved } = dungService({ shopCuaToi: { id: 1 } });
 
     await expect(
       service.create({ name: 'Shop 2', slug: 'shop-2' }, nguoiBan),
     ).rejects.toThrow(BadRequestException);
-    expect(daLuu).toHaveLength(0);
+    expect(saved).toHaveLength(0);
   });
 
   it('slug đã có chủ thì không tạo được', async () => {
     // Slug nằm trên URL công khai. Hai shop cùng slug là hai người tranh nhau
     // một địa chỉ, và ai thắng là tuỳ thứ tự MySQL trả về.
-    const { service, daLuu } = dungService({
+    const { service, saved } = dungService({
       shopCuaToi: null,
       shopTrungSlug: { id: 9 },
     });
@@ -127,18 +137,18 @@ describe('ShopService', () => {
     await expect(
       service.create({ name: 'Shop', slug: 'da-co-chu' }, nguoiBan),
     ).rejects.toThrow(BadRequestException);
-    expect(daLuu).toHaveLength(0);
+    expect(saved).toHaveLength(0);
   });
 
   it('chưa có shop và slug trống thì tạo được', async () => {
-    const { service, daLuu } = dungService({
+    const { service, saved } = dungService({
       shopCuaToi: null,
       shopTrungSlug: null,
     });
 
     await service.create({ name: 'Shop', slug: 'shop-moi' }, nguoiBan);
-    expect(daLuu).toHaveLength(1);
-    expect(daLuu[0].user).toEqual({ id: nguoiBan.id });
+    expect(saved).toHaveLength(1);
+    expect(saved[0].user).toEqual({ id: nguoiBan.id });
   });
 
   it('chưa có shop thì getMyShop báo NotFound', async () => {
@@ -149,18 +159,24 @@ describe('ShopService', () => {
   });
 
   // ── Chỉ hiện hàng đang mở bán ────────────────────────────────────────────
-  it('getShopProducts CHỈ liệt kê hàng ACTIVE', async () => {
+  it('getShopProducts liệt kê hàng đang bán trước, hàng đã bán xuống cuối', async () => {
     // Cùng loại lỗi mà 2752f41 đã vá ở danh sách sản phẩm công khai: thiếu lọc
     // `status` thì hàng bị từ chối và hàng nháp nằm chung với hàng thật, ngay
-    // trên trang shop mà khách vào xem.
-    const { service, dieuKienTim } = dungService({});
+    // trên trang shop mà khách vào xem. Hàng ĐÃ BÁN thì vẫn hiện (khách xem shop
+    // từng bán gì), nhưng xếp sau hàng còn bán: test staging 12/11 thấy hàng hết
+    // nằm đầu trang shop.
+    const { service, dieuKienTim, listOrders } = dungService({});
 
     await service.getShopProducts(7, 1, 20);
 
     expect(dieuKienTim[0]).toMatchObject({
       seller: { id: 7 },
-      status: ProductStatus.ACTIVE,
+      status: In([ProductStatus.ACTIVE, ProductStatus.SOLD]),
     });
+    expect(Object.entries(listOrders[0])).toEqual([
+      ['status', 'ASC'],
+      ['created_at', 'DESC'],
+    ]);
   });
 
   it('getShopInfo CHỈ đếm hàng ACTIVE', async () => {
