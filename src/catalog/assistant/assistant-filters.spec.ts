@@ -152,20 +152,34 @@ describe('rankByName', () => {
     expect(ranked.map((x) => x.id)).toEqual([2]);
   });
 
-  it('không món nào khớp quá nửa thì giữ hết, chỉ sắp lại', () => {
+  it('không món nào khớp đủ thì trả rỗng, không đưa món sai', () => {
     const ranked = rankByName(
       [p(1, 'Bàn gỗ'), p(2, 'Ghế sofa da')],
       'sofa giường gấp thông minh',
     );
-    expect(ranked.map((x) => x.id)).toEqual([2, 1]);
+    expect(ranked).toEqual([]);
   });
 
-  it('không phân biệt dấu và hoa thường', () => {
+  /**
+   * Tìm kiếm của sàn không phân biệt dấu (collation unicode_ci): "bàn" ra cả
+   * "bán", "bánh" (staging 12/11: hỏi bàn ra máy nướng bánh mì).
+   */
+  it('phân biệt dấu: bàn không khớp bán, bánh', () => {
     const ranked = rankByName(
-      [p(1, 'May anh cu'), p(2, 'Máy Ảnh Canon EOS')],
-      'máy ảnh canon',
+      [p(1, 'Máy nướng bánh mì'), p(2, 'Đồ cũ bán gấp'), p(3, 'Bàn gỗ thông')],
+      'bàn gỗ',
     );
-    expect(ranked[0].id).toBe(2);
+    expect(ranked.map((x) => x.id)).toEqual([3]);
+  });
+
+  it('gõ không dấu vẫn khớp tên có dấu', () => {
+    const ranked = rankByName([p(1, 'Máy Ảnh Canon EOS'), p(2, 'Máy xay')], 'may anh canon');
+    expect(ranked.map((x) => x.id)).toEqual([1]);
+  });
+
+  it('câu hai chữ phải khớp cả hai: máy ảnh không ra máy xay', () => {
+    const ranked = rankByName([p(1, 'Máy xay sinh tố'), p(2, 'Máy ảnh Sony A6000')], 'máy ảnh');
+    expect(ranked.map((x) => x.id)).toEqual([2]);
   });
 
   it('giữ nguyên thứ tự gốc khi điểm bằng nhau', () => {
