@@ -285,6 +285,19 @@ describe('AssistantService.ask', () => {
     expect(kq.fallback).toBe(true);
   });
 
+  /** Đo staging 12/11: có lượt mô hình gọi tìm với q "chào bạn" thay vì chào lại. */
+  it('mô hình đem câu chào đi tìm thì vẫn chào lại, không truy vấn', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'chào bạn' } });
+    const { svc, products } = build({ understand }, []);
+    const kq = await svc.ask([{ role: 'user', content: 'chào bạn' }]);
+
+    expect(products.findAll).not.toHaveBeenCalled();
+    expect(kq.products).toEqual([]);
+    expect(kq.reply).toMatch(/muốn tìm/i);
+  });
+
   it('câu không phải tìm hàng thì trả lời chữ, không truy vấn', async () => {
     const understand = jest
       .fn()

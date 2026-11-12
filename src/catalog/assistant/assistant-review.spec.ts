@@ -15,6 +15,20 @@ describe('marketPrice', () => {
   it('dưới 3 món thì không đủ để nói giá phổ biến', () => {
     expect(marketPrice([100, 200])).toBeNull();
   });
+
+  /**
+   * Đo staging 12/11: "iphone dưới 10 triệu" gom iPhone 2G (220k) với iPhone 14
+   * (9,75 triệu) vào một nhóm, iPhone 2G thành "giá tốt". Nhóm chênh giá quá
+   * xa là nhiều loại khác nhau, giá giữa không nói lên gì.
+   */
+  it('nhóm có giá chênh quá xa thì không so', () => {
+    expect(
+      marketPrice([220000, 1320000, 1970000, 2240000, 4760000, 9750000]),
+    ).toBeNull();
+    expect(
+      marketPrice([540000, 635000, 820000, 1240000, 1580000, 1830000]),
+    ).toBe(1030000);
+  });
 });
 
 describe('baseReview', () => {

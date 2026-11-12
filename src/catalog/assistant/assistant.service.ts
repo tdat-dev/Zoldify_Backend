@@ -4,6 +4,7 @@ import {
   AssistantFilters,
   buildReply,
   dropUnaskedFilters,
+  isGreeting,
   rankByName,
 } from './assistant-filters';
 import { AssistantModel, ChatMessage } from './assistant-model';
@@ -22,9 +23,10 @@ const RELAX_DEADLINE_MS = 7_500;
 /**
  * Lượt nhận xét của AI phải xong trước mốc này (tính từ lúc nhận câu), để cả
  * lượt trả lời vẫn dưới trần 10 giây; còn ít hơn MIN_REVIEW_MS thì bỏ, dùng câu
- * server tính sẵn.
+ * server tính sẵn. Đo staging 12/11 với mốc 9 giây: câu chậm nhất mất 8,2 giây
+ * tính ở máy người dùng, nên hạ xuống 8,5 để dư chỗ cho mạng.
  */
-const REVIEW_DEADLINE_MS = 9_000;
+const REVIEW_DEADLINE_MS = 8_500;
 const MIN_REVIEW_MS = 1_500;
 
 /**
@@ -34,6 +36,10 @@ const MIN_REVIEW_MS = 1_500;
 const OVER_BUDGET_RATIO = 1.3;
 const FEW_RESULTS = 3;
 const MAX_OVER_BUDGET = 3;
+
+/** Câu chào lại khi mô hình đem câu chào đi tìm như tên món. */
+const GREETING_REPLY =
+  'Chào bạn! Bạn muốn tìm mua món gì? Gõ tên món, tầm giá và nơi nhận, ví dụ: nồi cơm điện dưới 600k ở HCM.';
 
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
@@ -143,6 +149,9 @@ export class AssistantService {
       ]);
     } catch (e) {
       this.log.warn(`Mô hình lỗi, tìm bằng câu gõ: ${(e as Error).message}`);
+    }
+    if (understood.filters && isGreeting(understood.filters.q)) {
+      understood = { text: GREETING_REPLY };
     }
     if (!understood.filters && understood.text) {
       return {

@@ -14,6 +14,11 @@ export type Verdict = 'good' | 'fair' | 'high';
 const VERDICT_GAP = 0.15;
 /** Ít hơn số món này thì giá giữa không nói lên được giá phổ biến. */
 const MIN_MARKET_SIZE = 3;
+/**
+ * Đo staging 12/11: nồi cơm điện (6 món, 540k đến 1,83 triệu) có Q3/Q1 = 2,5;
+ * iPhone dưới 10 triệu (220k đến 9,75 triệu) có 3,6. Lấy 3 làm ranh giới.
+ */
+const MAX_SPREAD = 3;
 /** Câu nhận xét dài hơn thế thì vỡ thẻ trong khung chat. */
 const MAX_NOTE_LENGTH = 160;
 
@@ -33,6 +38,11 @@ const formatVnd = (n: number) =>
 export function marketPrice(prices: number[]): number | null {
   const sorted = prices.filter((p) => p > 0).sort((a, b) => a - b);
   if (sorted.length < MIN_MARKET_SIZE) return null;
+  // Món ở 3/4 nhóm đắt hơn món ở 1/4 nhóm quá MAX_SPREAD lần là nhiều loại
+  // khác nhau (iPhone 2G 220k lẫn iPhone 14 9,75 triệu): không so.
+  const q1 = sorted[Math.floor(sorted.length * 0.25)];
+  const q3 = sorted[Math.floor(sorted.length * 0.75)];
+  if (q3 > q1 * MAX_SPREAD) return null;
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2
     ? sorted[mid]
