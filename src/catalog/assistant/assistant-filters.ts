@@ -239,6 +239,21 @@ export function isGreeting(q: string): boolean {
   return words.length > 0 && words.every((w) => GREETING_WORDS.has(w));
 }
 
+/**
+ * Bỏ cụm chung "điện thoại" khỏi từ khoá khi còn chữ khác ("điện thoại iPhone"
+ * thành "iPhone"). Tìm kiếm của sàn trùng một chữ là ra, nên gửi nguyên cụm thì
+ * 40 món đầu toàn món có chữ "điện" (nồi cơm điện...) và iPhone không lọt vào:
+ * đo staging 12/11, cùng câu "điện thoại iphone cũ dưới 10 triệu", lượt mô hình
+ * trả "iPhone" ra 6 món, lượt trả "điện thoại iPhone" ra rỗng.
+ */
+export function dropGenericPhrase(q: string): string {
+  const rest = q
+    .replace(/điện thoại/giu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return rest ? rest : q;
+}
+
 /** Hạ chữ thường, tách chữ, GIỮ dấu: "bàn" và "bán" là hai chữ khác nhau. */
 function tokens(s: string): string[] {
   return s

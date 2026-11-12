@@ -3,6 +3,7 @@ import { ProductsService } from '../products/products.service';
 import {
   AssistantFilters,
   buildReply,
+  dropGenericPhrase,
   dropUnaskedFilters,
   isGreeting,
   rankByName,
@@ -171,6 +172,7 @@ export class AssistantService {
       fallback = true;
       filters = { q: lastUserText.replace(/\s+/g, ' ').trim().slice(0, 80) };
     }
+    filters = { ...filters, q: dropGenericPhrase(filters.q) };
 
     // Tìm, xếp hạng; rỗng thì nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ"
     // thành "bàn làm việc"), chỉ khi còn thời gian trong trần 10 giây. Từ khoá
