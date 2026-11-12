@@ -195,6 +195,77 @@ describe('AssistantService.ask', () => {
     expect(kq.products).toEqual([]);
   });
 
+  /**
+   * Đo 12/11: "nồi cơm điện dưới 600k ở HCM" chỉ ra 1 món (540k), trong khi món
+   * rẻ kế tiếp là 635k, quá ngân sách chút xíu nhưng bị giấu đi.
+   */
+  describe('món sát ngân sách và đánh giá', () => {
+    const rows = [
+      product(1, { name: 'Nồi cơm điện 1.5L', price: '540000.00' }),
+      product(2, { name: 'Nồi cơm điện Panasonic', price: '635000.00' }),
+      product(3, { name: 'Nồi cơm điện 1.0L', price: '820000.00' }),
+      product(4, { name: 'Nồi cơm điện như mới', price: '1240000.00' }),
+    ];
+    const products = () => ({
+      findAll: jest.fn((_p: string, _s: string, qs: { price_max?: number }) =>
+        Promise.resolve({
+          meta: {},
+          result: qs.price_max
+            ? rows.filter((r) => Number(r.price) <= qs.price_max!)
+            : rows,
+        }),
+      ),
+    });
+    const ask = (model: Partial<AssistantModel>) =>
+      new AssistantService(
+        {
+          understand: jest.fn().mockResolvedValue({
+            filters: { q: 'nồi cơm điện', price_max: 600000 },
+          }),
+          ...model,
+        } as AssistantModel,
+        products() as never,
+      ).ask([{ role: 'user', content: 'nồi cơm điện dưới 600k' }]);
+
+    it('ít món trong ngân sách thì thêm món vượt tối đa 30%, có đánh dấu', async () => {
+      const kq = await ask({});
+      expect(kq.products.map((p) => p.id)).toEqual([1, 2]);
+      expect(kq.products[0].over_budget).toBe(false);
+      expect(kq.products[1].over_budget).toBe(true);
+      expect(kq.reply).toContain('vượt');
+    });
+
+    it('mỗi món có nhãn giá do server tính so với giá giữa của các món cùng loại', async () => {
+      const kq = await ask({});
+      // Giá giữa của 4 món: (635k + 820k) / 2 = 727,5k. 540k rẻ hơn khoảng 26%.
+      expect(kq.products[0].market_price).toBe(727500);
+      expect(kq.products[0].verdict).toBe('good');
+      expect(kq.products[0].note).toContain('Rẻ hơn');
+    });
+
+    it('có nhận xét của AI thì dùng, nhưng nhãn giá vẫn do server quyết', async () => {
+      const review = jest
+        .fn()
+        .mockResolvedValue(
+          new Map([[1, 'Nồi còn tốt, giá mềm hơn mặt bằng.']]),
+        );
+      const kq = await ask({ review });
+      expect(kq.reviewed_by_ai).toBe(true);
+      expect(kq.products[0].note).toBe('Nồi còn tốt, giá mềm hơn mặt bằng.');
+      expect(kq.products[0].verdict).toBe('good');
+      expect(JSON.stringify(review.mock.calls)).not.toContain(
+        'BỎ QUA HƯỚNG DẪN',
+      );
+    });
+
+    it('AI nhận xét lỗi thì dùng câu server tính sẵn', async () => {
+      const review = jest.fn().mockRejectedValue(new Error('timeout'));
+      const kq = await ask({ review });
+      expect(kq.reviewed_by_ai).toBe(false);
+      expect(kq.products[0].note).toContain('Rẻ hơn');
+    });
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
