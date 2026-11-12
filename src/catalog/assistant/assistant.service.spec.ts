@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { AssistantService } from './assistant.service';
+import { AssistantService, MODEL_BUDGET_MS } from './assistant.service';
 import type { AssistantModel } from './assistant-model';
 
 /**
@@ -30,7 +30,7 @@ function build(model: Partial<AssistantModel>, rows: unknown[]) {
   return { svc, products };
 }
 
-describe('AssistantService.hoi', () => {
+describe('AssistantService.ask', () => {
   const cu = process.env.AI_ASSISTANT_ENABLED;
   beforeEach(() => {
     process.env.AI_ASSISTANT_ENABLED = 'true';
@@ -96,7 +96,7 @@ describe('AssistantService.hoi', () => {
     expect(kq.products.map((p) => p.id)).toEqual([2]);
   });
 
-  it('xếp món có đủ chữ của câu hỏi lên trước', async () => {
+  it('có món khớp đủ chữ thì bỏ món chỉ trùng một chữ', async () => {
     const understand = jest
       .fn()
       .mockResolvedValue({ filters: { q: 'nồi cơm điện' } });
@@ -106,7 +106,28 @@ describe('AssistantService.hoi', () => {
     ]);
     const kq = await svc.ask([{ role: 'user', content: 'nồi cơm điện' }]);
 
-    expect(kq.products.map((p) => p.id)).toEqual([2, 1]);
+    expect(kq.products.map((p) => p.id)).toEqual([2]);
+  });
+
+  /**
+   * Thời gian tìm phải dưới 10 giây, không thì người mua dùng ô tìm kiếm cho
+   * nhanh. AI chậm hơn ngân sách thì bỏ, tìm bằng chính câu gõ.
+   */
+  it('AI quá ngân sách thời gian thì tìm bằng câu gõ, không chờ tiếp', async () => {
+    jest.useFakeTimers();
+    try {
+      const understand = jest.fn(() => new Promise<never>(() => undefined));
+      const { svc, products } = build({ understand }, [product(1, { name: 'Máy ảnh Canon' })]);
+      const pending = svc.ask([{ role: 'user', content: 'máy ảnh canon' }]);
+      await jest.advanceTimersByTimeAsync(MODEL_BUDGET_MS + 10);
+      const kq = await pending;
+      expect(kq.fallback).toBe(true);
+      expect(kq.products.map((p) => p.id)).toEqual([1]);
+      expect(products.findAll).toHaveBeenCalledWith('1', '40', expect.objectContaining({ q: 'máy ảnh canon' }));
+      expect(MODEL_BUDGET_MS).toBeLessThanOrEqual(6000);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {

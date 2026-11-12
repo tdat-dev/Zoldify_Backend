@@ -124,7 +124,7 @@ describe('parseModelResponse', () => {
 describe('rankByName', () => {
   const p = (id: number, name: string) => ({ id, name });
 
-  it('món có đủ các chữ của câu hỏi đứng đầu', () => {
+  it('có món khớp đủ thì bỏ món chỉ trùng một chữ', () => {
     const ranked = rankByName(
       [
         p(1, 'Nồi áp suất 4L cũ'),
@@ -133,7 +133,31 @@ describe('rankByName', () => {
       ],
       'nồi cơm điện',
     );
-    expect(ranked.map((x) => x.id)).toEqual([3, 1, 2]);
+    expect(ranked.map((x) => x.id)).toEqual([3]);
+  });
+
+  it('mô hình thêm chữ xuất xứ ("Nhật") vẫn giữ đúng nồi cơm', () => {
+    const ranked = rankByName(
+      [p(1, 'Nồi áp suất 4L'), p(2, 'Nồi cơm điện 1.5L'), p(3, 'Ấm siêu tốc')],
+      'nồi cơm điện Nhật',
+    );
+    expect(ranked.map((x) => x.id)).toEqual([2]);
+  });
+
+  it('không tính chữ chung chung như "cũ", "mới", "như"', () => {
+    const ranked = rankByName(
+      [p(1, 'Áo khoác như mới'), p(2, 'Giày chạy bộ Nike')],
+      'giày chạy bộ như mới',
+    );
+    expect(ranked.map((x) => x.id)).toEqual([2]);
+  });
+
+  it('không món nào khớp quá nửa thì giữ hết, chỉ sắp lại', () => {
+    const ranked = rankByName(
+      [p(1, 'Bàn gỗ'), p(2, 'Ghế sofa da')],
+      'sofa giường gấp thông minh',
+    );
+    expect(ranked.map((x) => x.id)).toEqual([2, 1]);
   });
 
   it('không phân biệt dấu và hoa thường', () => {
