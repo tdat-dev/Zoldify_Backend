@@ -23,6 +23,7 @@ import { IUser } from '@identity/users/users.interface';
 import { UserRole } from '@identity/users/entities/user.entity';
 import { formatMoney } from '@common/money';
 import { toSlug } from '@common/slug';
+import { searchAsCategory } from './search-as-category';
 import { Category } from '@catalog/categories/entities/category.entity';
 import { chuanHoaDoBen, DANH_MUC_CO_PIN, type DoBen } from './do-ben';
 import { normalizePagination } from '@common/dto/pagination.dto';
@@ -855,6 +856,10 @@ export class ProductsService {
     qs: any,
     khoaDem: string,
   ) {
+    qs = await searchAsCategory(
+      this.productRepository.manager,
+      qs as BoLocSanPham,
+    );
     // Đọc một lần, dùng cho cả hai nhánh truy vấn bên dưới.
     const condition = qs.condition ? String(qs.condition) : undefined;
     let order: any = { created_at: 'DESC' };
