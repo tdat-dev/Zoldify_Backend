@@ -66,6 +66,17 @@ export class CreateOrderDto {
   shipping_fee?: number;
 
   /**
+   * Tiền hàng (chưa gồm phí ship) mà trang thanh toán đã hiện cho người mua.
+   * Giỏ không lưu giá lúc thêm, nên thiếu trường này thì người bán sửa giá
+   * giữa chừng là người mua bị tính giá mới mà không hay (test staging 12/11:
+   * thấy 800.000, đơn ra 810.000). Không bắt buộc, để app bản cũ vẫn đặt được.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  expected_subtotal?: number;
+
+  /**
    * BẮT BUỘC từ rà soát 26/10. Trước đó hai trường này `@IsOptional`: bỏ
    * trống là khối tính phí ship không chạy, đơn tạo với phí ship 0 và người
    * bán không tạo nổi vận đơn GHN lúc xác nhận. Web (`checkout/page.tsx`) và
