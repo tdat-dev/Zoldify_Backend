@@ -20,6 +20,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { ProductsService } from '@catalog/products/products.service';
+import { STATUS_BY_STOCK_SQL } from '@catalog/products/status-by-stock';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { demCoTran } from '@common/dem-co-tran';
 
@@ -728,6 +729,8 @@ export class OrdersService {
             .set({
               stock: () => 'stock - :soLuong',
               sold_count: () => 'sold_count + :soLuong',
+              // Bán hết thì thành đã bán (catalog/products/status-by-stock.ts).
+              status: () => STATUS_BY_STOCK_SQL,
             })
             .where('id = :id AND stock >= :soLuong', { id, soLuong })
             .execute();
@@ -1441,6 +1444,8 @@ export class OrdersService {
       .set({
         stock: () => 'stock + :soLuong',
         sold_count: () => 'GREATEST(sold_count - :soLuong, 0)',
+        // Có hàng lại thì mở bán lại (catalog/products/status-by-stock.ts).
+        status: () => STATUS_BY_STOCK_SQL,
       })
       .where('id = :id', { id: productId, soLuong })
       .execute();
