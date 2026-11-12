@@ -15,8 +15,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Chiều lùi không làm gì: sau khi chạy thì không còn biết ai là `seller` nhờ
  * migration và ai được admin đổi tay, hạ ngược sẽ hạ nhầm người thứ hai.
  */
-export class NangVaiChuShopCu1789400000000 implements MigrationInterface {
-  name = 'NangVaiChuShopCu1789400000000';
+export class PromoteShopOwnersToSeller1789400000000 implements MigrationInterface {
+  name = 'PromoteShopOwnersToSeller1789400000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

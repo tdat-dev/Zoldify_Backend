@@ -41,7 +41,7 @@ describe('ShopService', () => {
     shopTrungSlug?: Partial<Shop> | null;
     nguoiDung?: Partial<User> | null;
   }) {
-    const daLuu: Array<Partial<Shop>> = [];
+    const saved: Array<Partial<Shop>> = [];
     const dieuKienDem: Array<Record<string, unknown>> = [];
     const dieuKienTim: Array<Record<string, unknown>> = [];
 
@@ -54,7 +54,7 @@ describe('ShopService', () => {
         ),
       create: (s: Partial<Shop>) => s,
       save: (s: Partial<Shop>) => {
-        daLuu.push(s);
+        saved.push(s);
         return Promise.resolve(s);
       },
       update: () => Promise.resolve({ affected: 1 }),
@@ -97,7 +97,7 @@ describe('ShopService', () => {
       shopRepo,
       {
         findOne: () => Promise.resolve(opts.nguoiDung ?? null),
-        // create() nâng buyer lên seller sau khi lưu shop (mo-shop-nang-vai.spec.ts).
+        // create() nâng buyer lên seller sau khi lưu shop (shop-create-promotes-seller.spec.ts).
         update: () => Promise.resolve({ affected: 1 }),
       } as unknown as Repository<User>,
       productRepo,
@@ -105,23 +105,23 @@ describe('ShopService', () => {
       orderItemRepo,
     );
 
-    return { service, daLuu, dieuKienDem, dieuKienTim };
+    return { service, saved, dieuKienDem, dieuKienTim };
   }
 
   // ── Một người một shop ───────────────────────────────────────────────────
   it('đã có shop thì không tạo thêm được', async () => {
-    const { service, daLuu } = dungService({ shopCuaToi: { id: 1 } });
+    const { service, saved } = dungService({ shopCuaToi: { id: 1 } });
 
     await expect(
       service.create({ name: 'Shop 2', slug: 'shop-2' }, nguoiBan),
     ).rejects.toThrow(BadRequestException);
-    expect(daLuu).toHaveLength(0);
+    expect(saved).toHaveLength(0);
   });
 
   it('slug đã có chủ thì không tạo được', async () => {
     // Slug nằm trên URL công khai. Hai shop cùng slug là hai người tranh nhau
     // một địa chỉ, và ai thắng là tuỳ thứ tự MySQL trả về.
-    const { service, daLuu } = dungService({
+    const { service, saved } = dungService({
       shopCuaToi: null,
       shopTrungSlug: { id: 9 },
     });
@@ -129,18 +129,18 @@ describe('ShopService', () => {
     await expect(
       service.create({ name: 'Shop', slug: 'da-co-chu' }, nguoiBan),
     ).rejects.toThrow(BadRequestException);
-    expect(daLuu).toHaveLength(0);
+    expect(saved).toHaveLength(0);
   });
 
   it('chưa có shop và slug trống thì tạo được', async () => {
-    const { service, daLuu } = dungService({
+    const { service, saved } = dungService({
       shopCuaToi: null,
       shopTrungSlug: null,
     });
 
     await service.create({ name: 'Shop', slug: 'shop-moi' }, nguoiBan);
-    expect(daLuu).toHaveLength(1);
-    expect(daLuu[0].user).toEqual({ id: nguoiBan.id });
+    expect(saved).toHaveLength(1);
+    expect(saved[0].user).toEqual({ id: nguoiBan.id });
   });
 
   it('chưa có shop thì getMyShop báo NotFound', async () => {

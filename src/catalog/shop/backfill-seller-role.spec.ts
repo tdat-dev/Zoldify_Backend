@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { NangVaiChuShopCu1789400000000 } from '../../migrations/1789400000000-NangVaiChuShopCu';
+import { PromoteShopOwnersToSeller1789400000000 } from '../../migrations/1789400000000-PromoteShopOwnersToSeller';
 
 /**
  * Migration nâng vai trò cho người ĐÃ mở shop trước bản sửa issue #41.
@@ -23,22 +23,22 @@ const TEST_DB = {
 jest.setTimeout(60_000);
 
 describe('NangVaiChuShopCu: buyer đã có shop thành seller', () => {
-  const TEN_DB = `zoldify_mig_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
-  let goc: DataSource;
+  const DB_NAME = `zoldify_mig_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
+  let root: DataSource;
   let ds: DataSource;
 
   beforeAll(async () => {
-    goc = new DataSource({ type: 'mysql', ...TEST_DB, database: 'mysql' });
+    root = new DataSource({ type: 'mysql', ...TEST_DB, database: 'mysql' });
     try {
-      await goc.initialize();
+      await root.initialize();
     } catch (err) {
       throw new Error(
         `Không kết nối được MySQL cho test tại ${TEST_DB.host}:${TEST_DB.port}. ` +
           `Chạy: npm run test:db\nLỗi gốc: ${(err as Error).message}`,
       );
     }
-    await goc.query(`CREATE DATABASE \`${TEN_DB}\``);
-    ds = new DataSource({ type: 'mysql', ...TEST_DB, database: TEN_DB });
+    await root.query(`CREATE DATABASE \`${DB_NAME}\``);
+    ds = new DataSource({ type: 'mysql', ...TEST_DB, database: DB_NAME });
     await ds.initialize();
     // Chỉ những cột migration đụng tới.
     await ds.query(
@@ -57,29 +57,29 @@ describe('NangVaiChuShopCu: buyer đã có shop thành seller', () => {
 
   afterAll(async () => {
     if (ds?.isInitialized) await ds.destroy();
-    if (goc?.isInitialized) {
-      await goc.query(`DROP DATABASE IF EXISTS \`${TEN_DB}\``);
-      await goc.destroy();
+    if (root?.isInitialized) {
+      await root.query(`DROP DATABASE IF EXISTS \`${DB_NAME}\``);
+      await root.destroy();
     }
   });
 
   it('chỉ buyer có shop được nâng, các vai khác giữ nguyên', async () => {
-    const nguoi: Array<[number, string, boolean]> = [
+    const people: Array<[number, string, boolean]> = [
       [1, 'buyer', true], // mở shop trước bản sửa: phải thành seller
       [2, 'buyer', false], // chỉ mua: giữ buyer
       [3, 'admin', true], // admin có shop: không bị hạ
       [4, 'moderator', true],
       [5, 'seller', true],
     ];
-    for (const [id, role, coShop] of nguoi) {
+    for (const [id, role, hasShop] of people) {
       await ds.query('INSERT INTO users (id, role) VALUES (?, ?)', [id, role]);
-      if (coShop)
+      if (hasShop)
         await ds.query('INSERT INTO shops (user_id) VALUES (?)', [id]);
     }
 
     const qr = ds.createQueryRunner();
     try {
-      await new NangVaiChuShopCu1789400000000().up(qr);
+      await new PromoteShopOwnersToSeller1789400000000().up(qr);
     } finally {
       await qr.release();
     }

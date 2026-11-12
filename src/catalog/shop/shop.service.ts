@@ -53,7 +53,7 @@ export class ShopService {
       ...createShopDto,
       user: { id: user.id },
     });
-    const daLuu = await this.shopRepository.save(shop);
+    const saved = await this.shopRepository.save(shop);
 
     // Có shop là thành người bán (issue #41). Server không cần vai trò để bán,
     // nhưng app đọc `role` để hiện khu Người bán: thiếu dòng này thì người vừa
@@ -66,7 +66,7 @@ export class ShopService {
       { role: UserRole.SELLER },
     );
 
-    return daLuu;
+    return saved;
   }
 
   async getMyShop(user: IUser) {

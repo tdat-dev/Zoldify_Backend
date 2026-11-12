@@ -23,26 +23,26 @@ import { ShopService } from './shop.service';
  * admin vừa đổi vai trò ở giữa hai câu).
  */
 describe('Mở shop nâng buyer lên seller', () => {
-  function dungService(opts: {
-    shopCuaToi?: Partial<Shop> | null;
-    trungSlug?: boolean;
+  function buildService(opts: {
+    myShop?: Partial<Shop> | null;
+    slugTaken?: boolean;
   }) {
-    const capNhatUser: Array<{ where: unknown; set: unknown }> = [];
+    const userUpdates: Array<{ where: unknown; set: unknown }> = [];
     const shopRepo = {
       findOne: ({ where }: { where: Record<string, unknown> }) =>
         Promise.resolve(
           'slug' in where
-            ? opts.trungSlug
+            ? opts.slugTaken
               ? { id: 99 }
               : null
-            : (opts.shopCuaToi ?? null),
+            : (opts.myShop ?? null),
         ),
       create: (s: Partial<Shop>) => s,
       save: (s: Partial<Shop>) => Promise.resolve({ id: 1, ...s }),
     } as unknown as Repository<Shop>;
     const userRepo = {
       update: (where: unknown, set: unknown) => {
-        capNhatUser.push({ where, set });
+        userUpdates.push({ where, set });
         return Promise.resolve({ affected: 1 });
       },
     } as unknown as Repository<User>;
@@ -53,16 +53,16 @@ describe('Mở shop nâng buyer lên seller', () => {
       {} as Repository<Follow>,
       {} as Repository<OrderItem>,
     );
-    return { service, capNhatUser };
+    return { service, userUpdates };
   }
 
   it('người mua mở shop thì vai trò thành seller', async () => {
-    const { service, capNhatUser } = dungService({ shopCuaToi: null });
+    const { service, userUpdates } = buildService({ myShop: null });
     await service.create({ name: 'Shop mới', slug: 'shop-moi-21' }, {
       id: 21,
       role: 'buyer',
     } as IUser);
-    expect(capNhatUser).toEqual([
+    expect(userUpdates).toEqual([
       {
         where: { id: 21, role: UserRole.BUYER },
         set: { role: UserRole.SELLER },
@@ -71,34 +71,34 @@ describe('Mở shop nâng buyer lên seller', () => {
   });
 
   it('câu nâng vai trò chỉ nhắm vào dòng đang là buyer, admin mở shop không bị hạ', async () => {
-    const { service, capNhatUser } = dungService({ shopCuaToi: null });
+    const { service, userUpdates } = buildService({ myShop: null });
     await service.create({ name: 'Shop admin', slug: 'shop-admin-3' }, {
       id: 3,
       role: 'admin',
     } as IUser);
     // Không dựa vào role trong token (có thể đã cũ): điều kiện nằm trong UPDATE.
-    for (const c of capNhatUser) {
+    for (const c of userUpdates) {
       expect(c.where).toMatchObject({ role: UserRole.BUYER });
     }
   });
 
   it('mở shop hỏng (trùng slug hoặc đã có shop) thì không đụng vai trò', async () => {
-    const trung = dungService({ shopCuaToi: null, trungSlug: true });
+    const taken = buildService({ myShop: null, slugTaken: true });
     await expect(
-      trung.service.create({ name: 'X', slug: 'da-co' }, {
+      taken.service.create({ name: 'X', slug: 'da-co' }, {
         id: 21,
         role: 'buyer',
       } as IUser),
     ).rejects.toThrow(BadRequestException);
-    expect(trung.capNhatUser).toHaveLength(0);
+    expect(taken.userUpdates).toHaveLength(0);
 
-    const daCo = dungService({ shopCuaToi: { id: 5 } });
+    const hasShop = buildService({ myShop: { id: 5 } });
     await expect(
-      daCo.service.create({ name: 'Y', slug: 'y' }, {
+      hasShop.service.create({ name: 'Y', slug: 'y' }, {
         id: 21,
         role: 'buyer',
       } as IUser),
     ).rejects.toThrow(BadRequestException);
-    expect(daCo.capNhatUser).toHaveLength(0);
+    expect(hasShop.userUpdates).toHaveLength(0);
   });
 });
