@@ -269,6 +269,43 @@ describe('AssistantService.ask', () => {
     });
   });
 
+  /**
+   * Đo staging 12/11: q "điện thoại iPhone" gửi nguyên vào ô tìm của sàn thì 40
+   * món đầu toàn món có chữ "điện" (nồi cơm điện...), iPhone không lọt vào.
+   */
+  it('bỏ cụm chung "điện thoại" khỏi từ khoá trước khi tìm', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'điện thoại iPhone' } });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'iPhone 13 256GB' }),
+    ]);
+    const kq = await svc.ask([{ role: 'user', content: 'điện thoại iphone' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'iPhone' }),
+    );
+    expect(kq.products.map((p) => p.id)).toEqual([1]);
+  });
+
+  it('chỉ có "điện thoại" thì giữ nguyên', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'điện thoại' } });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Điện thoại Samsung' }),
+    ]);
+    await svc.ask([{ role: 'user', content: 'điện thoại' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'điện thoại' }),
+    );
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
