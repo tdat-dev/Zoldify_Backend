@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { CartService } from './cart.service';
 import { CreateCartDto } from './dto/create-cart.dto';
@@ -47,26 +48,26 @@ export class CartController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy chi tiết 1 giỏ hàng thành công')
   @Get(':id')
-  findOne(@Param('id') id: string, @User() user: IUser) {
-    return this.cartService.findOne(+id, user);
+  findOne(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.cartService.findOne(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật giỏ hàng thành công')
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateCartDto: UpdateCartDto,
     @User() user: IUser,
   ) {
-    return this.cartService.update(+id, updateCartDto, user);
+    return this.cartService.update(id, updateCartDto, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa giỏ hàng thành công')
   @ApiEntity(MessageResponseDto)
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.cartService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.cartService.remove(id, user);
   }
 }

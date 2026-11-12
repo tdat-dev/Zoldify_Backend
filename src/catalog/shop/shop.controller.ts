@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ShopService } from './shop.service';
 import { CreateShopDto } from './dto/create-shop.dto';
@@ -53,8 +54,8 @@ export class ShopController {
   // thấy ngay; khách chậm tối đa ~30 giây.
   @CacheBien(30)
   @Get(':sellerId')
-  getShop(@Param('sellerId') sellerId: string) {
-    return this.shopService.getShopInfo(+sellerId);
+  getShop(@Param('sellerId', ParseIntPipe) sellerId: number) {
+    return this.shopService.getShopInfo(sellerId);
   }
 
   @Public()
@@ -63,28 +64,24 @@ export class ShopController {
   @CacheBien(30)
   @Get(':sellerId/products')
   getProducts(
-    @Param('sellerId') sellerId: string,
+    @Param('sellerId', ParseIntPipe) sellerId: number,
     @Query('page') page: string,
     @Query('limit') limit: string,
   ) {
-    return this.shopService.getShopProducts(
-      +sellerId,
-      +page || 1,
-      +limit || 20,
-    );
+    return this.shopService.getShopProducts(sellerId, +page || 1, +limit || 20);
   }
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy đơn hàng của shop thành công')
   @Get(':sellerId/orders')
   getSellerOrders(
-    @Param('sellerId') sellerId: string,
+    @Param('sellerId', ParseIntPipe) sellerId: number,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('status') status: string,
     @User() user: IUser,
   ) {
     return this.shopService.getSellerOrders(
-      +sellerId,
+      sellerId,
       +page || 1,
       +limit || 20,
       status,

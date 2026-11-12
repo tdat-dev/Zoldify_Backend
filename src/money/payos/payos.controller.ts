@@ -10,6 +10,7 @@ import {
   HttpStatus,
   BadRequestException,
   Res,
+  ParseIntPipe,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
@@ -79,9 +80,12 @@ export class PayosController {
   @UseGuards(JwtAuthGuard)
   @Get('order/:orderId')
   @ResponseMessage('Lấy trạng thái đơn hàng thành công')
-  async getOrderStatus(@Param('orderId') orderId: string, @User() user: IUser) {
+  async getOrderStatus(
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @User() user: IUser,
+  ) {
     // Chỉ người mua của đơn hoặc admin (kiểm trong service).
-    return this.payosService.getOrderStatus(+orderId, user);
+    return this.payosService.getOrderStatus(orderId, user);
   }
 
   // TRẦN RIÊNG, KHÔNG BỎ QUA (review 26/10). Mỗi lần gọi là một lần hỏi API
@@ -98,8 +102,11 @@ export class PayosController {
   @UseGuards(JwtAuthGuard)
   @Get('refresh/:orderId')
   @ResponseMessage('Refresh trạng thái PayOS thành công')
-  async refresh(@Param('orderId') orderId: string, @User() user: IUser) {
-    return this.payosService.refreshOrderStatus(+orderId, user.id);
+  async refresh(
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @User() user: IUser,
+  ) {
+    return this.payosService.refreshOrderStatus(orderId, user.id);
   }
 
   /**

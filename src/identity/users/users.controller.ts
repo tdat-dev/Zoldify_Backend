@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -48,19 +49,22 @@ export class UsersController {
 
   @Get(':id')
   @ResponseMessage('Lấy thông tin 1 tài khoản thành công!')
-  async findOne(@Param('id') id: string) {
-    return await this.usersService.findOne(+id);
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    return await this.usersService.findOne(id);
   }
 
   @Patch(':id')
   @ResponseMessage('Cập nhật thông tin tài khoản thành công!')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(+id, updateUserDto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    return this.usersService.update(id, updateUserDto);
   }
 
   @Delete(':id')
   @ResponseMessage('Xóa tài khoản thành công!')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(+id);
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.remove(id);
   }
 }

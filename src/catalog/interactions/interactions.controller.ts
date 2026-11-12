@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { InteractionsService } from './interactions.service';
 import { User } from '@common/decorators/user.decorator';
@@ -54,8 +55,8 @@ export class InteractionsController {
   @Public()
   @ResponseMessage('Lấy thống kê người bán thành công')
   @Get('seller/:sellerId/stats')
-  sellerStats(@Param('sellerId') sellerId: string) {
-    return this.interactionsService.sellerStats(+sellerId);
+  sellerStats(@Param('sellerId', ParseIntPipe) sellerId: number) {
+    return this.interactionsService.sellerStats(sellerId);
   }
 
   // Công khai có chủ ý: trang sản phẩm phải đọc được đánh giá khi chưa đăng
@@ -66,12 +67,12 @@ export class InteractionsController {
   @ApiPaginated(Review)
   @Get('product/:productId')
   findByProduct(
-    @Param('productId') productId: string,
+    @Param('productId', ParseIntPipe) productId: number,
     @Query('currentPage') currentPage: string,
     @Query('limit') limit: string,
   ) {
     return this.interactionsService.findByProduct(
-      +productId,
+      productId,
       currentPage,
       limit,
     );
@@ -80,25 +81,25 @@ export class InteractionsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy thông tin tương tác thành công')
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.interactionsService.findOne(+id);
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.interactionsService.findOne(id);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật tương tác thành công')
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() UpdateReviewDto: UpdateReviewDto,
     @User() user: IUser,
   ) {
-    return this.interactionsService.update(+id, UpdateReviewDto, user);
+    return this.interactionsService.update(id, UpdateReviewDto, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa tương tác thành công')
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.interactionsService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.interactionsService.remove(id, user);
   }
 }

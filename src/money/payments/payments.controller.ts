@@ -9,6 +9,7 @@ import {
   UseGuards,
   Query,
   Req,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -59,8 +60,8 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy chi tiết giao dịch thành công')
   @Get(':id')
-  findOne(@Param('id') id: string, @User() user: IUser) {
-    return this.paymentsService.findOne(+id, user);
+  findOne(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.paymentsService.findOne(id, user);
   }
 
   // Chỉ admin (audit A-01): người thường từng tự đánh dấu đơn đã trả tiền ở đây.
@@ -68,18 +69,18 @@ export class PaymentsController {
   @ResponseMessage('Cập nhật giao dịch thành công')
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updatePaymentDto: UpdatePaymentDto,
     @User() user: IUser,
   ) {
-    return this.paymentsService.update(+id, updatePaymentDto, user);
+    return this.paymentsService.update(id, updatePaymentDto, user);
   }
 
   // Chỉ admin: xoá payment là xoá chứng từ tiền, người mua không được tự làm.
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ResponseMessage('Xóa giao dịch thành công')
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.paymentsService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.paymentsService.remove(id, user);
   }
 }

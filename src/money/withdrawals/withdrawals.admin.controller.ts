@@ -6,6 +6,7 @@ import {
   Query,
   Body,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { WithdrawalsService } from './withdrawals.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
@@ -32,17 +33,17 @@ export class WithdrawalsAdminController {
 
   @Patch(':id/approve')
   @ResponseMessage('Duyệt yêu cầu rút tiền thành công')
-  approve(@Param('id') id: string, @User() user: IUser) {
-    return this.withdrawalsService.approve(+id, user.id);
+  approve(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.withdrawalsService.approve(id, user.id);
   }
 
   @Patch(':id/reject')
   @ResponseMessage('Từ chối yêu cầu rút tiền thành công')
   reject(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: ProcessWithdrawalDto,
     @User() user: IUser,
   ) {
-    return this.withdrawalsService.reject(+id, user.id, dto.note);
+    return this.withdrawalsService.reject(id, user.id, dto.note);
   }
 }

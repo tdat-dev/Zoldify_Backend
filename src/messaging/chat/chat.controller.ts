@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
@@ -52,28 +53,28 @@ export class ChatController {
   @ApiPaginated(Message)
   @Get('conversations/:id/messages')
   getMessages(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Query('currentPage') currentPage: string,
     @Query('limit') limit: string,
     @User() user: IUser,
   ) {
-    return this.chatService.getMessages(+id, currentPage, limit, user);
+    return this.chatService.getMessages(id, currentPage, limit, user);
   }
 
   @ResponseMessage('Gửi tin nhắn thành công')
   @Post('conversations/:id/messages')
   sendMessage(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() sendMessageDto: SendMessageDto,
     @User() user: IUser,
   ) {
-    return this.chatService.sendMessage(+id, sendMessageDto, user);
+    return this.chatService.sendMessage(id, sendMessageDto, user);
   }
 
   @ResponseMessage('Đánh dấu tin nhắn đã đọc thành công')
   @Patch('conversations/:id/read')
-  markAsRead(@Param('id') id: string, @User() user: IUser) {
-    return this.chatService.markAsRead(+id, user);
+  markAsRead(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.chatService.markAsRead(id, user);
   }
 
   @ResponseMessage('Lấy số tin nhắn chưa đọc thành công')

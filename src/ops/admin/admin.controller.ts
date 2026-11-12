@@ -6,6 +6,7 @@ import {
   Param,
   Delete,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { UseGuards } from '@nestjs/common';
@@ -55,48 +56,57 @@ export class AdminController {
 
   @Get('users/:id')
   @ResponseMessage('Lấy chi tiết người dùng thành công')
-  getUserDetail(@Param('id') id: string) {
-    return this.adminService.getUserDetail(+id);
+  getUserDetail(@Param('id', ParseIntPipe) id: number) {
+    return this.adminService.getUserDetail(id);
   }
 
   // Body KHÔNG bắt buộc: web admin gọi route này không có body (lật như cũ).
   @ApiBody({ type: KhoaNguoiDungDto, required: false })
   @Patch('users/:id/toggle-lock')
   @ResponseMessage('Khóa/mở tài khoản thành công')
-  toggleUserLock(@Param('id') id: string, @Body() dto: KhoaNguoiDungDto) {
-    return this.adminService.toggleUserLock(+id, dto?.is_locked);
+  toggleUserLock(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: KhoaNguoiDungDto,
+  ) {
+    return this.adminService.toggleUserLock(id, dto?.is_locked);
   }
 
   /** Khoá TƯỜNG MINH: gọi lại bao nhiêu lần cũng vẫn là khoá. */
   @Patch('users/:id/lock')
   @ResponseMessage('Khóa tài khoản thành công')
-  lockUser(@Param('id') id: string) {
-    return this.adminService.toggleUserLock(+id, true);
+  lockUser(@Param('id', ParseIntPipe) id: number) {
+    return this.adminService.toggleUserLock(id, true);
   }
 
   /** Mở khoá TƯỜNG MINH. */
   @Patch('users/:id/unlock')
   @ResponseMessage('Mở khóa tài khoản thành công')
-  unlockUser(@Param('id') id: string) {
-    return this.adminService.toggleUserLock(+id, false);
+  unlockUser(@Param('id', ParseIntPipe) id: number) {
+    return this.adminService.toggleUserLock(id, false);
   }
 
   @Patch('users/:id/role')
   @ResponseMessage('Cập nhật vai trò thành công')
-  changeUserRole(@Param('id') id: string, @Body() dto: ChangeRoleDto) {
-    return this.adminService.changeUserRole(+id, dto.role);
+  changeUserRole(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ChangeRoleDto,
+  ) {
+    return this.adminService.changeUserRole(id, dto.role);
   }
 
   @Patch('users/:id')
   @ResponseMessage('Cập nhật người dùng thành công')
-  updateUser(@Param('id') id: string, @Body() dto: UpdateUserByAdminDto) {
-    return this.adminService.updateUser(+id, dto);
+  updateUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserByAdminDto,
+  ) {
+    return this.adminService.updateUser(id, dto);
   }
 
   @Delete('users/:id')
   @ResponseMessage('Xóa người dùng thành công')
-  deleteUser(@Param('id') id: string) {
-    return this.adminService.deleteUser(+id);
+  deleteUser(@Param('id', ParseIntPipe) id: number) {
+    return this.adminService.deleteUser(id);
   }
 
   @Get('stats')
@@ -174,18 +184,21 @@ export class AdminController {
 
   @Patch('withdrawals/:id/approve')
   @ResponseMessage('Duyệt yêu cầu rút tiền thành công')
-  approveWithdrawal(@Param('id') id: string, @User() user: IUser) {
-    return this.adminService.approveWithdrawal(+id, user.id);
+  approveWithdrawal(
+    @Param('id', ParseIntPipe) id: number,
+    @User() user: IUser,
+  ) {
+    return this.adminService.approveWithdrawal(id, user.id);
   }
 
   @Patch('withdrawals/:id/reject')
   @ResponseMessage('Từ chối yêu cầu rút tiền thành công')
   rejectWithdrawal(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body('note') note: string,
     @User() user: IUser,
   ) {
-    return this.adminService.rejectWithdrawal(+id, user.id, note);
+    return this.adminService.rejectWithdrawal(id, user.id, note);
   }
 
   /**
@@ -200,7 +213,10 @@ export class AdminController {
    */
   @Patch('withdrawals/:id/complete')
   @ResponseMessage('Hoàn tất yêu cầu rút tiền thành công')
-  completeWithdrawal(@Param('id') id: string, @User() user: IUser) {
-    return this.adminService.completeWithdrawal(+id, user.id);
+  completeWithdrawal(
+    @Param('id', ParseIntPipe) id: number,
+    @User() user: IUser,
+  ) {
+    return this.adminService.completeWithdrawal(id, user.id);
   }
 }
