@@ -3212,6 +3212,62 @@
         ]
       }
     },
+    "/api/v1/orders/{id}/payment-method": {
+      "patch": {
+        "operationId": "OrdersController_changePaymentMethod_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePaymentMethodDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Order"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
     "/api/v1/orders/{id}/cancel": {
       "patch": {
         "operationId": "OrdersController_cancel_v1",
@@ -9021,6 +9077,25 @@
           "auto_received",
           "created_at",
           "updated_at"
+        ]
+      },
+      "ChangePaymentMethodDto": {
+        "type": "object",
+        "properties": {
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "cod",
+              "bank_transfer",
+              "wallet",
+              "momo",
+              "vnpay",
+              "payos"
+            ]
+          }
+        },
+        "required": [
+          "payment_method"
         ]
       },
       "CreateCartDto": {
