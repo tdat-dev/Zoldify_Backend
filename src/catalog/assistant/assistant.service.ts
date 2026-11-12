@@ -10,6 +10,9 @@ import { AssistantModel, ChatMessage } from './assistant-model';
  */
 export const MODEL_BUDGET_MS = 6_000;
 
+/** Sau mốc này không nới từ khoá nữa: thêm một lượt tìm có thể vượt trần 10 giây. */
+const RELAX_DEADLINE_MS = 7_500;
+
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
 /**
@@ -71,6 +74,22 @@ export class AssistantService {
     return process.env.AI_ASSISTANT_ENABLED === 'true';
   }
 
+  /** Một lượt tìm: món còn hàng, đã xếp hạng và bỏ món khớp kém theo tên. */
+  private async searchRanked(f: AssistantFilters): Promise<ProductRow[]> {
+    const { q, price_min, price_max, condition, sort } = f;
+    const page = (await this.products.findAll('1', FETCH_SIZE, {
+      q,
+      price_min,
+      price_max,
+      condition,
+      sort,
+    })) as { result?: ProductRow[] };
+    return rankByName(
+      (page?.result ?? []).filter((p) => Number(p.stock) > 0),
+      q,
+    );
+  }
+
   /** Web hỏi cái này để biết có hiện nút trợ lý không. */
   status() {
     return { enabled: this.isEnabled() };
@@ -78,6 +97,7 @@ export class AssistantService {
 
   async ask(history: ChatMessage[]) {
     if (!this.isEnabled()) throw new NotFoundException();
+    const startedAt = Date.now();
     const lastUserText =
       [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
 
@@ -109,18 +129,22 @@ export class AssistantService {
       filters = { q: lastUserText.replace(/\s+/g, ' ').trim().slice(0, 80) };
     }
 
-    const { q, price_min, price_max, condition, sort } = filters;
-    const page = (await this.products.findAll('1', FETCH_SIZE, {
-      q,
-      price_min,
-      price_max,
-      condition,
-      sort,
-    })) as { result?: ProductRow[] };
-    const inStock = rankByName(
-      (page?.result ?? []).filter((p) => Number(p.stock) > 0),
-      filters.q,
-    );
+    // Tìm, xếp hạng; rỗng thì nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ"
+    // thành "bàn làm việc"), chỉ khi còn thời gian trong trần 10 giây.
+    let inStock = await this.searchRanked(filters);
+    const words = filters.q.split(' ');
+    if (
+      !inStock.length &&
+      words.length > 1 &&
+      Date.now() - startedAt < RELAX_DEADLINE_MS
+    ) {
+      const shorter = { ...filters, q: words.slice(0, -1).join(' ') };
+      const retry = await this.searchRanked(shorter);
+      if (retry.length) {
+        inStock = retry;
+        filters = shorter;
+      }
+    }
 
     let picked = inStock;
     const relaxed: string[] = [];
