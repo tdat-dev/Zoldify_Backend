@@ -9,6 +9,7 @@ import {
   UseGuards,
   ForbiddenException,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -69,15 +70,15 @@ export class CategoriesController {
   @ResponseMessage('Lấy thông tin 1 danh mục thành công!')
   @CacheBien(DANH_MUC_GIAY)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.categoriesService.findOne(+id);
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.categoriesService.findOne(id);
   }
 
   @UseGuards(JwtAuthGuard) // Chỉ những ai đăng nhập (có token) mới được cập nhật
   @ResponseMessage('Cập nhật danh mục thành công!')
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateCategoryDto: UpdateCategoryDto,
     @User() user: IUser,
   ) {
@@ -87,19 +88,19 @@ export class CategoriesController {
         'Chỉ tài khoản Admin mới có quyền cập nhật danh mục!',
       );
     }
-    return this.categoriesService.update(+id, updateCategoryDto);
+    return this.categoriesService.update(id, updateCategoryDto);
   }
 
   @UseGuards(JwtAuthGuard) // Chỉ những ai đăng nhập (có token) mới được xóa
   @ResponseMessage('Xóa danh mục thành công!')
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
     // Chỉ Admin mới được phép xóa danh mục
     if (user.role !== 'admin') {
       throw new ForbiddenException(
         'Chỉ tài khoản Admin mới có quyền xóa danh mục!',
       );
     }
-    return this.categoriesService.remove(+id);
+    return this.categoriesService.remove(id);
   }
 }

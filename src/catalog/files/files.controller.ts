@@ -14,6 +14,7 @@ import {
   Query,
   BadRequestException,
   Logger,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { StorageService } from './storage.service';
@@ -174,14 +175,14 @@ export class FilesController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   @ResponseMessage('Lấy chi tiết file thành công')
-  findOne(@Param('id') id: string, @User() user: IUser) {
-    return this.filesService.findOne(+id, user);
+  findOne(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.filesService.findOne(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @ResponseMessage('Xóa file thành công')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.filesService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.filesService.remove(id, user);
   }
 }

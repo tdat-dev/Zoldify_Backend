@@ -5,6 +5,7 @@ import {
   Param,
   Query,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { EscrowsService } from './escrows.service';
 import { JwtAuthGuard } from '@identity/auth/jwt-auth.guard';
@@ -54,8 +55,11 @@ export class EscrowsController {
   @UseGuards(JwtAuthGuard)
   @Get('order/:orderId')
   @ResponseMessage('Lấy escrow theo đơn hàng thành công')
-  findByOrder(@Param('orderId') orderId: string, @User() user: IUser) {
-    return this.escrowsService.findByOrder(+orderId, user);
+  findByOrder(
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @User() user: IUser,
+  ) {
+    return this.escrowsService.findByOrder(orderId, user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -63,7 +67,7 @@ export class EscrowsController {
   @Get('seller/:sellerId')
   @ResponseMessage('Lấy escrow của người bán thành công')
   async findBySeller(
-    @Param('sellerId') sellerId: string,
+    @Param('sellerId', ParseIntPipe) sellerId: number,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('status') status: string,
@@ -72,9 +76,9 @@ export class EscrowsController {
     // Hai lớp. `assertSelfOrAdmin` chặn ngay ở cửa cho lỗi 403 sớm và rõ;
     // `EscrowsService.findBySeller` chặn lần nữa ở két. Cửa thứ hai mở ra sau
     // này — một job, một script, một controller khác — sẽ không đi vòng qua được.
-    this.assertSelfOrAdmin(+sellerId, user);
+    this.assertSelfOrAdmin(sellerId, user);
     return this.escrowsService.findBySeller(
-      +sellerId,
+      sellerId,
       +page || 1,
       +limit || 20,
       status,
@@ -87,11 +91,11 @@ export class EscrowsController {
   @Get('held/:sellerId')
   @ResponseMessage('Lấy số dư đang giữ thành công')
   async getHeldBalance(
-    @Param('sellerId') sellerId: string,
+    @Param('sellerId', ParseIntPipe) sellerId: number,
     @User() user: IUser,
   ) {
-    this.assertSelfOrAdmin(+sellerId, user);
-    return this.escrowsService.getHeldBalance(+sellerId, user);
+    this.assertSelfOrAdmin(sellerId, user);
+    return this.escrowsService.getHeldBalance(sellerId, user);
   }
 
   /** Người bán chỉ xem tiền của chính mình; admin xem của bất kỳ ai. */

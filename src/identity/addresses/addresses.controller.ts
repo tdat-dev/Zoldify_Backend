@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { AddressesService } from './addresses.service';
 import { CreateAddressDto, UpdateAddressDto } from './dto/create-address.dto';
@@ -30,8 +31,8 @@ export class AddressesController {
 
   @Get(':id')
   @ResponseMessage('Lấy thông tin địa chỉ thành công')
-  findOne(@Param('id') id: string, @User() user: IUser) {
-    return this.addressesService.findOne(+id, user);
+  findOne(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.addressesService.findOne(id, user);
   }
 
   @Post()
@@ -43,22 +44,22 @@ export class AddressesController {
   @Patch(':id')
   @ResponseMessage('Cập nhật địa chỉ thành công')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAddressDto,
     @User() user: IUser,
   ) {
-    return this.addressesService.update(+id, dto, user);
+    return this.addressesService.update(id, dto, user);
   }
 
   @Patch(':id/default')
   @ResponseMessage('Đặt địa chỉ mặc định thành công')
-  setDefault(@Param('id') id: string, @User() user: IUser) {
-    return this.addressesService.setDefault(+id, user);
+  setDefault(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.addressesService.setDefault(id, user);
   }
 
   @Delete(':id')
   @ResponseMessage('Xóa địa chỉ thành công')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.addressesService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.addressesService.remove(id, user);
   }
 }

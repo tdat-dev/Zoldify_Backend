@@ -111,19 +111,19 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy chi tiết đơn hàng thành công')
   @Get(':id')
-  findOne(@Param('id') id: string, @User() user: IUser) {
-    return this.ordersService.findOne(+id, user);
+  findOne(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.ordersService.findOne(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật trạng thái đơn hàng thành công')
   @Patch(':id/status')
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateOrderDto: UpdateOrderDto,
     @User() user: IUser,
   ) {
-    return this.ordersService.updateStatus(+id, updateOrderDto, user);
+    return this.ordersService.updateStatus(id, updateOrderDto, user);
   }
 
   // Quyền theo phase (shipping: người bán hoặc admin; delivered: chỉ admin) và
@@ -132,11 +132,11 @@ export class OrdersController {
   @ResponseMessage('Gia lap trang thai GHN thanh cong')
   @Patch(':id/sim-ghn')
   simGhn(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() body: SimGhnDto,
     @User() user: IUser,
   ) {
-    return this.ordersService.simulateGhnStatus(+id, body.phase, user);
+    return this.ordersService.simulateGhnStatus(id, body.phase, user);
   }
 
   // Người bán tạo lại vận đơn GHN bị từ chối lần trước (sau khi sửa địa chỉ
@@ -144,8 +144,8 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Đã tạo lại vận đơn GHN')
   @Post(':id/shipments/retry')
-  retryShipments(@Param('id') id: string, @User() user: IUser) {
-    return this.ordersService.retryGhnShipments(+id, user);
+  retryShipments(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.ordersService.retryGhnShipments(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -159,11 +159,11 @@ export class OrdersController {
   @ResponseMessage('Xác nhận đã nhận hàng thành công')
   @Patch(':id/shipments/:sellerId/received')
   confirmReceived(
-    @Param('id') id: string,
-    @Param('sellerId') sellerId: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('sellerId', ParseIntPipe) sellerId: number,
     @User() user: IUser,
   ) {
-    return this.ordersService.confirmShipmentReceived(+id, +sellerId, user);
+    return this.ordersService.confirmShipmentReceived(id, sellerId, user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -180,22 +180,22 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Hủy đơn hàng thành công')
   @Patch(':id/cancel')
-  cancel(@Param('id') id: string, @User() user: IUser) {
-    return this.ordersService.cancel(+id, user);
+  cancel(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.ordersService.cancel(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Hủy bán đơn hàng thành công')
   @Patch(':id/cancel-sale')
-  cancelSale(@Param('id') id: string, @User() user: IUser) {
-    return this.ordersService.cancelSale(+id, user);
+  cancelSale(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.ordersService.cancelSale(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa đơn hàng thành công')
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.ordersService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.ordersService.remove(id, user);
   }
 
   // GHI CHÚ NỘI BỘ — CỐ Ý KHÔNG DÙNG /** */.

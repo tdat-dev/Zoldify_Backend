@@ -64,31 +64,40 @@ export class FollowsController {
   @Public()
   @ApiPaginated(UserEntity)
   @Get(':userId/followers')
-  getFollowers(@Param('userId') userId: string, @Query('page') page: string) {
-    return this.followsService.getFollowers(+userId, page ? +page : 1);
+  getFollowers(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Query('page') page: string,
+  ) {
+    return this.followsService.getFollowers(userId, page ? +page : 1);
   }
 
   @Public()
   @ApiPaginated(UserEntity)
   @Get(':userId/following')
-  getFollowing(@Param('userId') userId: string, @Query('page') page: string) {
-    return this.followsService.getFollowing(+userId, page ? +page : 1);
+  getFollowing(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Query('page') page: string,
+  ) {
+    return this.followsService.getFollowing(userId, page ? +page : 1);
   }
 
   @Public()
   @ApiShape({ follower: 'number', following: 'number' })
   @Get(':userId/count')
-  async count(@Param('userId') userId: string) {
-    const follower = await this.followsService.countFollowers(+userId);
-    const following = await this.followsService.countFollowings(+userId);
+  async count(@Param('userId', ParseIntPipe) userId: number) {
+    const follower = await this.followsService.countFollowers(userId);
+    const following = await this.followsService.countFollowings(userId);
     return { follower, following };
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiShape({ followed: 'boolean' })
   @Get('check/:sellerId')
-  async check(@Param('sellerId') sellerId: string, @User() user: IUser) {
-    const followed = await this.followsService.isFollowing(user.id, +sellerId);
+  async check(
+    @Param('sellerId', ParseIntPipe) sellerId: number,
+    @User() user: IUser,
+  ) {
+    const followed = await this.followsService.isFollowing(user.id, sellerId);
     return { followed };
   }
 }

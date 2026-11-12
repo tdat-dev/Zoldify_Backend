@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
@@ -81,15 +82,15 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Lấy chi tiết thông báo thành công')
   @Get(':id')
-  findOne(@Param('id') id: string, @User() user: IUser) {
-    return this.notificationsService.findOne(+id, user);
+  findOne(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.notificationsService.findOne(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Đánh dấu thông báo đã đọc thành công')
   @Patch(':id/read')
-  markAsRead(@Param('id') id: string, @User() user: IUser) {
-    return this.notificationsService.markAsRead(+id, user);
+  markAsRead(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.notificationsService.markAsRead(id, user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -102,7 +103,7 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xóa thông báo thành công')
   @Delete(':id')
-  remove(@Param('id') id: string, @User() user: IUser) {
-    return this.notificationsService.remove(+id, user);
+  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
+    return this.notificationsService.remove(id, user);
   }
 }
