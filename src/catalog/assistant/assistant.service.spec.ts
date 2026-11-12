@@ -183,6 +183,18 @@ describe('AssistantService.ask', () => {
     expect(kq.products.map((p) => p.id)).toEqual([1]);
   });
 
+  /** "máy ảnh" nới thành "máy" ra máy nướng bánh mì: câu hai chữ không được nới. */
+  it('từ khoá hai chữ thì không nới, trả rỗng', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'máy ảnh' } });
+    const { svc, products } = build({ understand }, []);
+    const kq = await svc.ask([{ role: 'user', content: 'máy ảnh' }]);
+
+    expect(products.findAll).toHaveBeenCalledTimes(1);
+    expect(kq.products).toEqual([]);
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [

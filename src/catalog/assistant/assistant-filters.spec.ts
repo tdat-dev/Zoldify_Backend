@@ -12,6 +12,18 @@ import {
  * thêm condition "new" và sort "newest". Sàn đồ cũ gần như không có hàng mới,
  * nên mọi câu ra rỗng. Hai bộ lọc này chỉ giữ khi người dùng có nhắc tới.
  */
+describe('rankByName: chữ chung "điện thoại"', () => {
+  it('"điện thoại iPhone" vẫn ra iPhone dù tên món không có chữ điện thoại', () => {
+    const items = [
+      { name: 'iPhone 13 256GB' },
+      { name: 'Ốp điện thoại Samsung' },
+    ];
+    expect(rankByName(items, 'điện thoại iPhone')).toEqual([
+      { name: 'iPhone 13 256GB' },
+    ]);
+  });
+});
+
 describe('dropUnaskedFilters', () => {
   const f = {
     q: 'tai nghe bluetooth',
@@ -52,9 +64,38 @@ describe('dropUnaskedFilters', () => {
     ).toBe('used');
   });
 
-  it('không đụng giá và tỉnh', () => {
+  /**
+   * Đo lại sau bản sửa đầu: "tai nghe bluetooth" ra price_max 999999999, "may
+   * anh" ra price_max 3000000 và province "Hồ Chí Minh". Câu không có số tiền,
+   * không có nơi chốn thì không được có giá, có tỉnh.
+   */
+  it('bỏ giá và tỉnh mô hình tự bịa', () => {
+    const g = { q: 'máy ảnh', price_max: 3000000, province: 'Hồ Chí Minh' };
+    expect(dropUnaskedFilters(g, ['may anh'])).toEqual({ q: 'máy ảnh' });
+  });
+
+  it('giữ giá khi câu có số tiền, giữ tỉnh khi câu có nơi chốn', () => {
     const g = { q: 'nồi', price_max: 600000, province: 'Hồ Chí Minh' };
-    expect(dropUnaskedFilters(g, ['nồi'])).toEqual(g);
+    expect(dropUnaskedFilters(g, ['nồi dưới 600k ở HCM'])).toEqual(g);
+    expect(
+      dropUnaskedFilters(g, ['nồi', 'dưới 6 trăm nghìn thôi', 'sài gòn']),
+    ).toEqual(g);
+    expect(
+      dropUnaskedFilters({ q: 'bàn', province: 'Hà Nội' }, ['bàn hà nội'])
+        .province,
+    ).toBe('Hà Nội');
+  });
+
+  /**
+   * Sàn so tình trạng khớp CHÍNH XÁC: "iphone cũ" thành condition "used" (hạng
+   * Cũ 70-80%) thì mất hết iPhone hạng Tốt, Như mới. Trên sàn đồ cũ, "cũ"
+   * nghĩa là không mới, không phải một hạng.
+   */
+  it('không lọc theo hạng "used" vì chữ "cũ" nghĩa là đồ đã dùng nói chung', () => {
+    expect(
+      dropUnaskedFilters({ q: 'iphone', condition: 'used' }, ['iphone cũ'])
+        .condition,
+    ).toBeUndefined();
   });
 });
 
