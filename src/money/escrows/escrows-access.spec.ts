@@ -67,18 +67,18 @@ describe('B-03: /escrows theo quyền sở hữu', () => {
       async (method) => {
         const call =
           method === 'findBySeller'
-            ? controller.findBySeller('8', '1', '20', '', buyer)
-            : controller.getHeldBalance('8', buyer);
+            ? controller.findBySeller(8, '1', '20', '', buyer)
+            : controller.getHeldBalance(8, buyer);
         await expect(call).rejects.toThrow(ForbiddenException);
         expect(calls).toHaveLength(0);
       },
     );
 
     it('người bán xem của chính mình, admin xem của bất kỳ ai', async () => {
-      await controller.findBySeller('8', '1', '20', '', seller);
-      await controller.getHeldBalance('8', seller);
-      await controller.findBySeller('8', '1', '20', '', admin);
-      await controller.getHeldBalance('8', admin);
+      await controller.findBySeller(8, '1', '20', '', seller);
+      await controller.getHeldBalance(8, seller);
+      await controller.findBySeller(8, '1', '20', '', admin);
+      await controller.getHeldBalance(8, admin);
       expect(calls).toHaveLength(4);
     });
   });
