@@ -125,6 +125,36 @@ export function parseModelResponse(body: string): {
   return text ? { text: text.slice(0, 400) } : {};
 }
 
+/** Bỏ dấu, hạ chữ thường, tách chữ: "Nồi Cơm" và "noi com" là như nhau. */
+function words(s: string): string[] {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * Xếp món theo số chữ của câu hỏi có trong tên, nhiều hơn đứng trước. Tìm
+ * FULLTEXT trả món chỉ cần trùng MỘT chữ: hỏi "nồi cơm điện" thì nồi áp suất
+ * và máy xay (trùng "nồi", "điện") đứng trước nồi cơm thật (staging 12/11).
+ * Điểm bằng nhau giữ thứ tự gốc (Array.prototype.sort ổn định từ ES2019).
+ */
+export function rankByName<T extends { name: string }>(
+  items: T[],
+  q: string,
+): T[] {
+  const want = new Set(words(q));
+  if (!want.size) return items;
+  const score = (name: string) => words(name).filter((w) => want.has(w)).length;
+  return items
+    .map((item, i) => ({ item, i, s: score(item.name) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map((x) => x.item);
+}
+
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + ' đ';
 
 /** Câu trả lời dựng từ bộ lọc, không để mô hình viết: nhanh và không bịa. */

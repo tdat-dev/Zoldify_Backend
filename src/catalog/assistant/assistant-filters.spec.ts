@@ -2,6 +2,7 @@ import {
   buildReply,
   normalizeFilters,
   parseModelResponse,
+  rankByName,
   VALID_CONDITIONS,
 } from './assistant-filters';
 
@@ -112,6 +113,43 @@ describe('parseModelResponse', () => {
 
   it('body hỏng thì trả rỗng, không ném lỗi', () => {
     expect(parseModelResponse('<html>502</html>')).toEqual({});
+  });
+});
+
+/**
+ * Tìm FULLTEXT trả món chỉ cần trùng MỘT chữ: hỏi "nồi cơm điện" thì nồi áp
+ * suất và máy xay (trùng "nồi", "điện") đứng trước nồi cơm thật (đo trên
+ * staging 12/11). Trợ lý xếp lại theo số chữ của câu hỏi có trong tên món.
+ */
+describe('rankByName', () => {
+  const p = (id: number, name: string) => ({ id, name });
+
+  it('món có đủ các chữ của câu hỏi đứng đầu', () => {
+    const ranked = rankByName(
+      [
+        p(1, 'Nồi áp suất 4L cũ'),
+        p(2, 'Máy xay sinh tố điện'),
+        p(3, 'Nồi cơm điện 1.5L dùng kỹ'),
+      ],
+      'nồi cơm điện',
+    );
+    expect(ranked.map((x) => x.id)).toEqual([3, 1, 2]);
+  });
+
+  it('không phân biệt dấu và hoa thường', () => {
+    const ranked = rankByName(
+      [p(1, 'May anh cu'), p(2, 'Máy Ảnh Canon EOS')],
+      'máy ảnh canon',
+    );
+    expect(ranked[0].id).toBe(2);
+  });
+
+  it('giữ nguyên thứ tự gốc khi điểm bằng nhau', () => {
+    const ranked = rankByName(
+      [p(1, 'Giày A'), p(2, 'Giày B'), p(3, 'Giày C')],
+      'giày',
+    );
+    expect(ranked.map((x) => x.id)).toEqual([1, 2, 3]);
   });
 });
 

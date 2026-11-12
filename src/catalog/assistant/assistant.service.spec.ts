@@ -96,6 +96,19 @@ describe('AssistantService.hoi', () => {
     expect(kq.products.map((p) => p.id)).toEqual([2]);
   });
 
+  it('xếp món có đủ chữ của câu hỏi lên trước', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'nồi cơm điện' } });
+    const { svc } = build({ understand }, [
+      product(1, { name: 'Nồi áp suất 4L' }),
+      product(2, { name: 'Nồi cơm điện 1.5L' }),
+    ]);
+    const kq = await svc.ask([{ role: 'user', content: 'nồi cơm điện' }]);
+
+    expect(kq.products.map((p) => p.id)).toEqual([2, 1]);
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [product(1)]);

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ProductsService } from '../products/products.service';
-import { AssistantFilters, buildReply } from './assistant-filters';
+import { AssistantFilters, buildReply, rankByName } from './assistant-filters';
 import { AssistantModel, ChatMessage } from './assistant-model';
 
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
@@ -102,7 +102,10 @@ export class AssistantService {
       condition,
       sort,
     })) as { result?: ProductRow[] };
-    const inStock = (page?.result ?? []).filter((p) => Number(p.stock) > 0);
+    const inStock = rankByName(
+      (page?.result ?? []).filter((p) => Number(p.stock) > 0),
+      filters.q,
+    );
 
     let picked = inStock;
     const relaxed: string[] = [];
