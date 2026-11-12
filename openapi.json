@@ -6604,6 +6604,52 @@
         ]
       }
     },
+    "/api/v1/assistant/review": {
+      "post": {
+        "operationId": "AssistantController_review_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewAssistantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Lượt hai: câu nhận xét AI cho các món vừa trả ở /chat. Web gọi ngay sau khi\nhiện món. Cũng tốn một lần gọi mô hình nên giới hạn như /chat.",
+        "tags": [
+          "Assistant"
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "operationId": "AdminController_getUsers_v1",
@@ -10186,6 +10232,10 @@
         }
       },
       "AskAssistantDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ReviewAssistantDto": {
         "type": "object",
         "properties": {}
       },

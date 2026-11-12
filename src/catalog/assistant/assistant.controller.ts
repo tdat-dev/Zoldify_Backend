@@ -6,6 +6,7 @@ import {
   ArrayMinSize,
   IsIn,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -30,6 +31,12 @@ export class AskAssistantDto {
   @ArrayMinSize(1)
   @ArrayMaxSize(6)
   messages: ChatMessageDto[];
+}
+
+export class ReviewAssistantDto {
+  /** Mã /chat trả về; chỉ là chìa khoá vào Redis, không mang dữ liệu món. */
+  @IsUUID()
+  review_id: string;
 }
 
 @Controller('assistant')
@@ -59,5 +66,21 @@ export class AssistantController {
   @ResponseMessage('Trợ lý đã trả lời')
   chat(@Body() dto: AskAssistantDto) {
     return this.assistant.ask(dto.messages);
+  }
+
+  /**
+   * Lượt hai: câu nhận xét AI cho các món vừa trả ở /chat. Web gọi ngay sau khi
+   * hiện món. Cũng tốn một lần gọi mô hình nên giới hạn như /chat.
+   */
+  @Public()
+  @Throttle({
+    short: { limit: 1, ttl: 1000 },
+    medium: { limit: 15, ttl: 60000 },
+  })
+  @Post('review')
+  @HttpCode(200)
+  @ResponseMessage('Nhận xét của trợ lý')
+  review(@Body() dto: ReviewAssistantDto) {
+    return this.assistant.review(dto.review_id);
   }
 }
