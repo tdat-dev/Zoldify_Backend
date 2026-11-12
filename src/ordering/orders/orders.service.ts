@@ -21,6 +21,7 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { STATUS_BY_STOCK_SQL } from '@catalog/products/status-by-stock';
+import { changePaymentMethod } from './change-payment-method';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { demCoTran } from '@common/dem-co-tran';
 
@@ -2651,6 +2652,20 @@ export class OrdersService {
       throw new NotFoundException('Không tìm thấy đơn hàng');
     }
     return order;
+  }
+
+  /** Đổi cách trả cho đơn chưa trả: logic ở `change-payment-method.ts`. */
+  async changePaymentMethod(id: number, method: PaymentMethod, user: IUser) {
+    await changePaymentMethod(
+      {
+        orderRepository: this.orderRepository,
+        findForActor: (orderId) => this.findOneForActor(orderId, user),
+        closePaymentLink: (orderId) => this.voidOpenPaymentLink(orderId),
+      },
+      id,
+      method,
+    );
+    return this.findOne(id, user);
   }
 
   async cancel(id: number, user: IUser) {
