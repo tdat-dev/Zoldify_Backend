@@ -20,6 +20,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { ProductsService } from '@catalog/products/products.service';
+import { toSellerView } from './seller-view';
 import { STATUS_BY_STOCK_SQL } from '@catalog/products/status-by-stock';
 import { changePaymentMethod } from './change-payment-method';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -1018,9 +1019,13 @@ export class OrdersService {
     if (pageIds.length > 0) {
       result = await this.orderRepository.find({
         where: { id: In(pageIds) },
-        relations: ['user', 'items', 'items.product'],
+        // Người bán cần biết món nào của mình để cắt đơn (seller-view.ts).
+        relations: isSeller
+          ? ['user', 'items', 'items.product', 'items.product.seller']
+          : ['user', 'items', 'items.product'],
         order: { created_at: 'DESC', id: 'DESC' },
       });
+      if (isSeller) result = result.map((o) => toSellerView(o, user.id));
     }
 
     // Con trỏ cho trang KẾ: chỉ cấp khi trang này đầy (còn khả năng có tiếp).
