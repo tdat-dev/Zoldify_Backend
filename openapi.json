@@ -6464,6 +6464,90 @@
         ]
       }
     },
+    "/api/v1/assistant/status": {
+      "get": {
+        "operationId": "AssistantController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Web gọi một lần khi tải trang để biết có hiện nút trợ lý không.",
+        "tags": [
+          "Assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/chat": {
+      "post": {
+        "operationId": "AssistantController_chat_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskAssistantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Công khai như trang tìm kiếm: khách chưa đăng nhập cũng hỏi được. Mỗi lượt\ntốn một lần gọi mô hình nên giới hạn chặt hơn route thường: 1 lượt mỗi\ngiây, 15 lượt mỗi phút cho một IP.",
+        "tags": [
+          "Assistant"
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "operationId": "AdminController_getUsers_v1",
@@ -10020,6 +10104,10 @@
             "type": "string"
           }
         }
+      },
+      "AskAssistantDto": {
+        "type": "object",
+        "properties": {}
       },
       "KhoaNguoiDungDto": {
         "type": "object",
