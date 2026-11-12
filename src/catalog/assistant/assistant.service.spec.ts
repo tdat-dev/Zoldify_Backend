@@ -137,23 +137,35 @@ describe('AssistantService.ask', () => {
   });
 
   it('không có món nào thì nới từ khoá một lần (bỏ chữ cuối)', async () => {
-    const understand = jest.fn().mockResolvedValue({ filters: { q: 'bàn làm việc gỗ' } });
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'bàn làm việc gỗ' } });
     const products = {
       findAll: jest
         .fn()
         .mockResolvedValueOnce({ meta: {}, result: [] })
-        .mockResolvedValueOnce({ meta: {}, result: [product(1, { name: 'Bàn làm việc chân sắt' })] }),
+        .mockResolvedValueOnce({
+          meta: {},
+          result: [product(1, { name: 'Bàn làm việc chân sắt' })],
+        }),
     };
-    const svc = new AssistantService({ understand } as unknown as AssistantModel, products as never);
+    const svc = new AssistantService({ understand }, products as never);
     const kq = await svc.ask([{ role: 'user', content: 'bàn làm việc gỗ' }]);
 
-    expect(products.findAll).toHaveBeenNthCalledWith(2, '1', '40', expect.objectContaining({ q: 'bàn làm việc' }));
+    expect(products.findAll).toHaveBeenNthCalledWith(
+      2,
+      '1',
+      '40',
+      expect.objectContaining({ q: 'bàn làm việc' }),
+    );
     expect(kq.products.map((p) => p.id)).toEqual([1]);
   });
 
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
-    const { svc, products } = build({ understand }, [product(1)]);
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Máy ảnh Canon EOS 700D' }),
+    ]);
     const kq = await svc.ask([{ role: 'user', content: '  máy ảnh Canon  ' }]);
 
     expect(products.findAll).toHaveBeenCalledWith(

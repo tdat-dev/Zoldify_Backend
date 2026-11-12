@@ -125,78 +125,90 @@ export function parseModelResponse(body: string): {
   return text ? { text: text.slice(0, 400) } : {};
 }
 
-/** Bỏ dấu, hạ chữ thường, tách chữ: "Nồi Cơm" và "noi com" là như nhau. */
-function words(s: string): string[] {
+/** Hạ chữ thường, tách chữ, GIỮ dấu: "bàn" và "bán" là hai chữ khác nhau. */
+function tokens(s: string): string[] {
   return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/gi, 'd')
+    .normalize('NFC')
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
+}
+
+function stripAccents(w: string): string {
+  return w
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
 }
 
 /**
  * Chữ chung chung không nói lên món gì: "giày chạy bộ như mới" mà tính cả
- * "như", "mới" thì áo khoác như mới cũng được điểm. Viết không dấu vì so sau
- * khi bỏ dấu.
+ * "như", "mới" thì áo khoác như mới cũng được điểm. Viết CÓ dấu: bỏ "bán"
+ * nhưng giữ "bàn" (cái bàn).
  */
 const STOP_WORDS = new Set([
-  'cu',
-  'moi',
-  'nhu',
-  'con',
-  'dep',
-  're',
-  'gia',
-  'hang',
+  'cũ',
+  'mới',
+  'như',
+  'còn',
+  'đẹp',
+  'rẻ',
+  'giá',
+  'hàng',
   'mua',
-  'ban',
-  'tim',
+  'bán',
+  'tìm',
   'cho',
-  'minh',
-  'toi',
-  'can',
-  'duoi',
-  'tren',
-  'o',
-  'tai',
-  'va',
-  'loai',
-  'cai',
+  'mình',
+  'tôi',
+  'cần',
+  'dưới',
+  'trên',
+  'ở',
+  'tại',
+  'và',
+  'loại',
+  'cái',
 ]);
 
 /**
- * Món có ít hơn ngần này phần chữ của câu hỏi bị bỏ khi đã có món khớp tốt.
- * 0,5: hỏi "nồi cơm điện Nhật" (mô hình hay giữ chữ xuất xứ) thì nồi cơm điện
- * khớp 3/4 vẫn giữ, nồi áp suất 1/4 bị bỏ.
+ * Món phải có ít nhất 60% số chữ của câu hỏi. Câu hai chữ ("máy ảnh") phải
+ * khớp cả hai, nên máy xay không lọt; "nồi cơm điện Nhật" (mô hình hay giữ chữ
+ * xuất xứ) thì nồi cơm điện khớp 3/4 vẫn giữ.
  */
-const MIN_COVERAGE = 0.5;
+const MIN_COVERAGE = 0.6;
 
 /**
- * Xếp món theo phần chữ của câu hỏi có trong tên, rồi bỏ món khớp kém. Tìm
- * FULLTEXT trả món chỉ cần trùng MỘT chữ: hỏi "nồi cơm điện" thì nồi áp suất
- * và máy xay (trùng "nồi", "điện") lẫn vào top (staging 12/11). Thà trả một
- * món đúng còn hơn sáu món sai. Không món nào khớp quá nửa thì giữ hết, chỉ
- * sắp lại, để vẫn có gì đó cho người mua xem. Điểm bằng nhau giữ thứ tự gốc.
+ * Xếp món theo phần chữ của câu hỏi có trong tên, bỏ món khớp dưới ngưỡng.
+ *
+ * Vì sao cần: tìm kiếm của sàn (FULLTEXT, collation unicode_ci) trả món chỉ cần
+ * trùng MỘT chữ và không phân biệt dấu. Đo trên staging 12/11: hỏi "nồi cơm
+ * điện" ra nồi áp suất, hỏi "bàn" ra máy nướng bánh mì, hỏi "máy ảnh" ra máy
+ * xay. Thà trả rỗng (trợ lý gợi ý gõ ngắn hơn) còn hơn đưa món sai lên đầu.
+ *
+ * Chữ có dấu phải khớp đúng dấu; người dùng gõ không dấu ("may anh") thì khớp
+ * cả chữ có dấu. Điểm bằng nhau giữ thứ tự gốc của tìm kiếm.
  */
 export function rankByName<T extends { name: string }>(
   items: T[],
   q: string,
 ): T[] {
-  const want = new Set(words(q).filter((w) => !STOP_WORDS.has(w)));
-  if (!want.size) return items;
+  const want = [...new Set(tokens(q))].filter((w) => !STOP_WORDS.has(w));
+  if (!want.length) return items;
   const coverage = (name: string) => {
-    const have = new Set(words(name));
-    return [...want].filter((w) => have.has(w)).length / want.size;
+    const have = tokens(name);
+    const exact = new Set(have);
+    const bare = new Set(have.map(stripAccents));
+    const hit = want.filter((w) =>
+      stripAccents(w) === w ? bare.has(w) : exact.has(w),
+    );
+    return hit.length / want.length;
   };
-  const scored = items
+  return items
     .map((item, i) => ({ item, i, c: coverage(item.name) }))
-    .sort((a, b) => b.c - a.c || a.i - b.i);
-  const best = scored[0]?.c ?? 0;
-  const kept =
-    best >= MIN_COVERAGE ? scored.filter((x) => x.c >= MIN_COVERAGE) : scored;
-  return kept.map((x) => x.item);
+    .filter((x) => x.c >= MIN_COVERAGE)
+    .sort((a, b) => b.c - a.c || a.i - b.i)
+    .map((x) => x.item);
 }
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + ' đ';

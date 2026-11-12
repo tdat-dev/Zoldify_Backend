@@ -173,12 +173,18 @@ describe('rankByName', () => {
   });
 
   it('gõ không dấu vẫn khớp tên có dấu', () => {
-    const ranked = rankByName([p(1, 'Máy Ảnh Canon EOS'), p(2, 'Máy xay')], 'may anh canon');
+    const ranked = rankByName(
+      [p(1, 'Máy Ảnh Canon EOS'), p(2, 'Máy xay')],
+      'may anh canon',
+    );
     expect(ranked.map((x) => x.id)).toEqual([1]);
   });
 
   it('câu hai chữ phải khớp cả hai: máy ảnh không ra máy xay', () => {
-    const ranked = rankByName([p(1, 'Máy xay sinh tố'), p(2, 'Máy ảnh Sony A6000')], 'máy ảnh');
+    const ranked = rankByName(
+      [p(1, 'Máy xay sinh tố'), p(2, 'Máy ảnh Sony A6000')],
+      'máy ảnh',
+    );
     expect(ranked.map((x) => x.id)).toEqual([2]);
   });
 
