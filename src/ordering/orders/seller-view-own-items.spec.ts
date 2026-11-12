@@ -221,6 +221,40 @@ describe('Màn Đơn bán chỉ hiện phần của chính người bán', () =>
     expect(row.multi_seller).toBe(true);
   });
 
+  // Staging 12/11 sau deploy: MỌI đơn bán đều báo multi_seller, kể cả đơn chỉ
+  // có một món của người bán, vì bản đầu xoá `product.seller` của món mình
+  // trước khi tính cờ. Ca hai người bán ở trên không bắt được lỗi đó.
+  it('đơn chỉ có hàng của A thì không báo nhiều người bán', async () => {
+    const [p] = await ds.query<Array<{ id: number }>>(
+      "SELECT id FROM products WHERE slug = 'mon-a'",
+    );
+    await ds.query(
+      'INSERT INTO carts (user_id, product_id, quantity) VALUES (?, ?, 1)',
+      [buyerId, p.id],
+    );
+    const order = (await orders.create(
+      {
+        shipping_address: 'so 1',
+        receiver_name: 'N',
+        receiver_phone: '0900000000',
+        payment_method: PaymentMethod.COD,
+        ghn_district_id: 1442,
+        ghn_ward_code: '20101',
+      },
+      asUser(buyerId),
+    )) as Order;
+    const page = (await orders.findAll(
+      '1',
+      '10',
+      '',
+      asUser(sellerA, UserRole.SELLER),
+      'seller',
+    )) as { result: SellerRow[] };
+    const row = page.result.find((o) => o.id === order.id)!;
+    expect(row.multi_seller).toBe(false);
+    expect(Number(row.seller_total)).toBe(100000);
+  });
+
   it('người mua vẫn thấy đủ hai món', async () => {
     const id = await placeTwoSellerOrder();
     const page = (await orders.findAll('1', '10', '', asUser(buyerId))) as {
