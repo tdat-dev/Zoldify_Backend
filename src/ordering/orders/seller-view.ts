@@ -25,6 +25,9 @@ export function toSellerView(order: Order, sellerId: number): SellerViewOrder {
   const isMine = (i: (typeof all)[number]) =>
     i.product?.seller?.id === sellerId;
   const mine = all.filter(isMine);
+  // Tính cờ TRƯỚC khi xoá `seller`: xoá rồi thì `isMine` sai với chính món
+  // của mình, và bản đầu (staging 12/11) báo mọi đơn là nhiều người bán.
+  const multiSeller = mine.length < all.length;
   for (const item of mine) {
     if (item.product) delete (item.product as { seller?: unknown }).seller;
   }
@@ -34,6 +37,6 @@ export function toSellerView(order: Order, sellerId: number): SellerViewOrder {
       (sum, i) => sum + Number(i.price) * Number(i.quantity),
       0,
     ),
-    multi_seller: all.some((i) => !isMine(i)),
+    multi_seller: multiSeller,
   });
 }
