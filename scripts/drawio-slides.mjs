@@ -279,45 +279,52 @@ function sequence(name, lifes, msgs, step) {
 
 // ------------------------------------------------------------- triển khai
 function deployment() {
-  const s = sheet('Deployment', 1265, 540);
-  const b = (k, v, x, y, w, h, bold = 1) => node(s, k, v, ST.box(19, bold), x, y, w, h);
-  b('web0', 'Web browser', 5, 35, 165, 90);
-  b('app0', 'Android app', 5, 165, 165, 90);
-  b('cf', 'Cloudflare\nDNS, proxy', 210, 35, 170, 220);
-  b('r2', 'Cloudflare R2\nimages, backups', 210, 315, 170, 120);
-  node(s, 'vps', 'One VPS, Docker Compose', ST.group, 420, 5, 665, 530);
-  b('nginx', 'nginx (TLS)', 440, 43, 625, 58);
-  b('web', 'web', 440, 127, 150, 68);
-  b('admin', 'admin', 600, 127, 150, 68);
-  b('caddy', 'Caddy (load balancer)', 760, 127, 305, 68);
-  b('migrate', 'migrate', 440, 221, 150, 68);
-  b('api', 'api x 3', 600, 221, 285, 68);
-  b('worker', 'worker', 895, 221, 170, 68);
-  b('mysql', 'MySQL 8', 440, 315, 205, 68);
-  b('redis', 'Redis', 655, 315, 200, 68);
-  b('queue', 'Redis queue', 865, 315, 200, 68);
-  b('offsite', 'offsite', 440, 409, 205, 68);
-  b('backup', 'backup', 655, 409, 200, 68);
-  b('gha', 'GitHub Actions deploys over SSH', 440, 487, 625, 38);
+  // Từ 06/11 MySQL của prod chạy ở máy riêng (Oracle Cloud), VPS chỉ giữ đường
+  // hầm SSH tới nó (docker-compose.override.yml). Bản cũ vẽ MySQL trong VPS là
+  // sai với prod. Chữ 21px (khoảng 15pt trên slide) thay cho 19px: chiếu màn
+  // nhỏ 1280px thì 13pt cũ chỉ còn khoảng 17px, khó đọc từ cuối phòng.
+  const s = sheet('Deployment', 1265, 555);
+  const b = (k, v, x, y, w, h, fs_ = 21) => node(s, k, v, ST.box(fs_, 1), x, y, w, h);
+  b('web0', 'Web browser', 5, 30, 150, 90);
+  b('app0', 'Android app', 5, 150, 150, 90);
+  b('cf', 'Cloudflare\nDNS, proxy', 185, 30, 160, 210);
+  node(s, 'db', 'DB server, Oracle Cloud', ST.group.replace('fontSize=17', 'fontSize=20'), 5, 290, 340, 150);
+  b('mysql', 'MySQL 8.4 (prod)', 25, 335, 300, 85);
+  node(s, 'vps', 'VPS (Ubuntu), Docker Compose', ST.group.replace('fontSize=17', 'fontSize=20'), 375, 5, 600, 545);
+  b('nginx', 'nginx (TLS)', 395, 43, 560, 58);
+  b('web', 'web', 395, 125, 130, 66);
+  b('admin', 'admin', 535, 125, 130, 66);
+  b('caddy', 'Caddy (load balancer)', 675, 125, 280, 66);
+  b('migrate', 'migrate', 395, 215, 130, 66);
+  b('api', 'api x 3', 535, 215, 260, 66);
+  b('worker', 'worker', 805, 215, 150, 66);
+  b('tunnel', 'DB tunnel (SSH)', 395, 305, 200, 66);
+  b('redis', 'Redis', 605, 305, 160, 66);
+  b('queue', 'Redis queue', 775, 305, 180, 66);
+  b('backup', 'backup', 395, 395, 200, 66);
+  b('offsite', 'offsite', 795, 395, 160, 66);
+  b('gha', 'GitHub Actions deploys over SSH', 395, 482, 560, 50, 20);
   ['PayOS\npayment', 'GHN\nsandbox', 'Firebase\nGoogle, FCM', 'SMTP\nOTP email'].forEach((v, i) => {
-    b(`x${i}`, v, 1115, 15 + i * 130, 148, 100);
+    b(`x${i}`, v, 1005, 5 + i * 92, 255, 82);
   });
+  b('r2', 'Cloudflare R2\nimages, backups', 1005, 390, 255, 82);
   const to = (a, c, p1, p2, st = ST.flow) => wire(s, a, c, p1, p2, st);
-  to('web0', 'cf', [170, 80], [210, 80]);
-  to('app0', 'cf', [170, 210], [210, 210]);
-  to('cf', 'nginx', [380, 72], [440, 72]);
-  to('nginx', 'web', [515, 101], [515, 127]);
-  to('nginx', 'admin', [675, 101], [675, 127]);
-  to('nginx', 'caddy', [912, 101], [912, 127]);
-  to('caddy', 'api', [800, 195], [800, 221]);
-  to('migrate', 'mysql', [515, 289], [515, 315]);
-  to('api', 'mysql', [620, 289], [620, 315]);
-  to('api', 'redis', [750, 289], [750, 315]);
-  to('worker', 'queue', [980, 289], [980, 315]);
-  to('mysql', 'backup', [620, 383], [690, 409]);
-  to('backup', 'offsite', [655, 443], [645, 443]);
-  to('offsite', 'r2', [440, 443], [380, 400], ST.flow + 'dashed=1;');
-  to('vps', 'x1', [1085, 161], [1115, 161]);
+  to('web0', 'cf', [155, 75], [185, 75]);
+  to('app0', 'cf', [155, 195], [185, 195]);
+  to('cf', 'nginx', [345, 72], [395, 72]);
+  to('nginx', 'web', [460, 101], [460, 125]);
+  to('nginx', 'admin', [600, 101], [600, 125]);
+  to('nginx', 'caddy', [815, 101], [815, 125]);
+  to('caddy', 'api', [740, 191], [740, 215]);
+  to('migrate', 'tunnel', [460, 281], [460, 305]);
+  to('api', 'tunnel', [565, 281], [565, 305]);
+  to('api', 'redis', [685, 281], [685, 305]);
+  to('worker', 'queue', [880, 281], [880, 305]);
+  to('tunnel', 'mysql', [395, 377], [325, 377]);
+  to('tunnel', 'backup', [495, 371], [495, 395]);
+  to('backup', 'offsite', [595, 428], [795, 428]);
+  to('offsite', 'r2', [955, 431], [1005, 431], ST.flow + 'dashed=1;');
+  to('vps', 'x1', [975, 143], [1005, 143]);
   return s;
 }
 
