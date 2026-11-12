@@ -125,6 +125,60 @@ export function parseModelResponse(body: string): {
   return text ? { text: text.slice(0, 400) } : {};
 }
 
+/** Chữ cho thấy người dùng có nói tới tình trạng món hàng. */
+const CONDITION_HINTS = new Set([
+  'mới',
+  'cũ',
+  'new',
+  'used',
+  'zin',
+  'seal',
+  'fullbox',
+  'tân',
+  'trang',
+  'refurbished',
+  'trầy',
+  'xước',
+  'lỗi',
+  'hỏng',
+  'tốt',
+  'đẹp',
+]);
+/** Chữ cho thấy người dùng muốn sắp xếp: "rẻ nhất", "mới đăng", "giá cao". */
+const SORT_HINTS = new Set([
+  'rẻ',
+  'đắt',
+  'nhất',
+  'thấp',
+  'cao',
+  'đăng',
+  'cheap',
+  'cheapest',
+  'newest',
+  'latest',
+]);
+
+/**
+ * Bỏ tình trạng và sắp xếp mà người dùng không nhắc tới.
+ *
+ * Vì sao cần: đo trên staging 12/11 với gpt-6-luna, hỏi "tai nghe bluetooth"
+ * thì mô hình tự điền condition "new" và sort "newest". Sàn bán đồ cũ gần như
+ * không có hàng mới, nên cả bảy câu thử đều ra rỗng. Giá và tỉnh không bỏ: mô
+ * hình chỉ điền khi câu có số tiền hay tên tỉnh, chưa thấy nó bịa hai trường này.
+ * Đọc mọi câu của người dùng trong cuộc trò chuyện ("tai nghe", rồi "loại cũ thôi").
+ */
+export function dropUnaskedFilters(
+  f: AssistantFilters,
+  userTexts: string[],
+): AssistantFilters {
+  const said = new Set(userTexts.flatMap(tokens));
+  const mentions = (hints: Set<string>) => [...hints].some((w) => said.has(w));
+  const out = { ...f };
+  if (out.condition && !mentions(CONDITION_HINTS)) delete out.condition;
+  if (out.sort && !mentions(SORT_HINTS)) delete out.sort;
+  return out;
+}
+
 /** Hạ chữ thường, tách chữ, GIỮ dấu: "bàn" và "bán" là hai chữ khác nhau. */
 function tokens(s: string): string[] {
   return s

@@ -1,6 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ProductsService } from '../products/products.service';
-import { AssistantFilters, buildReply, rankByName } from './assistant-filters';
+import {
+  AssistantFilters,
+  buildReply,
+  dropUnaskedFilters,
+  rankByName,
+} from './assistant-filters';
 import { AssistantModel, ChatMessage } from './assistant-model';
 
 /**
@@ -123,7 +128,12 @@ export class AssistantService {
       };
     }
     let fallback = false;
-    let filters = understood.filters;
+    let filters = understood.filters
+      ? dropUnaskedFilters(
+          understood.filters,
+          history.filter((m) => m.role === 'user').map((m) => m.content),
+        )
+      : undefined;
     if (!filters) {
       fallback = true;
       filters = { q: lastUserText.replace(/\s+/g, ' ').trim().slice(0, 80) };

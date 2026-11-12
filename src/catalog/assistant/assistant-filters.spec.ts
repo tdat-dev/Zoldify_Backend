@@ -2,9 +2,61 @@ import {
   buildReply,
   normalizeFilters,
   parseModelResponse,
+  dropUnaskedFilters,
   rankByName,
   VALID_CONDITIONS,
 } from './assistant-filters';
+
+/**
+ * Đo trên staging 12/11 với gpt-6-luna: hỏi "tai nghe bluetooth" thì mô hình tự
+ * thêm condition "new" và sort "newest". Sàn đồ cũ gần như không có hàng mới,
+ * nên mọi câu ra rỗng. Hai bộ lọc này chỉ giữ khi người dùng có nhắc tới.
+ */
+describe('dropUnaskedFilters', () => {
+  const f = {
+    q: 'tai nghe bluetooth',
+    condition: 'new' as const,
+    sort: 'newest' as const,
+  };
+
+  it('bỏ tình trạng và sắp xếp người dùng không nhắc tới', () => {
+    expect(dropUnaskedFilters(f, ['tai nghe bluetooth'])).toEqual({
+      q: 'tai nghe bluetooth',
+    });
+  });
+
+  it('giữ tình trạng khi câu có chữ chỉ tình trạng', () => {
+    expect(
+      dropUnaskedFilters({ ...f, condition: 'like_new' }, [
+        'giày chạy bộ như mới',
+      ]).condition,
+    ).toBe('like_new');
+    expect(
+      dropUnaskedFilters({ ...f, condition: 'used' }, ['iphone cũ']).condition,
+    ).toBe('used');
+  });
+
+  it('giữ sắp xếp khi câu hỏi rẻ nhất hay mới nhất', () => {
+    expect(
+      dropUnaskedFilters({ ...f, sort: 'price_asc' }, ['nồi cơm rẻ nhất']).sort,
+    ).toBe('price_asc');
+    expect(dropUnaskedFilters(f, ['tai nghe mới đăng']).sort).toBe('newest');
+  });
+
+  it('đọc cả các câu trước trong cuộc trò chuyện', () => {
+    expect(
+      dropUnaskedFilters({ ...f, condition: 'used' }, [
+        'tai nghe',
+        'loại cũ thôi',
+      ]).condition,
+    ).toBe('used');
+  });
+
+  it('không đụng giá và tỉnh', () => {
+    const g = { q: 'nồi', price_max: 600000, province: 'Hồ Chí Minh' };
+    expect(dropUnaskedFilters(g, ['nồi'])).toEqual(g);
+  });
+});
 
 /**
  * Bộ lọc do mô hình AI sinh ra là đầu vào KHÔNG tin được: nó có thể bịa

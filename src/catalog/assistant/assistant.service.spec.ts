@@ -96,6 +96,28 @@ describe('AssistantService.ask', () => {
     expect(kq.products.map((p) => p.id)).toEqual([2]);
   });
 
+  it('mô hình tự thêm "hàng mới" mà người dùng không hỏi thì không lọc theo đó', async () => {
+    const understand = jest.fn().mockResolvedValue({
+      filters: { q: 'tai nghe bluetooth', condition: 'new', sort: 'newest' },
+    });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Tai nghe Bluetooth Sony' }),
+    ]);
+    const kq = await svc.ask([{ role: 'user', content: 'tai nghe bluetooth' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.not.objectContaining({ condition: 'new' }),
+    );
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.not.objectContaining({ sort: 'newest' }),
+    );
+    expect(kq.products.map((p) => p.id)).toEqual([1]);
+  });
+
   it('có món khớp đủ chữ thì bỏ món chỉ trùng một chữ', async () => {
     const understand = jest
       .fn()
