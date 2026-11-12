@@ -140,12 +140,13 @@ export class AssistantService {
     }
 
     // Tìm, xếp hạng; rỗng thì nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ"
-    // thành "bàn làm việc"), chỉ khi còn thời gian trong trần 10 giây.
+    // thành "bàn làm việc"), chỉ khi còn thời gian trong trần 10 giây. Từ khoá
+    // hai chữ không nới: "máy ảnh" thành "máy" ra máy nướng bánh mì.
     let inStock = await this.searchRanked(filters);
     const words = filters.q.split(' ');
     if (
       !inStock.length &&
-      words.length > 1 &&
+      words.length > 2 &&
       Date.now() - startedAt < RELAX_DEADLINE_MS
     ) {
       const shorter = { ...filters, q: words.slice(0, -1).join(' ') };

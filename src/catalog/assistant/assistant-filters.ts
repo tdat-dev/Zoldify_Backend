@@ -158,14 +158,32 @@ const SORT_HINTS = new Set([
   'latest',
 ]);
 
+/** Chữ chỉ nơi chốn: "ở", "tại", và tên viết tắt hay gặp của hai thành phố lớn. */
+const PLACE_HINTS = new Set([
+  'ở',
+  'tại',
+  'hcm',
+  'tphcm',
+  'sg',
+  'saigon',
+  'sài',
+  'hn',
+]);
+
 /**
- * Bỏ tình trạng và sắp xếp mà người dùng không nhắc tới.
+ * Bỏ bộ lọc mà người dùng không nhắc tới. Mô hình hay tự điền thêm, đo trên
+ * staging 12/11 với gpt-6-luna:
+ *  - "tai nghe bluetooth" ra condition "new", sort "newest": sàn đồ cũ gần như
+ *    không có hàng mới, cả bảy câu thử ra rỗng.
+ *  - "tai nghe bluetooth" ra price_max 999999999; "may anh" ra price_max
+ *    3000000 và province "Hồ Chí Minh".
+ * Nên giá chỉ giữ khi câu có số, tỉnh chỉ giữ khi câu có nơi chốn, tình trạng và
+ * sắp xếp chỉ giữ khi câu có chữ gợi ý. Đọc mọi câu của người dùng trong cuộc
+ * trò chuyện ("tai nghe", rồi "loại như mới thôi").
  *
- * Vì sao cần: đo trên staging 12/11 với gpt-6-luna, hỏi "tai nghe bluetooth"
- * thì mô hình tự điền condition "new" và sort "newest". Sàn bán đồ cũ gần như
- * không có hàng mới, nên cả bảy câu thử đều ra rỗng. Giá và tỉnh không bỏ: mô
- * hình chỉ điền khi câu có số tiền hay tên tỉnh, chưa thấy nó bịa hai trường này.
- * Đọc mọi câu của người dùng trong cuộc trò chuyện ("tai nghe", rồi "loại cũ thôi").
+ * Hạng "used" luôn bỏ: sàn so tình trạng khớp chính xác, "iphone cũ" thành hạng
+ * Cũ 70-80% thì mất hết iPhone hạng Tốt, Như mới. Trên sàn đồ cũ, "cũ" nghĩa là
+ * đồ đã dùng nói chung.
  */
 export function dropUnaskedFilters(
   f: AssistantFilters,
@@ -173,9 +191,24 @@ export function dropUnaskedFilters(
 ): AssistantFilters {
   const said = new Set(userTexts.flatMap(tokens));
   const mentions = (hints: Set<string>) => [...hints].some((w) => said.has(w));
+  const bare = ' ' + stripAccents(tokens(userTexts.join(' ')).join(' ')) + ' ';
   const out = { ...f };
-  if (out.condition && !mentions(CONDITION_HINTS)) delete out.condition;
+  if (out.condition === 'used' || (out.condition && !mentions(CONDITION_HINTS)))
+    delete out.condition;
   if (out.sort && !mentions(SORT_HINTS)) delete out.sort;
+  // Giá nào cũng phải có con số: "600k", "6 trăm", "10 triệu".
+  if (![...said].some((w) => /\d/.test(w))) {
+    delete out.price_min;
+    delete out.price_max;
+  }
+  if (out.province) {
+    const place = stripAccents(tokens(out.province).join(' ')).replace(
+      /^(tinh|thanh pho|tp) /,
+      '',
+    );
+    if (!mentions(PLACE_HINTS) && !bare.includes(' ' + place + ' '))
+      delete out.province;
+  }
   return out;
 }
 
@@ -247,7 +280,12 @@ export function rankByName<T extends { name: string }>(
   items: T[],
   q: string,
 ): T[] {
-  const want = [...new Set(tokens(q))].filter((w) => !STOP_WORDS.has(w));
+  let want = [...new Set(tokens(q))].filter((w) => !STOP_WORDS.has(w));
+  // "điện thoại iPhone": tên món chỉ ghi "iPhone 13", không ghi "điện thoại",
+  // nên chỉ còn khớp 1/3 chữ và bị loại. Bỏ cụm chung này khi còn chữ khác.
+  const generic = ['điện', 'thoại'];
+  if (generic.every((w) => want.includes(w)) && want.length > 2)
+    want = want.filter((w) => !generic.includes(w));
   if (!want.length) return items;
   const coverage = (name: string) => {
     const have = tokens(name);

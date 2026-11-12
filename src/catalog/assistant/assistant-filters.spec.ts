@@ -44,8 +44,9 @@ describe('dropUnaskedFilters', () => {
       ]).condition,
     ).toBe('like_new');
     expect(
-      dropUnaskedFilters({ ...f, condition: 'used' }, ['iphone cũ']).condition,
-    ).toBe('used');
+      dropUnaskedFilters({ ...f, condition: 'good' }, ['iphone cũ còn tốt'])
+        .condition,
+    ).toBe('good');
   });
 
   it('giữ sắp xếp khi câu hỏi rẻ nhất hay mới nhất', () => {
@@ -57,11 +58,11 @@ describe('dropUnaskedFilters', () => {
 
   it('đọc cả các câu trước trong cuộc trò chuyện', () => {
     expect(
-      dropUnaskedFilters({ ...f, condition: 'used' }, [
+      dropUnaskedFilters({ ...f, condition: 'like_new' }, [
         'tai nghe',
-        'loại cũ thôi',
+        'loại như mới thôi',
       ]).condition,
-    ).toBe('used');
+    ).toBe('like_new');
   });
 
   /**
