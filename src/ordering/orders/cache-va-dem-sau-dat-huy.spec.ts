@@ -297,4 +297,45 @@ describe('Cache sản phẩm và bộ đếm sau đặt/huỷ/hoàn', () => {
 
     expect(incr).toHaveBeenCalledTimes(3);
   });
+
+  // ── Hết hàng thì thành ĐÃ BÁN (BAN-03, test staging 12/11) ────────────────
+  // Bán hết kho mà tin vẫn `active`: trang chủ, danh mục, tìm kiếm lọc theo
+  // `active` nên tin hết hàng vẫn nằm trên cùng (xếp theo mới đăng), chen chỗ
+  // của hàng còn bán, và shop đếm cả nó là "đang bán". Trạng thái `sold` đã có
+  // sẵn (trang chi tiết vẫn mở được) nhưng chưa nơi nào đặt nó.
+  const trangThai = async () =>
+    (
+      await ds.query<Array<{ status: string }>>(
+        'SELECT status FROM products WHERE id = ?',
+        [productId],
+      )
+    )[0].status;
+  const trongDanhSach = async () => {
+    const ds1 = (await products.findAll('1', '10', {})) as {
+      result: Product[];
+    };
+    return ds1.result.some((p) => Number(p.id) === Number(productId));
+  };
+
+  it('bán hết kho thì tin thành đã bán và rời danh sách công khai', async () => {
+    await datDon(KHO);
+    expect(await trangThai()).toBe(ProductStatus.SOLD);
+    expect(await trongDanhSach()).toBe(false);
+    // Trang chi tiết vẫn mở được để link cũ không chết.
+    expect((await products.findOne(productId)).status).toBe(ProductStatus.SOLD);
+  });
+
+  it('huỷ đơn đã mua hết thì tin mở bán lại', async () => {
+    const don = await datDon(KHO);
+    await orders.cancel(don, nguoiMua());
+    expect(await trangThai()).toBe(ProductStatus.ACTIVE);
+    expect(await trongDanhSach()).toBe(true);
+  });
+
+  it('người bán đặt kho về 0 rồi nhập thêm thì trạng thái đi theo', async () => {
+    await products.updateStock(productId, 0, sellerId, false);
+    expect(await trangThai()).toBe(ProductStatus.SOLD);
+    await products.updateStock(productId, 5, sellerId, false);
+    expect(await trangThai()).toBe(ProductStatus.ACTIVE);
+  });
 });
