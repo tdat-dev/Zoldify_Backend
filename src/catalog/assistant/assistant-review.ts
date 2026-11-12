@@ -60,7 +60,8 @@ export function baseReview(
   if (!market) {
     return {
       verdict: null,
-      note: `Chưa đủ món cùng loại để so giá.${condText}`.trim(),
+      // Không nói "chưa đủ món": cũng rơi vào đây khi đủ món mà giá chênh quá xa.
+      note: `Chưa so được giá với món cùng loại.${condText}`.trim(),
     };
   }
   const ratio = item.price / market;
