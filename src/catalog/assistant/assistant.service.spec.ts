@@ -96,6 +96,21 @@ describe('AssistantService.ask', () => {
     expect(kq.products.map((p) => p.id)).toEqual([2]);
   });
 
+  it('mô hình tự thêm "hàng mới" mà người dùng không hỏi thì không lọc theo đó', async () => {
+    const understand = jest.fn().mockResolvedValue({
+      filters: { q: 'tai nghe bluetooth', condition: 'new', sort: 'newest' },
+    });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Tai nghe Bluetooth Sony' }),
+    ]);
+    const kq = await svc.ask([{ role: 'user', content: 'tai nghe bluetooth' }]);
+
+    const qs = products.findAll.mock.calls[0][2];
+    expect(qs.condition).toBeUndefined();
+    expect(qs.sort).toBeUndefined();
+    expect(kq.products.map((p) => p.id)).toEqual([1]);
+  });
+
   it('có món khớp đủ chữ thì bỏ món chỉ trùng một chữ', async () => {
     const understand = jest
       .fn()
