@@ -9,7 +9,7 @@ import { UpdateShopDto } from './dto/update-shop.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Shop, ShopStatus } from './entities/shop.entity';
-import { User } from '@identity/users/entities/user.entity';
+import { User, UserRole } from '@identity/users/entities/user.entity';
 import {
   Product,
   ProductStatus,
@@ -53,8 +53,20 @@ export class ShopService {
       ...createShopDto,
       user: { id: user.id },
     });
+    const daLuu = await this.shopRepository.save(shop);
 
-    return this.shopRepository.save(shop);
+    // Có shop là thành người bán (issue #41). Server không cần vai trò để bán,
+    // nhưng app đọc `role` để hiện khu Người bán: thiếu dòng này thì người vừa
+    // mở shop trên app không thấy chỗ bán (đo staging 12/11: vẫn `buyer` cả sau
+    // khi đăng nhập lại). Ghim `role = buyer` trong chính câu UPDATE để admin
+    // hay moderator tự mở shop không bị hạ quyền, và không tin role trong token
+    // (có thể đã cũ). Không tăng token_version: nâng quyền không cần đá phiên.
+    await this.userRepository.update(
+      { id: user.id, role: UserRole.BUYER },
+      { role: UserRole.SELLER },
+    );
+
+    return daLuu;
   }
 
   async getMyShop(user: IUser) {

@@ -23,7 +23,10 @@ import { ShopService } from './shop.service';
  * admin vừa đổi vai trò ở giữa hai câu).
  */
 describe('Mở shop nâng buyer lên seller', () => {
-  function dungService(opts: { shopCuaToi?: Partial<Shop> | null; trungSlug?: boolean }) {
+  function dungService(opts: {
+    shopCuaToi?: Partial<Shop> | null;
+    trungSlug?: boolean;
+  }) {
     const capNhatUser: Array<{ where: unknown; set: unknown }> = [];
     const shopRepo = {
       findOne: ({ where }: { where: Record<string, unknown> }) =>
@@ -55,21 +58,24 @@ describe('Mở shop nâng buyer lên seller', () => {
 
   it('người mua mở shop thì vai trò thành seller', async () => {
     const { service, capNhatUser } = dungService({ shopCuaToi: null });
-    await service.create(
-      { name: 'Shop mới', slug: 'shop-moi-21' },
-      { id: 21, role: 'buyer' } as IUser,
-    );
+    await service.create({ name: 'Shop mới', slug: 'shop-moi-21' }, {
+      id: 21,
+      role: 'buyer',
+    } as IUser);
     expect(capNhatUser).toEqual([
-      { where: { id: 21, role: UserRole.BUYER }, set: { role: UserRole.SELLER } },
+      {
+        where: { id: 21, role: UserRole.BUYER },
+        set: { role: UserRole.SELLER },
+      },
     ]);
   });
 
   it('câu nâng vai trò chỉ nhắm vào dòng đang là buyer, admin mở shop không bị hạ', async () => {
     const { service, capNhatUser } = dungService({ shopCuaToi: null });
-    await service.create(
-      { name: 'Shop admin', slug: 'shop-admin-3' },
-      { id: 3, role: 'admin' } as IUser,
-    );
+    await service.create({ name: 'Shop admin', slug: 'shop-admin-3' }, {
+      id: 3,
+      role: 'admin',
+    } as IUser);
     // Không dựa vào role trong token (có thể đã cũ): điều kiện nằm trong UPDATE.
     for (const c of capNhatUser) {
       expect(c.where).toMatchObject({ role: UserRole.BUYER });
@@ -79,13 +85,19 @@ describe('Mở shop nâng buyer lên seller', () => {
   it('mở shop hỏng (trùng slug hoặc đã có shop) thì không đụng vai trò', async () => {
     const trung = dungService({ shopCuaToi: null, trungSlug: true });
     await expect(
-      trung.service.create({ name: 'X', slug: 'da-co' }, { id: 21, role: 'buyer' } as IUser),
+      trung.service.create({ name: 'X', slug: 'da-co' }, {
+        id: 21,
+        role: 'buyer',
+      } as IUser),
     ).rejects.toThrow(BadRequestException);
     expect(trung.capNhatUser).toHaveLength(0);
 
     const daCo = dungService({ shopCuaToi: { id: 5 } });
     await expect(
-      daCo.service.create({ name: 'Y', slug: 'y' }, { id: 21, role: 'buyer' } as IUser),
+      daCo.service.create({ name: 'Y', slug: 'y' }, {
+        id: 21,
+        role: 'buyer',
+      } as IUser),
     ).rejects.toThrow(BadRequestException);
     expect(daCo.capNhatUser).toHaveLength(0);
   });

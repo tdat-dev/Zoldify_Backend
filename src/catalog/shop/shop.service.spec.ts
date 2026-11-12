@@ -97,6 +97,8 @@ describe('ShopService', () => {
       shopRepo,
       {
         findOne: () => Promise.resolve(opts.nguoiDung ?? null),
+        // create() nâng buyer lên seller sau khi lưu shop (mo-shop-nang-vai.spec.ts).
+        update: () => Promise.resolve({ affected: 1 }),
       } as unknown as Repository<User>,
       productRepo,
       { count: () => Promise.resolve(5) } as unknown as Repository<Follow>,
