@@ -171,7 +171,10 @@ describe('AssistantService.ask', () => {
           result: [product(1, { name: 'Bàn làm việc chân sắt' })],
         }),
     };
-    const svc = new AssistantService({ understand }, products as never);
+    const svc = new AssistantService(
+      { understand } as unknown as AssistantModel,
+      products as never,
+    );
     const kq = await svc.ask([{ role: 'user', content: 'bàn làm việc gỗ' }]);
 
     expect(products.findAll).toHaveBeenNthCalledWith(

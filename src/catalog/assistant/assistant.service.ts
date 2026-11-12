@@ -7,6 +7,7 @@ import {
   rankByName,
 } from './assistant-filters';
 import { AssistantModel, ChatMessage } from './assistant-model';
+import { baseReview, marketPrice, Verdict } from './assistant-review';
 
 /**
  * Ngân sách cho mô hình. Chủ dự án đặt trần: tìm phải dưới 10 giây, không thì
@@ -17,6 +18,22 @@ export const MODEL_BUDGET_MS = 6_000;
 
 /** Sau mốc này không nới từ khoá nữa: thêm một lượt tìm có thể vượt trần 10 giây. */
 const RELAX_DEADLINE_MS = 7_500;
+
+/**
+ * Lượt nhận xét của AI phải xong trước mốc này (tính từ lúc nhận câu), để cả
+ * lượt trả lời vẫn dưới trần 10 giây; còn ít hơn MIN_REVIEW_MS thì bỏ, dùng câu
+ * server tính sẵn.
+ */
+const REVIEW_DEADLINE_MS = 9_000;
+const MIN_REVIEW_MS = 1_500;
+
+/**
+ * Ít món trong tầm giá thì thêm món vượt tối đa chừng này. Đo 12/11: "nồi cơm
+ * điện dưới 600k" chỉ có 1 món (540k), món kế là 635k bị giấu đi.
+ */
+const OVER_BUDGET_RATIO = 1.3;
+const FEW_RESULTS = 3;
+const MAX_OVER_BUDGET = 3;
 
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
@@ -35,6 +52,13 @@ export interface SuggestedProduct {
   image: string | null;
   condition: string | null;
   province_name: string | null;
+  /** Nhãn giá do server tính: rẻ, ngang hay cao hơn giá giữa các món cùng loại. */
+  verdict: Verdict | null;
+  /** Một câu nhận xét: của AI nếu kịp, không thì câu server tính sẵn. */
+  note: string;
+  market_price: number | null;
+  /** Món vượt ngân sách người dùng nêu, đưa thêm để so. */
+  over_budget: boolean;
 }
 
 /** Các trường trợ lý đọc từ một dòng của GET /products. */
@@ -142,7 +166,7 @@ export class AssistantService {
     // Tìm, xếp hạng; rỗng thì nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ"
     // thành "bàn làm việc"), chỉ khi còn thời gian trong trần 10 giây. Từ khoá
     // hai chữ không nới: "máy ảnh" thành "máy" ra máy nướng bánh mì.
-    let inStock = await this.searchRanked(filters);
+    let [inStock, market] = await this.searchWithMarket(filters);
     const words = filters.q.split(' ');
     if (
       !inStock.length &&
@@ -150,42 +174,139 @@ export class AssistantService {
       Date.now() - startedAt < RELAX_DEADLINE_MS
     ) {
       const shorter = { ...filters, q: words.slice(0, -1).join(' ') };
-      const retry = await this.searchRanked(shorter);
+      const [retry, retryMarket] = await this.searchWithMarket(shorter);
       if (retry.length) {
         inStock = retry;
+        market = retryMarket;
         filters = shorter;
       }
     }
 
-    let picked = inStock;
     const relaxed: string[] = [];
+    let inPlace: (p: ProductRow) => boolean = () => true;
     if (filters.province) {
       const wanted = provinceSlug(filters.province);
-      const local = inStock.filter(
-        (p) =>
-          p.province_slug === wanted ||
-          provinceSlug(String(p.province_name ?? '')) === wanted,
-      );
-      if (local.length) picked = local;
+      const isLocal = (p: ProductRow) =>
+        p.province_slug === wanted ||
+        provinceSlug(String(p.province_name ?? '')) === wanted;
+      if (inStock.some(isLocal)) inPlace = isLocal;
       else relaxed.push(`tỉnh ${filters.province}`);
     }
+    const picked = inStock.filter(inPlace).slice(0, RESULT_LIMIT);
 
+    // Ít món trong tầm giá: thêm món vượt tối đa 30%, rẻ trước, có đánh dấu.
+    const ceiling = filters.price_max;
+    const extras =
+      ceiling && picked.length < FEW_RESULTS
+        ? market
+            .filter(
+              (p) =>
+                inPlace(p) &&
+                Number(p.price) > ceiling &&
+                Number(p.price) <= ceiling * OVER_BUDGET_RATIO &&
+                !picked.some((x) => x.id === p.id),
+            )
+            .sort((a, b) => Number(a.price) - Number(b.price))
+            .slice(0, MAX_OVER_BUDGET)
+        : [];
+
+    const reference = marketPrice(market.map((p) => Number(p.price)));
     // Chỉ trả trường cần cho thẻ: mô tả của người bán không đi ra khỏi đây.
-    const products: SuggestedProduct[] = picked
-      .slice(0, RESULT_LIMIT)
-      .map((p) => ({
+    const products: SuggestedProduct[] = [
+      ...picked.map((p) => ({ p, over: false })),
+      ...extras.map((p) => ({ p, over: true })),
+    ].map(({ p, over }) => {
+      const price = Number(p.price);
+      const condition = p.condition ?? null;
+      return {
         id: p.id,
         name: p.name,
-        price: Number(p.price),
+        price,
         image: p.image ?? null,
-        condition: p.condition ?? null,
+        condition,
         province_name: p.province_name ?? null,
-      }));
+        ...baseReview({ price, condition }, reference, market.length),
+        market_price: reference,
+        over_budget: over,
+      };
+    });
+    const reviewedByAi = await this.addAiNotes(products, startedAt);
+
+    let reply =
+      picked.length || !extras.length
+        ? buildReply(filters, picked.length, relaxed)
+        : `Mình không thấy món "${filters.q}" nào trong tầm giá bạn nêu.`;
+    if (extras.length) {
+      reply += ` Có thêm ${extras.length} món vượt ngân sách chút ít (tối đa 30%) để bạn so.`;
+    }
     return {
-      reply: buildReply(filters, products.length, relaxed),
+      reply,
       products,
       filters,
       fallback,
+      reviewed_by_ai: reviewedByAi,
     };
+  }
+
+  /**
+   * Thay câu nhận xét tính sẵn bằng câu của AI nếu còn thời gian. Chỉ gửi trường
+   * có cấu trúc; nhãn giá giữ nguyên của server. Lỗi hay hết giờ thì giữ câu
+   * tính sẵn, người mua vẫn thấy đánh giá.
+   */
+  private async addAiNotes(
+    products: SuggestedProduct[],
+    startedAt: number,
+  ): Promise<boolean> {
+    const left = REVIEW_DEADLINE_MS - (Date.now() - startedAt);
+    if (!products.length || left < MIN_REVIEW_MS) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const notes = await Promise.race([
+        this.model.review(
+          products.map((p) => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            condition: p.condition,
+            market_price: p.market_price,
+            verdict: p.verdict,
+            over_budget: p.over_budget,
+          })),
+          left,
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`quá ${left} ms`)), left);
+        }),
+      ]);
+      for (const p of products) {
+        const note = notes.get(p.id);
+        if (note) p.note = note;
+      }
+      return notes.size > 0;
+    } catch (e) {
+      this.log.warn(
+        `AI nhận xét lỗi, dùng câu tính sẵn: ${(e as Error).message}`,
+      );
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Tìm theo bộ lọc, và cùng lúc tìm lại không kèm giá để có tập so giá (giá
+   * phổ biến) và món sát ngân sách. Không có bộ lọc giá thì hai tập là một.
+   */
+  private async searchWithMarket(
+    f: AssistantFilters,
+  ): Promise<[ProductRow[], ProductRow[]]> {
+    if (f.price_min === undefined && f.price_max === undefined) {
+      const rows = await this.searchRanked(f);
+      return [rows, rows];
+    }
+    return Promise.all([
+      this.searchRanked(f),
+      this.searchRanked({ q: f.q, condition: f.condition }),
+    ]);
   }
 }
