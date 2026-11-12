@@ -306,6 +306,29 @@ describe('AssistantService.ask', () => {
     );
   });
 
+  /**
+   * Đo staging 12/11: iPhone dưới 10 triệu không so được giá (nhóm chênh quá
+   * xa), vẫn gọi AI nhận xét, AI hết giờ, cả lượt mất 8,9 giây mà không có câu
+   * AI nào. Không có nhãn giá thì AI không có gì để nói thêm: bỏ lượt đó.
+   */
+  it('không so được giá thì không gọi AI nhận xét', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'iPhone' } });
+    const review = jest.fn().mockResolvedValue(new Map());
+    const { svc } = build({ understand, review }, [
+      product(1, { name: 'iPhone 2G', price: '220000.00' }),
+      product(2, { name: 'iPhone 8', price: '2240000.00' }),
+      product(3, { name: 'iPhone 14', price: '9750000.00' }),
+      product(4, { name: 'iPhone 7', price: '1970000.00' }),
+    ]);
+    const kq = await svc.ask([{ role: 'user', content: 'iphone' }]);
+
+    expect(review).not.toHaveBeenCalled();
+    expect(kq.products[0].verdict).toBeNull();
+    expect(kq.products[0].note).not.toContain('Chưa đủ món');
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
