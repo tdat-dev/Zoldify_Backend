@@ -8795,6 +8795,11 @@
             "type": "number",
             "minimum": 0
           },
+          "expected_subtotal": {
+            "type": "number",
+            "description": "Tiền hàng (chưa gồm phí ship) mà trang thanh toán đã hiện cho người mua.\nGiỏ không lưu giá lúc thêm, nên thiếu trường này thì người bán sửa giá\ngiữa chừng là người mua bị tính giá mới mà không hay (test staging 12/11:\nthấy 800.000, đơn ra 810.000). Không bắt buộc, để app bản cũ vẫn đặt được.",
+            "minimum": 0
+          },
           "ghn_district_id": {
             "type": "number",
             "description": "BẮT BUỘC từ rà soát 26/10. Trước đó hai trường này `@IsOptional`: bỏ\ntrống là khối tính phí ship không chạy, đơn tạo với phí ship 0 và người\nbán không tạo nổi vận đơn GHN lúc xác nhận. Web (`checkout/page.tsx`) và\nmobile (`checkout-screen.tsx`) đều đã khoá nút đặt hàng khi thiếu chúng.",

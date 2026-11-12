@@ -22,6 +22,7 @@ import { StockEventsService } from '@catalog/stock/stock-events.service';
 import { ProductsService } from '@catalog/products/products.service';
 import { STATUS_BY_STOCK_SQL } from '@catalog/products/status-by-stock';
 import { changePaymentMethod } from './change-payment-method';
+import { assertSubtotalUnchanged } from './expected-subtotal';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { demCoTran } from '@common/dem-co-tran';
 
@@ -458,6 +459,7 @@ export class OrdersService {
         subtotal,
       });
     }
+    assertSubtotalUnchanged(createOrderDto.expected_subtotal, totalAmount);
 
     // PHÍ SHIP DO SERVER TÍNH — VÀ LẦN NÀY LÀ THẬT.
     //
