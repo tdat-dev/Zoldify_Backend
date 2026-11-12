@@ -269,7 +269,10 @@ export class AssistantService {
     startedAt: number,
   ): Promise<boolean> {
     const left = REVIEW_DEADLINE_MS - (Date.now() - startedAt);
-    if (!products.length || left < MIN_REVIEW_MS) return false;
+    // Không có nhãn giá thì AI không có gì để nói thêm ngoài tình trạng. Đo
+    // staging 12/11: iPhone dưới 10 triệu vẫn gọi, AI hết giờ, lượt mất 8,9 giây.
+    if (!products.some((p) => p.verdict)) return false;
+    if (left < MIN_REVIEW_MS) return false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const notes = await Promise.race([
