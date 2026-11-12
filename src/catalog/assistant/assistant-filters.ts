@@ -212,6 +212,33 @@ export function dropUnaskedFilters(
   return out;
 }
 
+/** Chữ chỉ dùng để chào hỏi, không phải tên món. */
+const GREETING_WORDS = new Set([
+  'chào',
+  'xin',
+  'bạn',
+  'hello',
+  'hi',
+  'alo',
+  'ơi',
+  'shop',
+  'ad',
+  'admin',
+  'em',
+  'anh',
+  'chị',
+]);
+
+/**
+ * Từ khoá chỉ gồm chữ chào hỏi. Đo staging 12/11: cùng câu "chào bạn", có lượt
+ * mô hình chào lại, có lượt nó gọi tìm với q "chào bạn" và trợ lý báo "chưa tìm
+ * thấy món nào khớp chào bạn".
+ */
+export function isGreeting(q: string): boolean {
+  const words = tokens(q);
+  return words.length > 0 && words.every((w) => GREETING_WORDS.has(w));
+}
+
 /** Hạ chữ thường, tách chữ, GIỮ dấu: "bàn" và "bán" là hai chữ khác nhau. */
 function tokens(s: string): string[] {
   return s
