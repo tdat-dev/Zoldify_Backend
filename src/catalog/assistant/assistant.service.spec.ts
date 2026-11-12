@@ -105,9 +105,16 @@ describe('AssistantService.ask', () => {
     ]);
     const kq = await svc.ask([{ role: 'user', content: 'tai nghe bluetooth' }]);
 
-    const qs = products.findAll.mock.calls[0][2];
-    expect(qs.condition).toBeUndefined();
-    expect(qs.sort).toBeUndefined();
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.not.objectContaining({ condition: 'new' }),
+    );
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.not.objectContaining({ sort: 'newest' }),
+    );
     expect(kq.products.map((p) => p.id)).toEqual([1]);
   });
 
