@@ -34,6 +34,7 @@ const SYSTEM_PROMPT = [
   'Nhiệm vụ duy nhất: đọc câu người dùng và gọi search_products với bộ lọc phù hợp.',
   'q là tên món ngắn gọn bằng tiếng Việt, bỏ các từ như "tìm", "mua", "cho mình", nhưng GIỮ chi tiết nhận diện món như size, dung lượng, đời máy (size 41, 128GB, M1).',
   'Nếu người dùng nói nhu cầu hay dịp chứ không nói tên món (quà tặng, đồ cho bé, tai nghe chống ồn, laptop học lập trình), vẫn đặt q như họ nói và điền alternatives: tối đa 3 tên món cụ thể hay có trên sàn đồ cũ đáp ứng nhu cầu đó, mỗi tên ngắn gọn gồm loại món và hãng hay dòng máy (AirPods Pro, tai nghe Sony, ThinkPad), KHÔNG lặp lại chữ nhu cầu như "chống ồn", "học lập trình".',
+  'Người dùng đã nói tên một món cụ thể (máy ảnh Canon, iPhone 13, nồi cơm điện) thì KHÔNG điền alternatives: sàn không có món đó thì trả rỗng, không đưa món khác thay.',
   '"600k" là 600000 đồng, "1tr" hay "1 triệu" là 1000000 đồng. "HCM", "Sài Gòn" là Hồ Chí Minh.',
   'Dùng các câu trước trong hội thoại để hiểu câu nối tiếp như "rẻ hơn nữa" hay "ở Hà Nội thì sao".',
   'Nếu người dùng không tìm món hàng nào, trả lời một câu ngắn bằng tiếng Việt và mời họ mô tả món cần mua.',

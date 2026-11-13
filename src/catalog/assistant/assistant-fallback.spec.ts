@@ -55,6 +55,21 @@ describe('parseFallback', () => {
     ).toEqual({ q: 'tai nghe bluetooth', price_max: 200000 });
   });
 
+  /**
+   * Đo staging 13/11: router 503 đúng lượt "cheap bluetooth headphones", đường
+   * lui tìm nguyên câu tiếng Anh, tên món toàn tiếng Việt nên ra rỗng.
+   */
+  it('hiểu vài chữ tiếng Anh thông dụng', () => {
+    expect(parseFallback([user('cheap bluetooth headphones')])).toEqual({
+      q: 'bluetooth tai nghe',
+      sort: 'price_asc',
+    });
+    expect(parseFallback([user('used phone under 3tr')])).toEqual({
+      q: 'điện thoại',
+      price_max: 3000000,
+    });
+  });
+
   it('Hà Nội', () => {
     expect(parseFallback([user('laptop ở Hà Nội')])).toEqual({
       q: 'laptop',

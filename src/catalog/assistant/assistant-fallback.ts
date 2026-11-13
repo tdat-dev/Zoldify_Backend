@@ -16,7 +16,7 @@ const RANGE = new RegExp(
   'u',
 );
 const MAX = new RegExp(
-  String.raw`(?:dưới|duoi|tối đa|toi da|không quá|khong qua|tầm|tam|khoảng|khoang|max)\s+${NUM}`,
+  String.raw`(?:dưới|duoi|tối đa|toi da|không quá|khong qua|tầm|tam|khoảng|khoang|max|under|below)\s+${NUM}`,
   'u',
 );
 const MIN = new RegExp(String.raw`(?:trên|tren|từ|tu|hơn|hon)\s+${NUM}`, 'u');
@@ -88,7 +88,49 @@ const DROP = new Set([
   'đồng',
   'vnd',
   'đ',
+  // Chữ thừa tiếng Anh. Không bỏ "the", "an", "me": cũng là "thể", "an", "mẹ" gõ không dấu.
+  'cheap',
+  'cheapest',
+  'used',
+  'second',
+  'hand',
+  'secondhand',
+  'buy',
+  'want',
+  'need',
+  'i',
+  'a',
+  'for',
+  'some',
 ]);
+
+/**
+ * Vài tên món tiếng Anh thông dụng, đổi sang chữ có trong tên món trên sàn.
+ * Đo staging 13/11: router 503 đúng lượt "cheap bluetooth headphones", đường
+ * lui tìm nguyên câu tiếng Anh nên ra rỗng. Khi mô hình chạy thì nó tự dịch,
+ * bảng này chỉ cho đường lui.
+ */
+const ENGLISH: Record<string, string> = {
+  headphones: 'tai nghe',
+  headphone: 'tai nghe',
+  earphones: 'tai nghe',
+  earbuds: 'tai nghe',
+  phone: 'điện thoại',
+  smartphone: 'điện thoại',
+  watch: 'đồng hồ',
+  smartwatch: 'đồng hồ',
+  shoes: 'giày',
+  sneakers: 'giày',
+  bag: 'túi',
+  backpack: 'balo',
+  bike: 'xe đạp',
+  bicycle: 'xe đạp',
+  jacket: 'áo khoác',
+  tablet: 'máy tính bảng',
+  speaker: 'loa',
+  keyboard: 'bàn phím',
+  camera: 'máy ảnh',
+};
 
 /** "200k" -> 200000; số không có đơn vị dưới 1000 hiểu là nghìn ("dưới 500"). */
 function money(num: string, unit: string | undefined): number | undefined {
@@ -130,9 +172,12 @@ function parseOne(text: string): AssistantFilters {
       break;
     }
   }
-  out.q = s
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w && !DROP.has(w))
+  const words = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.some((w) => w === 'cheap' || w === 'cheapest'))
+    out.sort = 'price_asc';
+  out.q = words
+    .filter((w) => !DROP.has(w))
+    .map((w) => ENGLISH[w] ?? w)
     .join(' ')
     .slice(0, 80);
   if (out.price_min === undefined) delete out.price_min;
