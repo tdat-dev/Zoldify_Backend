@@ -184,6 +184,41 @@ const SORT_HINTS = new Set([
   'latest',
 ]);
 
+/** Chữ đi sau con số để thành tiền: "6 trăm", "10 triệu", "1 củ". */
+const MONEY_UNITS = new Set([
+  'k',
+  'nghìn',
+  'ngàn',
+  'nghin',
+  'ngan',
+  'trăm',
+  'tram',
+  'tr',
+  'triệu',
+  'trieu',
+  'củ',
+  'cu',
+  'tỷ',
+  'ty',
+  'đồng',
+  'dong',
+  'đ',
+  'vnd',
+]);
+
+/**
+ * Từ khoá mô hình trả có ít nhất một chữ nằm trong câu người dùng (so không
+ * dấu). Đo staging 13/11: hai lần mô hình trả q "quà tặng" cho câu chẳng liên
+ * quan ("chào bạn", "viết một bài thơ tiếng Anh"), dính câu trước qua router.
+ * Dịch tiếng Anh vẫn qua khi còn chung một chữ ("bluetooth"); dịch trọn ("cheap
+ * headphones" thành "tai nghe") thì không qua, chấp nhận đổi lấy việc không đưa
+ * món sai lên.
+ */
+export function relatesToUser(q: string, userTexts: string[]): boolean {
+  const said = new Set(userTexts.flatMap(tokens).map(stripAccents));
+  return tokens(q).some((w) => said.has(stripAccents(w)));
+}
+
 /** Chữ chỉ nơi chốn: "ở", "tại", và tên viết tắt hay gặp của hai thành phố lớn. */
 const PLACE_HINTS = new Set([
   'ở',
@@ -222,11 +257,26 @@ export function dropUnaskedFilters(
   if (out.condition === 'used' || (out.condition && !mentions(CONDITION_HINTS)))
     delete out.condition;
   if (out.sort && !mentions(SORT_HINTS)) delete out.sort;
-  // Giá nào cũng phải có con số: "600k", "6 trăm", "10 triệu".
-  if (![...said].some((w) => /\d/.test(w))) {
+  // Giá phải có con số ĐI VỚI TIỀN: "600k", "10 triệu", "3000000". Đo staging
+  // 13/11: "giày thể thao size 41" ra price_max 999999999, luật cũ "có chữ số
+  // là có nói giá" để lọt vì số 41. Giá trần từ 1 tỷ mà không ai nói "tỷ" là
+  // mô hình điền cho có (999999999, 2147483647).
+  const words = userTexts.flatMap(tokens);
+  const saysMoney = words.some(
+    (w, i) =>
+      /^\d+(?:k|tr|m)$/.test(w) ||
+      (/^\d+$/.test(w) &&
+        (Number(w) >= 1000 || MONEY_UNITS.has(words[i + 1] ?? ''))),
+  );
+  const saysBillion = words.some((w) => w === 'tỷ' || w === 'ty');
+  if (!saysMoney) {
     delete out.price_min;
     delete out.price_max;
   }
+  if (!saysBillion && (out.price_max ?? 0) >= 1_000_000_000)
+    delete out.price_max;
+  if (!saysBillion && (out.price_min ?? 0) >= 1_000_000_000)
+    delete out.price_min;
   if (out.province) {
     const place = stripAccents(tokens(out.province).join(' ')).replace(
       /^(tinh|thanh pho|tp) /,

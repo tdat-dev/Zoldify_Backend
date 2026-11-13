@@ -16,6 +16,7 @@ import {
   dropUnaskedFilters,
   isGreeting,
   rankByName,
+  relatesToUser,
 } from './assistant-filters';
 import { parseFallback } from './assistant-fallback';
 import { AssistantModel, ChatMessage, ReviewInput } from './assistant-model';
@@ -189,11 +190,17 @@ export class AssistantService {
       };
     }
     let fallback = false;
+    const userTexts = history
+      .filter((m) => m.role === 'user')
+      .map((m) => m.content);
+    if (understood.filters && !relatesToUser(understood.filters.q, userTexts)) {
+      this.log.warn(
+        `Từ khoá mô hình không dính câu người dùng, bỏ: ${understood.filters.q}`,
+      );
+      understood = {};
+    }
     let filters = understood.filters
-      ? dropUnaskedFilters(
-          understood.filters,
-          history.filter((m) => m.role === 'user').map((m) => m.content),
-        )
+      ? dropUnaskedFilters(understood.filters, userTexts)
       : undefined;
     if (!filters) {
       fallback = true;
