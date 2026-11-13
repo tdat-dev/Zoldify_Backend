@@ -77,6 +77,9 @@ export function normalizeFilters(
   let max = parsePrice(raw?.price_max);
   if (min !== undefined && max !== undefined && min > max)
     [min, max] = [max, min];
+  // "tầm 5 triệu" ra min = max = 5 triệu (đo staging 13/11), chỉ còn món giá
+  // đúng 5 triệu. Hai đầu bằng nhau thì coi là giá trần.
+  if (min !== undefined && min === max) min = undefined;
   if (min !== undefined) filters.price_min = min;
   if (max !== undefined) filters.price_max = max;
   if (isOneOf(VALID_CONDITIONS, raw?.condition))
@@ -270,10 +273,13 @@ export function isGreeting(q: string): boolean {
  * trả "iPhone" ra 6 món, lượt trả "điện thoại iPhone" ra rỗng.
  */
 export function dropGenericPhrase(q: string): string {
+  // Cùng lý do với chữ chung như "cũ", "như mới", "giá rẻ": đo staging 13/11, q
+  // "iPhone cũ" ra rỗng 2/3 lần vì hàng trăm tên món có chữ "cũ" chen lên trước.
   const rest = q
     .replace(/điện thoại/giu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .split(/\s+/)
+    .filter((w) => w && !STOP_WORDS.has(w.normalize('NFC').toLowerCase()))
+    .join(' ');
   return rest ? rest : q;
 }
 
