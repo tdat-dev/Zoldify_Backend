@@ -153,6 +153,15 @@ export class AssistantService {
     const startedAt = Date.now();
     const lastUserText =
       [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
+    // Câu chào không cần mô hình. Đo staging 13/11: một lượt "chào bạn" mô hình
+    // trả q "quà tặng" (dính câu trước qua router) và trợ lý đưa ra 4 món.
+    if (isGreeting(lastUserText)) {
+      return {
+        reply: GREETING_REPLY,
+        products: [] as SuggestedProduct[],
+        filters: null,
+      };
+    }
 
     let understood: { filters?: AssistantFilters; text?: string } = {};
     try {

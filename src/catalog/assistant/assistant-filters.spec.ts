@@ -137,6 +137,23 @@ describe('normalizeFilters: alternatives', () => {
   });
 });
 
+/**
+ * Đo staging 13/11: "laptop để học lập trình, tầm 5 triệu" ra price_min =
+ * price_max = 5000000, chỉ còn món giá đúng 5 triệu. "Tầm" là khoảng, không
+ * phải đúng bằng: hai đầu bằng nhau thì coi là giá trần.
+ */
+describe('normalizeFilters: giá hai đầu bằng nhau', () => {
+  it('coi là giá trần, bỏ giá sàn', () => {
+    const f = normalizeFilters({
+      q: 'laptop',
+      price_min: 5000000,
+      price_max: 5000000,
+    });
+    expect(f.price_max).toBe(5000000);
+    expect(f.price_min).toBeUndefined();
+  });
+});
+
 describe('normalizeFilters', () => {
   it('giữ đúng các trường hợp lệ', () => {
     expect(
