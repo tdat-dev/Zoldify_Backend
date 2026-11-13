@@ -558,7 +558,9 @@ describe('AssistantService.ask', () => {
       .fn()
       .mockResolvedValue({ text: 'Bạn muốn tìm món gì?' });
     const { svc, products } = build({ understand }, []);
-    const kq = await svc.ask([{ role: 'user', content: 'shop có giao hàng không' }]);
+    const kq = await svc.ask([
+      { role: 'user', content: 'shop có giao hàng không' },
+    ]);
 
     expect(products.findAll).not.toHaveBeenCalled();
     expect(kq).toMatchObject({ reply: 'Bạn muốn tìm món gì?', products: [] });
