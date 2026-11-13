@@ -543,6 +543,45 @@ describe('AssistantService.ask', () => {
     expect(kq.products.map((p) => p.id)).toEqual([1]);
   });
 
+  /**
+   * Đo staging 13/11: hai lần mô hình trả q "quà tặng" cho câu chẳng liên quan
+   * ("chào bạn", "viết một bài thơ tiếng Anh"), dính câu trước qua router, và
+   * trợ lý đưa ra 6 món. Từ khoá không có chữ nào trong câu người dùng thì
+   * không tin, đi đường lui.
+   */
+  it('từ khoá mô hình không dính chữ nào của người dùng thì không dùng', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'quà tặng' } });
+    const { svc, products } = build({ understand }, [product(1)]);
+    const kq = await svc.ask([
+      { role: 'user', content: 'viết một bài thơ tiếng Anh' },
+    ]);
+
+    expect(products.findAll).not.toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'quà tặng' }),
+    );
+    expect(kq.fallback).toBe(true);
+  });
+
+  it('dịch từ tiếng Anh vẫn dùng khi còn chung một chữ', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'tai nghe bluetooth' } });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Tai nghe Bluetooth Sony' }),
+    ]);
+    await svc.ask([{ role: 'user', content: 'cheap bluetooth headphones' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'tai nghe bluetooth' }),
+    );
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
