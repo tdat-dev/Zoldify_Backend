@@ -1,0 +1,1323 @@
+{
+  "summary": {
+    "base": "https://api-staging.zoldify.com/api/v1",
+    "at": "2026-11-13T04:28:34.250Z",
+    "runs": 3,
+    "calls": 105,
+    "pass": "100%",
+    "chat_p50_s": 2.657,
+    "chat_p95_s": 3.15,
+    "chat_max_s": 5.417,
+    "over_10s": 0,
+    "review_p50_s": 4.573,
+    "review_coverage": "100%",
+    "review_clash": 0,
+    "fallback": 0,
+    "flaky": [],
+    "failed": []
+  },
+  "rows": [
+    {
+      "run": 1,
+      "q": "nồi cơm điện dưới 600k ở HCM",
+      "ms": 5417,
+      "n": 2,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4269,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "nồi cơm điện",
+      "ms": 3150,
+      "n": 6,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4575,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "noi com dien",
+      "ms": 3684,
+      "n": 6,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4659,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "tai nghe bluetooth",
+      "ms": 2668,
+      "n": 6,
+      "q_used": "tai nghe bluetooth",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4614,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "điện thoại iphone cũ dưới 10 triệu",
+      "ms": 3004,
+      "n": 6,
+      "q_used": "iPhone",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "iphone 13",
+      "ms": 2957,
+      "n": 3,
+      "q_used": "iPhone 13",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 3721,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "samsung galaxy",
+      "ms": 3141,
+      "n": 6,
+      "q_used": "Samsung Galaxy",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4365,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "macbook",
+      "ms": 3026,
+      "n": 5,
+      "q_used": "macbook",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "laptop dell",
+      "ms": 2799,
+      "n": 6,
+      "q_used": "laptop Dell",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4805,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "laptop dưới 3 triệu",
+      "ms": 2836,
+      "n": 6,
+      "q_used": "laptop",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4361,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "ipad",
+      "ms": 2824,
+      "n": 6,
+      "q_used": "iPad",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4475,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "máy tính bảng samsung",
+      "ms": 2509,
+      "n": 6,
+      "q_used": "máy tính bảng Samsung",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4643,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "máy đọc sách kindle",
+      "ms": 2665,
+      "n": 6,
+      "q_used": "máy đọc sách Kindle",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4924,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "tai nghe airpods",
+      "ms": 2802,
+      "n": 6,
+      "q_used": "tai nghe AirPods",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "tai nghe chụp tai sony",
+      "ms": 2714,
+      "n": 6,
+      "q_used": "tai nghe chụp tai Sony",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4573,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "đồng hồ casio",
+      "ms": 2546,
+      "n": 6,
+      "q_used": "đồng hồ Casio",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5250,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "apple watch",
+      "ms": 2367,
+      "n": 6,
+      "q_used": "Apple Watch",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "đồng hồ thông minh",
+      "ms": 2850,
+      "n": 6,
+      "q_used": "đồng hồ thông minh",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5056,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "xe đạp",
+      "ms": 3043,
+      "n": 6,
+      "q_used": "xe đạp",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "giày thể thao size 41",
+      "ms": 2667,
+      "n": 6,
+      "q_used": "giày thể thao size 41",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "vợt cầu lông",
+      "ms": 2819,
+      "n": 5,
+      "q_used": "vợt cầu lông",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "áo khoác jean",
+      "ms": 2475,
+      "n": 3,
+      "q_used": "áo khoác jean",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "balo",
+      "ms": 2519,
+      "n": 6,
+      "q_used": "balo",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5425,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "loa bluetooth jbl",
+      "ms": 2538,
+      "n": 4,
+      "q_used": "loa bluetooth JBL",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4458,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "bàn phím cơ",
+      "ms": 2586,
+      "n": 6,
+      "q_used": "bàn phím cơ",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "tay cầm chơi game",
+      "ms": 2526,
+      "n": 6,
+      "q_used": "tay cầm chơi game",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5149,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "máy xay sinh tố",
+      "ms": 2422,
+      "n": 6,
+      "q_used": "máy xay sinh tố",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4620,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "ấm siêu tốc rẻ nhất",
+      "ms": 2402,
+      "n": 6,
+      "q_used": "ấm siêu tốc",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4448,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "lò vi sóng",
+      "ms": 2703,
+      "n": 6,
+      "q_used": "lò vi sóng",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4490,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "tìm cho mình cái tai nghe dưới 300k",
+      "ms": 2555,
+      "n": 6,
+      "q_used": "tai nghe",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "loại dưới 200k thôi",
+      "ms": 2748,
+      "n": 5,
+      "q_used": "tai nghe bluetooth",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5800,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 1,
+      "q": "máy ảnh canon",
+      "ms": 2522,
+      "n": 0,
+      "q_used": "máy ảnh Canon",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "may anh",
+      "ms": 2889,
+      "n": 0,
+      "q_used": "máy ảnh",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "chào bạn",
+      "ms": 2603,
+      "n": 0,
+      "q_used": null,
+      "fallback": null,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 1,
+      "q": "cảm ơn nha",
+      "ms": 1969,
+      "n": 0,
+      "q_used": null,
+      "fallback": null,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "nồi cơm điện dưới 600k ở HCM",
+      "ms": 2657,
+      "n": 2,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 2662,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "nồi cơm điện",
+      "ms": 2653,
+      "n": 6,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4691,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "noi com dien",
+      "ms": 2635,
+      "n": 6,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4187,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "tai nghe bluetooth",
+      "ms": 2555,
+      "n": 6,
+      "q_used": "tai nghe bluetooth",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5079,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "điện thoại iphone cũ dưới 10 triệu",
+      "ms": 2595,
+      "n": 6,
+      "q_used": "iPhone",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "iphone 13",
+      "ms": 2730,
+      "n": 3,
+      "q_used": "iPhone 13",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 3375,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "samsung galaxy",
+      "ms": 2412,
+      "n": 6,
+      "q_used": "Samsung Galaxy",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5960,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "macbook",
+      "ms": 2814,
+      "n": 5,
+      "q_used": "MacBook",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "laptop dell",
+      "ms": 2800,
+      "n": 6,
+      "q_used": "laptop Dell",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4336,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "laptop dưới 3 triệu",
+      "ms": 2646,
+      "n": 6,
+      "q_used": "laptop",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5331,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "ipad",
+      "ms": 2659,
+      "n": 6,
+      "q_used": "iPad",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4343,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "máy tính bảng samsung",
+      "ms": 3001,
+      "n": 6,
+      "q_used": "máy tính bảng Samsung",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4944,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "máy đọc sách kindle",
+      "ms": 2685,
+      "n": 6,
+      "q_used": "máy đọc sách Kindle",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4544,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "tai nghe airpods",
+      "ms": 2551,
+      "n": 6,
+      "q_used": "tai nghe AirPods",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "tai nghe chụp tai sony",
+      "ms": 2596,
+      "n": 6,
+      "q_used": "tai nghe chụp tai Sony",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4112,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "đồng hồ casio",
+      "ms": 3038,
+      "n": 6,
+      "q_used": "đồng hồ Casio",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4626,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "apple watch",
+      "ms": 2456,
+      "n": 6,
+      "q_used": "Apple Watch",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "đồng hồ thông minh",
+      "ms": 2764,
+      "n": 6,
+      "q_used": "đồng hồ thông minh",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4573,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "xe đạp",
+      "ms": 2904,
+      "n": 6,
+      "q_used": "xe đạp",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "giày thể thao size 41",
+      "ms": 2568,
+      "n": 6,
+      "q_used": "giày thể thao size 41",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "vợt cầu lông",
+      "ms": 2649,
+      "n": 5,
+      "q_used": "vợt cầu lông",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "áo khoác jean",
+      "ms": 2626,
+      "n": 3,
+      "q_used": "áo khoác jean",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "balo",
+      "ms": 2300,
+      "n": 6,
+      "q_used": "balo",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4119,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "loa bluetooth jbl",
+      "ms": 3308,
+      "n": 4,
+      "q_used": "loa bluetooth JBL",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 6141,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "bàn phím cơ",
+      "ms": 2532,
+      "n": 6,
+      "q_used": "bàn phím cơ",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "tay cầm chơi game",
+      "ms": 2961,
+      "n": 6,
+      "q_used": "tay cầm chơi game",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 6186,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "máy xay sinh tố",
+      "ms": 2965,
+      "n": 6,
+      "q_used": "máy xay sinh tố",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4664,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "ấm siêu tốc rẻ nhất",
+      "ms": 2740,
+      "n": 6,
+      "q_used": "ấm siêu tốc",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4167,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "lò vi sóng",
+      "ms": 2643,
+      "n": 6,
+      "q_used": "lò vi sóng",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4497,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "tìm cho mình cái tai nghe dưới 300k",
+      "ms": 3276,
+      "n": 6,
+      "q_used": "tai nghe",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "loại dưới 200k thôi",
+      "ms": 2474,
+      "n": 5,
+      "q_used": "tai nghe bluetooth",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4512,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 2,
+      "q": "máy ảnh canon",
+      "ms": 2718,
+      "n": 0,
+      "q_used": "máy ảnh Canon",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "may anh",
+      "ms": 2839,
+      "n": 0,
+      "q_used": "máy ảnh",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "chào bạn",
+      "ms": 2589,
+      "n": 0,
+      "q_used": null,
+      "fallback": null,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 2,
+      "q": "cảm ơn nha",
+      "ms": 1910,
+      "n": 0,
+      "q_used": null,
+      "fallback": null,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "nồi cơm điện dưới 600k ở HCM",
+      "ms": 2720,
+      "n": 2,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 3597,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "nồi cơm điện",
+      "ms": 2591,
+      "n": 6,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4546,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "noi com dien",
+      "ms": 2736,
+      "n": 6,
+      "q_used": "nồi cơm điện",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4772,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "tai nghe bluetooth",
+      "ms": 2799,
+      "n": 6,
+      "q_used": "tai nghe bluetooth",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 6036,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "điện thoại iphone cũ dưới 10 triệu",
+      "ms": 2726,
+      "n": 6,
+      "q_used": "iPhone",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "iphone 13",
+      "ms": 2255,
+      "n": 3,
+      "q_used": "iPhone 13",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 2905,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "samsung galaxy",
+      "ms": 2304,
+      "n": 6,
+      "q_used": "Samsung Galaxy",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4400,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "macbook",
+      "ms": 2639,
+      "n": 5,
+      "q_used": "MacBook",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "laptop dell",
+      "ms": 3103,
+      "n": 6,
+      "q_used": "laptop Dell",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4104,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "laptop dưới 3 triệu",
+      "ms": 2504,
+      "n": 6,
+      "q_used": "laptop",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4380,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "ipad",
+      "ms": 4710,
+      "n": 6,
+      "q_used": "iPad",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4990,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "máy tính bảng samsung",
+      "ms": 2537,
+      "n": 6,
+      "q_used": "máy tính bảng Samsung",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4784,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "máy đọc sách kindle",
+      "ms": 2485,
+      "n": 6,
+      "q_used": "máy đọc sách Kindle",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 6923,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "tai nghe airpods",
+      "ms": 2767,
+      "n": 6,
+      "q_used": "tai nghe AirPods",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "tai nghe chụp tai sony",
+      "ms": 2528,
+      "n": 6,
+      "q_used": "tai nghe chụp tai Sony",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4274,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "đồng hồ casio",
+      "ms": 2780,
+      "n": 6,
+      "q_used": "đồng hồ Casio",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5374,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "apple watch",
+      "ms": 2930,
+      "n": 6,
+      "q_used": "Apple Watch",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "đồng hồ thông minh",
+      "ms": 2501,
+      "n": 6,
+      "q_used": "đồng hồ thông minh",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4552,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "xe đạp",
+      "ms": 2742,
+      "n": 6,
+      "q_used": "xe đạp",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "giày thể thao size 41",
+      "ms": 2542,
+      "n": 6,
+      "q_used": "giày thể thao size 41",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "vợt cầu lông",
+      "ms": 2471,
+      "n": 5,
+      "q_used": "vợt cầu lông",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "áo khoác jean",
+      "ms": 2602,
+      "n": 3,
+      "q_used": "áo khoác jean",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "balo",
+      "ms": 2751,
+      "n": 6,
+      "q_used": "balo",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 3924,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "loa bluetooth jbl",
+      "ms": 3117,
+      "n": 4,
+      "q_used": "loa bluetooth JBL",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 5473,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "bàn phím cơ",
+      "ms": 2439,
+      "n": 6,
+      "q_used": "bàn phím cơ",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "tay cầm chơi game",
+      "ms": 2730,
+      "n": 6,
+      "q_used": "tay cầm chơi game",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4210,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "máy xay sinh tố",
+      "ms": 2547,
+      "n": 6,
+      "q_used": "máy xay sinh tố",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4653,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "ấm siêu tốc rẻ nhất",
+      "ms": 2417,
+      "n": 6,
+      "q_used": "ấm siêu tốc",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4577,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "lò vi sóng",
+      "ms": 2312,
+      "n": 6,
+      "q_used": "lò vi sóng",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4762,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "tìm cho mình cái tai nghe dưới 300k",
+      "ms": 2752,
+      "n": 6,
+      "q_used": "tai nghe",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "loại dưới 200k thôi",
+      "ms": 2643,
+      "n": 5,
+      "q_used": "tai nghe bluetooth",
+      "fallback": false,
+      "errors": [],
+      "review": {
+        "ms": 4091,
+        "coverage": 1,
+        "clash": []
+      }
+    },
+    {
+      "run": 3,
+      "q": "máy ảnh canon",
+      "ms": 2656,
+      "n": 0,
+      "q_used": "máy ảnh Canon",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "may anh",
+      "ms": 2692,
+      "n": 0,
+      "q_used": "máy ảnh",
+      "fallback": false,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "chào bạn",
+      "ms": 2370,
+      "n": 0,
+      "q_used": null,
+      "fallback": null,
+      "errors": [],
+      "review": null
+    },
+    {
+      "run": 3,
+      "q": "cảm ơn nha",
+      "ms": 1904,
+      "n": 0,
+      "q_used": null,
+      "fallback": null,
+      "errors": [],
+      "review": null
+    }
+  ]
+}
