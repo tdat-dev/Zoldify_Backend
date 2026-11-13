@@ -488,6 +488,42 @@ describe('AssistantService.ask', () => {
     });
   });
 
+  /**
+   * Đo staging 13/11: q "iPhone cũ" gửi nguyên vào ô tìm của sàn thì chữ "cũ"
+   * (có trong hàng trăm tên món) đẩy iPhone khỏi 40 món đầu, ra rỗng 2/3 lần.
+   */
+  it('bỏ chữ chung như "cũ", "như mới" khỏi từ khoá trước khi tìm', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'iPhone cũ' } });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'iPhone 13 256GB' }),
+    ]);
+    await svc.ask([{ role: 'user', content: 'iphone cũ' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'iPhone' }),
+    );
+  });
+
+  /**
+   * Đo staging 13/11: một lượt "chào bạn" mô hình trả q "quà tặng" (dính câu
+   * trước đó qua router) và trợ lý đưa ra 4 món. Câu chào không cần mô hình.
+   */
+  it('câu chào thì chào lại ngay, không gọi mô hình', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'quà tặng' } });
+    const { svc, products } = build({ understand }, [product(1)]);
+    const kq = await svc.ask([{ role: 'user', content: 'Chào bạn!' }]);
+
+    expect(understand).not.toHaveBeenCalled();
+    expect(products.findAll).not.toHaveBeenCalled();
+    expect(kq.reply).toMatch(/muốn tìm/i);
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
