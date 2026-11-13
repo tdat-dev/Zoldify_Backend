@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CategoriesModule } from '@catalog/categories/categories.module';
 import { ProductsModule } from '@catalog/products/products.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantModel } from './assistant-model';
@@ -9,7 +10,7 @@ import { AssistantService } from './assistant.service';
  * (staging); prod chưa bật thì POST /assistant/chat trả 404.
  */
 @Module({
-  imports: [ProductsModule],
+  imports: [ProductsModule, CategoriesModule],
   controllers: [AssistantController],
   providers: [AssistantService, AssistantModel],
 })

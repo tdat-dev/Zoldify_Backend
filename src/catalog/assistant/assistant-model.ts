@@ -96,15 +96,24 @@ const MAX_NAME_FOR_REVIEW = 80;
 
 @Injectable()
 export class AssistantModel {
+  /**
+   * `categories`: danh mục sàn đang có hàng. Đo staging 13/11: "quà tặng bạn
+   * gái" có lượt mô hình gợi ý toàn món sàn không bán (nước hoa, trang sức) nên
+   * ra rỗng; biết danh mục thì gợi ý trong đó.
+   */
   async understand(
     history: ChatMessage[],
+    categories: string[] = [],
   ): Promise<{ filters?: AssistantFilters; text?: string }> {
+    const system = categories.length
+      ? `${SYSTEM_PROMPT} Sàn hiện bán các danh mục: ${categories.join(', ')}. Tên món trong alternatives phải thuộc các danh mục này.`
+      : SYSTEM_PROMPT;
     return parseModelResponse(
       await this.post(
         {
           max_tokens: 400,
           tools: TOOLS,
-          messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
+          messages: [{ role: 'system', content: system }, ...history],
         },
         TIMEOUT_MS,
       ),
