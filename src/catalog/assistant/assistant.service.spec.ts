@@ -414,6 +414,10 @@ describe('AssistantService.ask', () => {
         'tai nghe Sony': [
           product(11, { name: 'Tai nghe chụp tai Sony', price: '265000.00' }),
         ],
+        laptop: [1, 2, 3, 4, 5].map((i) =>
+          product(20 + i, { name: `Laptop Dell ${i}`, price: '3000000.00' }),
+        ),
+        MacBook: [product(31, { name: 'MacBook Air', price: '4500000.00' })],
         'AirPods Pro': [
           product(12, {
             name: 'Tai nghe Apple AirPods Pro',
@@ -448,6 +452,24 @@ describe('AssistantService.ask', () => {
       expect(kq.products.map((p) => p.id).sort()).toEqual([11, 12]);
       expect(kq.reply).toContain('gợi ý');
       expect(kq.reply).toContain('tai nghe chống ồn');
+    });
+
+    /**
+     * Đo staging 13/11: "laptop học lập trình, tầm 5 triệu" có tên gợi ý
+     * "laptop" nhiều món mà mỗi tên chỉ lấy cứng 2 món, cả lượt còn 3 món, có lần
+     * 1 món. Nay lấy xoay vòng: mỗi nhóm một món mỗi vòng, nhóm nhiều món bù
+     * cho nhóm ít, tới đủ 6.
+     */
+    it('lấy xoay vòng qua các tên gợi ý cho đủ 6 món', async () => {
+      const { svc } = svcWith({
+        q: 'laptop học lập trình',
+        alternatives: ['laptop', 'MacBook'],
+      });
+      const kq = await svc.ask([
+        { role: 'user', content: 'laptop học lập trình' },
+      ]);
+
+      expect(kq.products.map((p) => p.id)).toEqual([21, 31, 22, 23, 24, 25]);
     });
 
     it('cụm gốc có món thì không đụng tới tên gợi ý', async () => {
