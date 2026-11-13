@@ -36,7 +36,7 @@ describe('AssistantModel: thử lại khi router bận', () => {
       .fn()
       .mockResolvedValueOnce(new Response('busy', { status: 503 }))
       .mockResolvedValueOnce(new Response(toolCall, { status: 200 }));
-    global.fetch = fetchMock as unknown as typeof fetch;
+    global.fetch = fetchMock;
 
     const out = await new AssistantModel().understand([
       { role: 'user', content: 'nồi cơm' },
@@ -49,7 +49,7 @@ describe('AssistantModel: thử lại khi router bận', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValue(new Response('busy', { status: 503 }));
-    global.fetch = fetchMock as unknown as typeof fetch;
+    global.fetch = fetchMock;
 
     await expect(
       new AssistantModel().understand([{ role: 'user', content: 'nồi' }]),

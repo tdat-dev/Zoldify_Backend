@@ -17,6 +17,7 @@ import {
   isGreeting,
   rankByName,
 } from './assistant-filters';
+import { parseFallback } from './assistant-fallback';
 import { AssistantModel, ChatMessage, ReviewInput } from './assistant-model';
 import { baseReview, marketPrice, Verdict } from './assistant-review';
 
@@ -196,7 +197,10 @@ export class AssistantService {
       : undefined;
     if (!filters) {
       fallback = true;
-      filters = { q: lastUserText.replace(/\s+/g, ' ').trim().slice(0, 80) };
+      filters = parseFallback(history);
+      if (!filters.q) {
+        filters = { q: lastUserText.replace(/\s+/g, ' ').trim().slice(0, 80) };
+      }
     }
     // Mô hình lỗi mà câu chỉ là lời chào: chào lại, không đem đi tìm.
     if (fallback && isGreeting(filters.q)) {

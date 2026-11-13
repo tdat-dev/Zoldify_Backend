@@ -553,7 +553,7 @@ describe('AssistantService.ask', () => {
     expect(products.findAll).toHaveBeenCalledWith(
       '1',
       '40',
-      expect.objectContaining({ q: 'máy ảnh Canon' }),
+      expect.objectContaining({ q: 'máy ảnh canon' }),
     );
     expect(kq.products).toHaveLength(1);
     expect(kq.fallback).toBe(true);
