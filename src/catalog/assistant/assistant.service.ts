@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from '@nestjs/cache-manager';
+import { CategoriesService } from '../categories/categories.service';
 import { ProductsService } from '../products/products.service';
 import {
   AssistantFilters,
@@ -119,7 +120,27 @@ export class AssistantService {
     private readonly products: ProductsService,
     // Tuỳ chọn để bài kiểm không cần Redis; thiếu thì không có lượt nhận xét.
     @Optional() @Inject(CACHE_MANAGER) private readonly cache?: Cache,
+    @Optional() private readonly categories?: CategoriesService,
   ) {}
+
+  /**
+   * Tên danh mục đang có hàng, để mô hình gợi ý món sàn bán. Danh sách danh mục
+   * có cache Redis nên không thêm truy vấn; lỗi thì bỏ qua, mô hình vẫn chạy.
+   */
+  private async categoryNames(): Promise<string[]> {
+    if (!this.categories) return [];
+    try {
+      const page = (await this.categories.findAll('1', '50', '')) as {
+        result?: { name: string; is_active?: number; product_count?: number }[];
+      };
+      return (page?.result ?? [])
+        .filter((c) => c.is_active !== 0 && Number(c.product_count) > 0)
+        .map((c) => c.name);
+    } catch (e) {
+      this.log.warn(`Không lấy được danh mục: ${(e as Error).message}`);
+      return [];
+    }
+  }
 
   /**
    * Cờ đọc lúc gọi chứ không lúc dựng: staging bật, prod chưa bật. Tắt thì
@@ -168,7 +189,9 @@ export class AssistantService {
     let understood: { filters?: AssistantFilters; text?: string } = {};
     try {
       understood = await Promise.race([
-        this.model.understand(history),
+        this.categoryNames().then((names) =>
+          this.model.understand(history, names),
+        ),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error(`quá ${MODEL_BUDGET_MS} ms`)),
