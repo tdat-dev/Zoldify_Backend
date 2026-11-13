@@ -582,6 +582,31 @@ describe('AssistantService.ask', () => {
     );
   });
 
+  it('đưa tên các danh mục đang có hàng cho mô hình', async () => {
+    const understand = jest.fn().mockResolvedValue({ filters: { q: 'nồi' } });
+    const categories = {
+      findAll: jest.fn().mockResolvedValue({
+        meta: {},
+        result: [
+          { name: 'Nấu ăn', is_active: 1, product_count: 94 },
+          { name: 'Ô tô', is_active: 1, product_count: 0 },
+          { name: 'Đồng hồ', is_active: 0, product_count: 5 },
+        ],
+      }),
+    };
+    const svc = new AssistantService(
+      { understand } as unknown as AssistantModel,
+      {
+        findAll: jest.fn().mockResolvedValue({ meta: {}, result: [] }),
+      } as never,
+      undefined,
+      categories as never,
+    );
+    await svc.ask([{ role: 'user', content: 'nồi' }]);
+
+    expect(understand).toHaveBeenCalledWith(expect.anything(), ['Nấu ăn']);
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [

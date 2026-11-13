@@ -45,6 +45,27 @@ describe('AssistantModel: thử lại khi router bận', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * Đo staging 13/11: "quà tặng bạn gái" có lượt mô hình gợi ý toàn món sàn
+   * không bán (nước hoa, trang sức) nên ra rỗng. Đưa danh mục sàn đang có vào
+   * câu dặn để mô hình gợi ý trong đó.
+   */
+  it('câu dặn mô hình có danh mục sàn đang có', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(new Response(toolCall, { status: 200 }));
+    global.fetch = fetchMock;
+
+    await new AssistantModel().understand(
+      [{ role: 'user', content: 'quà tặng bạn gái' }],
+      ['Đồng hồ', 'Quần áo'],
+    );
+    const sent = String(
+      (fetchMock.mock.calls[0] as [string, { body: string }])[1].body,
+    );
+    expect(sent).toContain('Đồng hồ, Quần áo');
+  });
+
   it('503 hai lần thì báo lỗi, không thử mãi', async () => {
     const fetchMock = jest
       .fn()
