@@ -57,9 +57,6 @@ const MAX_OVER_BUDGET = 3;
 const GREETING_REPLY =
   'Chào bạn! Bạn muốn tìm mua món gì? Gõ tên món, tầm giá và nơi nhận, ví dụ: nồi cơm điện dưới 600k ở HCM.';
 
-/** Mỗi tên món gợi ý lấy chừng này món: 3 tên x 2 món vừa một lượt 6 món. */
-const PER_ALTERNATIVE = 2;
-
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
 /**
@@ -254,11 +251,20 @@ export class AssistantService {
 
     // Mỗi món đi kèm tập so giá của nhóm nó (một nhóm khi tìm thường, mỗi tên
     // gợi ý một nhóm): không đem tai nghe Sony so với AirPods.
-    const perGroup = suggestedFrom ? PER_ALTERNATIVE : RESULT_LIMIT;
+    // Lấy xoay vòng: mỗi nhóm một món mỗi vòng, tới đủ RESULT_LIMIT. Nhóm nhiều
+    // món bù cho nhóm ít. Đo staging 13/11 khi còn lấy cứng 2 món mỗi tên gợi ý:
+    // "laptop học lập trình" có tên "laptop" nhiều món mà cả lượt chỉ ra 1 đến 3.
     const entries: { p: ProductRow; over: boolean; group: ProductRow[] }[] = [];
     const seen = new Set<number>();
-    for (const [rows, group] of groups) {
-      for (const p of rows.filter(inPlace).slice(0, perGroup)) {
+    const queues = groups.map(([rows, group]) => ({
+      rows: rows.filter(inPlace),
+      group,
+    }));
+    for (let round = 0; entries.length < RESULT_LIMIT; round++) {
+      const left = queues.filter((g) => g.rows.length > round);
+      if (!left.length) break;
+      for (const { rows, group } of left) {
+        const p = rows[round];
         if (seen.has(p.id) || entries.length >= RESULT_LIMIT) continue;
         seen.add(p.id);
         entries.push({ p, over: false, group });
