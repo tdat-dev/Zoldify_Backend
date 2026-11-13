@@ -57,6 +57,9 @@ const MAX_OVER_BUDGET = 3;
 const GREETING_REPLY =
   'Chào bạn! Bạn muốn tìm mua món gì? Gõ tên món, tầm giá và nơi nhận, ví dụ: nồi cơm điện dưới 600k ở HCM.';
 
+/** Mỗi tên món gợi ý lấy chừng này món: 3 tên x 2 món vừa một lượt 6 món. */
+const PER_ALTERNATIVE = 2;
+
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
 /**
@@ -199,12 +202,31 @@ export class AssistantService {
     }
     filters = { ...filters, q: dropGenericPhrase(filters.q) };
 
-    // Tìm, xếp hạng; rỗng thì nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ"
-    // thành "bàn làm việc"), chỉ khi còn thời gian trong trần 10 giây. Từ khoá
-    // hai chữ không nới: "máy ảnh" thành "máy" ra máy nướng bánh mì.
+    // Tìm, xếp hạng. Rỗng thì thử theo thứ tự:
+    //  1. Tên món mô hình gợi ý, khi câu là nhu cầu ("tai nghe chống ồn", "quà
+    //     tặng bạn gái"): tên món không chứa mấy chữ đó. Đo staging 13/11: hai
+    //     câu này ra rỗng cả 3 lần. Các tên tìm song song, mỗi tên lấy vài món,
+    //     mỗi nhóm so giá trong nhóm của nó.
+    //  2. Nới từ khoá MỘT lần (bỏ chữ cuối: "bàn làm việc gỗ" thành "bàn làm
+    //     việc"), chỉ khi còn thời gian trong trần 10 giây. Từ khoá hai chữ không
+    //     nới: "máy ảnh" thành "máy" ra máy nướng bánh mì.
     let [inStock, market] = await this.searchWithMarket(filters);
+    let groups: [ProductRow[], ProductRow[]][] = [[inStock, market]];
+    let suggestedFrom: string[] | null = null;
     const words = filters.q.split(' ');
-    if (
+    if (!inStock.length && filters.alternatives?.length) {
+      const found = await Promise.all(
+        filters.alternatives.map((a) =>
+          this.searchWithMarket({ ...filters, q: a }),
+        ),
+      );
+      if (found.some(([rows]) => rows.length)) {
+        groups = found;
+        suggestedFrom = filters.alternatives.filter(
+          (_, i) => found[i][0].length,
+        );
+      }
+    } else if (
       !inStock.length &&
       words.length > 2 &&
       Date.now() - startedAt < RELAX_DEADLINE_MS
@@ -214,6 +236,7 @@ export class AssistantService {
       if (retry.length) {
         inStock = retry;
         market = retryMarket;
+        groups = [[inStock, market]];
         filters = shorter;
       }
     }
@@ -225,35 +248,52 @@ export class AssistantService {
       const isLocal = (p: ProductRow) =>
         p.province_slug === wanted ||
         provinceSlug(String(p.province_name ?? '')) === wanted;
-      if (inStock.some(isLocal)) inPlace = isLocal;
+      if (groups.some(([rows]) => rows.some(isLocal))) inPlace = isLocal;
       else relaxed.push(`tỉnh ${filters.province}`);
     }
-    const picked = inStock.filter(inPlace).slice(0, RESULT_LIMIT);
+
+    // Mỗi món đi kèm tập so giá của nhóm nó (một nhóm khi tìm thường, mỗi tên
+    // gợi ý một nhóm): không đem tai nghe Sony so với AirPods.
+    const perGroup = suggestedFrom ? PER_ALTERNATIVE : RESULT_LIMIT;
+    const entries: { p: ProductRow; over: boolean; group: ProductRow[] }[] = [];
+    const seen = new Set<number>();
+    for (const [rows, group] of groups) {
+      for (const p of rows.filter(inPlace).slice(0, perGroup)) {
+        if (seen.has(p.id) || entries.length >= RESULT_LIMIT) continue;
+        seen.add(p.id);
+        entries.push({ p, over: false, group });
+      }
+    }
+    const pickedCount = entries.length;
 
     // Ít món trong tầm giá: thêm món vượt tối đa 30%, rẻ trước, có đánh dấu.
     const ceiling = filters.price_max;
-    const extras =
-      ceiling && picked.length < FEW_RESULTS
-        ? market
-            .filter(
-              (p) =>
-                inPlace(p) &&
-                Number(p.price) > ceiling &&
-                Number(p.price) <= ceiling * OVER_BUDGET_RATIO &&
-                !picked.some((x) => x.id === p.id),
-            )
-            .sort((a, b) => Number(a.price) - Number(b.price))
-            .slice(0, MAX_OVER_BUDGET)
-        : [];
+    if (ceiling && !suggestedFrom && pickedCount < FEW_RESULTS) {
+      market
+        .filter(
+          (p) =>
+            inPlace(p) &&
+            Number(p.price) > ceiling &&
+            Number(p.price) <= ceiling * OVER_BUDGET_RATIO &&
+            !seen.has(p.id),
+        )
+        .sort((a, b) => Number(a.price) - Number(b.price))
+        .slice(0, MAX_OVER_BUDGET)
+        .forEach((p) => entries.push({ p, over: true, group: market }));
+    }
+    const extrasCount = entries.length - pickedCount;
 
-    const reference = marketPrice(market.map((p) => Number(p.price)));
+    const references = new Map<ProductRow[], number | null>();
+    const referenceOf = (group: ProductRow[]) => {
+      if (!references.has(group))
+        references.set(group, marketPrice(group.map((p) => Number(p.price))));
+      return references.get(group) ?? null;
+    };
     // Chỉ trả trường cần cho thẻ: mô tả của người bán không đi ra khỏi đây.
-    const products: SuggestedProduct[] = [
-      ...picked.map((p) => ({ p, over: false })),
-      ...extras.map((p) => ({ p, over: true })),
-    ].map(({ p, over }) => {
+    const products: SuggestedProduct[] = entries.map(({ p, over, group }) => {
       const price = Number(p.price);
       const condition = p.condition ?? null;
+      const reference = referenceOf(group);
       return {
         id: p.id,
         name: p.name,
@@ -261,19 +301,26 @@ export class AssistantService {
         image: p.image ?? null,
         condition,
         province_name: p.province_name ?? null,
-        ...baseReview({ price, condition }, reference, market.length),
+        ...baseReview({ price, condition }, reference, group.length),
         market_price: reference,
         over_budget: over,
       };
     });
     const reviewId = await this.saveForReview(products);
 
-    let reply =
-      picked.length || !extras.length
-        ? buildReply(filters, picked.length, relaxed)
-        : `Mình không thấy món "${filters.q}" nào trong tầm giá bạn nêu.`;
-    if (extras.length) {
-      reply += ` Có thêm ${extras.length} món vượt ngân sách chút ít (tối đa 30%) để bạn so.`;
+    let reply: string;
+    if (suggestedFrom && pickedCount) {
+      reply =
+        `Không có món nào ghi đúng "${filters.q}". Mình gợi ý vài món gần với ý bạn: ` +
+        `${suggestedFrom.join(', ')}. Bấm Mua ngay để vào thẳng trang đặt hàng.`;
+    } else {
+      reply =
+        pickedCount || !extrasCount
+          ? buildReply(filters, pickedCount, relaxed)
+          : `Mình không thấy món "${filters.q}" nào trong tầm giá bạn nêu.`;
+    }
+    if (extrasCount) {
+      reply += ` Có thêm ${extrasCount} món vượt ngân sách chút ít (tối đa 30%) để bạn so.`;
     }
     return {
       reply,

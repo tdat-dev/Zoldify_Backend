@@ -105,6 +105,38 @@ describe('dropUnaskedFilters', () => {
  * tham số, ghi giá dạng chuỗi "600k", đảo min và max, hay đưa từ khoá dài cả
  * đoạn. Mọi thứ phải qua `normalizeFilters` trước khi chạm tới truy vấn.
  */
+/**
+ * Đo staging 13/11: "quà tặng bạn gái" và "tai nghe chống ồn" ra rỗng cả 3 lần,
+ * vì tên món không ghi "quà tặng" hay "chống ồn". Mô hình được gợi ý tối đa 3
+ * tên món cụ thể; đây vẫn là đầu vào không tin được nên phải lọc.
+ */
+describe('normalizeFilters: alternatives', () => {
+  it('giữ tối đa 3 tên gợi ý, bỏ trùng, bỏ rỗng, bỏ thứ không phải chữ, cắt dài', () => {
+    const f = normalizeFilters({
+      q: 'quà tặng bạn gái',
+      alternatives: [
+        ' đồng hồ ',
+        'quà tặng bạn gái',
+        '',
+        42,
+        'túi xách',
+        'đồng hồ',
+        'tai nghe',
+        'balo',
+        'x'.repeat(90),
+      ],
+    });
+    expect(f.alternatives).toEqual(['đồng hồ', 'túi xách', 'tai nghe']);
+  });
+
+  it('không có hay sai kiểu thì không có trường alternatives', () => {
+    expect(normalizeFilters({ q: 'nồi' }).alternatives).toBeUndefined();
+    expect(
+      normalizeFilters({ q: 'nồi', alternatives: 'đồng hồ' }).alternatives,
+    ).toBeUndefined();
+  });
+});
+
 describe('normalizeFilters', () => {
   it('giữ đúng các trường hợp lệ', () => {
     expect(

@@ -24,7 +24,16 @@ export interface AssistantFilters {
   condition?: (typeof VALID_CONDITIONS)[number];
   province?: string;
   sort?: (typeof VALID_SORTS)[number];
+  /**
+   * Tên món cụ thể mô hình gợi ý khi câu là nhu cầu chứ không phải tên món
+   * ("quà tặng bạn gái" thành đồng hồ, túi xách). Chỉ dùng khi tìm q ra rỗng.
+   */
+  alternatives?: string[];
 }
+
+/** Tối đa chừng này tên gợi ý: mỗi tên là một lượt tìm chạy song song. */
+const MAX_ALTERNATIVES = 3;
+const MAX_ALTERNATIVE_LENGTH = 40;
 
 /** Từ khoá dài hơn thế này là mô hình chép nguyên câu, không phải từ khoá. */
 const MAX_QUERY_LENGTH = 80;
@@ -76,6 +85,20 @@ export function normalizeFilters(
   const province =
     typeof raw?.province === 'string' ? raw.province.trim().slice(0, 40) : '';
   if (province) filters.province = province;
+  if (Array.isArray(raw?.alternatives)) {
+    const seen = new Set([q.toLowerCase()]);
+    const alts: string[] = [];
+    for (const a of raw.alternatives as unknown[]) {
+      if (typeof a !== 'string') continue;
+      const s = a.replace(/\s+/g, ' ').trim();
+      if (!s || s.length > MAX_ALTERNATIVE_LENGTH || seen.has(s.toLowerCase()))
+        continue;
+      seen.add(s.toLowerCase());
+      alts.push(s);
+      if (alts.length === MAX_ALTERNATIVES) break;
+    }
+    if (alts.length) filters.alternatives = alts;
+  }
   return filters;
 }
 

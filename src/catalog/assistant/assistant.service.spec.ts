@@ -408,6 +408,64 @@ describe('AssistantService.ask', () => {
     expect(kq.reply).toMatch(/muốn tìm/i);
   });
 
+  describe('tên món gợi ý khi câu là nhu cầu', () => {
+    const rowsFor = (q: string) =>
+      ({
+        'tai nghe Sony': [
+          product(11, { name: 'Tai nghe chụp tai Sony', price: '265000.00' }),
+        ],
+        'AirPods Pro': [
+          product(12, {
+            name: 'Tai nghe Apple AirPods Pro',
+            price: '1460000.00',
+          }),
+        ],
+      })[q] ?? [];
+    const svcWith = (filters: Record<string, unknown>) => {
+      const products = {
+        findAll: jest.fn((_p: string, _s: string, qs: { q: string }) =>
+          Promise.resolve({ meta: {}, result: rowsFor(qs.q) }),
+        ),
+      };
+      const svc = new AssistantService(
+        {
+          understand: jest.fn().mockResolvedValue({ filters }),
+        } as unknown as AssistantModel,
+        products as never,
+      );
+      return { svc, products };
+    };
+
+    it('cụm gốc rỗng thì tìm các tên gợi ý và nói rõ là gợi ý', async () => {
+      const { svc } = svcWith({
+        q: 'tai nghe chống ồn',
+        alternatives: ['tai nghe Sony', 'AirPods Pro'],
+      });
+      const kq = await svc.ask([
+        { role: 'user', content: 'tai nghe chống ồn' },
+      ]);
+
+      expect(kq.products.map((p) => p.id).sort()).toEqual([11, 12]);
+      expect(kq.reply).toContain('gợi ý');
+      expect(kq.reply).toContain('tai nghe chống ồn');
+    });
+
+    it('cụm gốc có món thì không đụng tới tên gợi ý', async () => {
+      const { svc, products } = svcWith({
+        q: 'tai nghe Sony',
+        alternatives: ['AirPods Pro'],
+      });
+      const kq = await svc.ask([{ role: 'user', content: 'tai nghe sony' }]);
+
+      expect(kq.products.map((p) => p.id)).toEqual([11]);
+      expect(products.findAll).not.toHaveBeenCalledWith(
+        '1',
+        '40',
+        expect.objectContaining({ q: 'AirPods Pro' }),
+      );
+    });
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
