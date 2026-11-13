@@ -26,6 +26,8 @@ export interface ChatMessage {
  */
 /** Mô hình chậm hơn thế thì bỏ, service tìm bằng câu gõ (xem MODEL_BUDGET_MS). */
 const TIMEOUT_MS = 6_000;
+/** Còn ít hơn chừng này thì không thử lại: một lượt mô hình thường mất 2 đến 3 giây. */
+const MIN_RETRY_MS = 2_500;
 
 const SYSTEM_PROMPT = [
   'Bạn là trợ lý mua hàng của Zoldify, sàn đồ cũ ở Việt Nam.',
@@ -146,26 +148,40 @@ export class AssistantModel {
     ).replace(/\/$/, '');
     const key = process.env.AI_API_KEY;
     if (!key) throw new Error('Thiếu AI_API_KEY');
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(`${base}/chat/completions`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: process.env.AI_MODEL || 'cx/gpt-6-luna',
-          ...payload,
-        }),
-      });
-      // Không đưa lỗi của router ra ngoài: có thể chứa thông tin tài khoản.
-      if (!res.ok) throw new Error(`Router trả ${res.status}`);
-      return await res.text();
-    } finally {
-      clearTimeout(timer);
+    const body = JSON.stringify({
+      model: process.env.AI_MODEL || 'cx/gpt-6-luna',
+      ...payload,
+    });
+    const startedAt = Date.now();
+    for (let attempt = 0; ; attempt++) {
+      const left = timeoutMs - (Date.now() - startedAt);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), left);
+      try {
+        const res = await fetch(`${base}/chat/completions`, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body,
+        });
+        // Router bận (đo staging 13/11: năm lần 503, mỗi lần khoảng 0,5 giây)
+        // mà còn đủ thời gian thì thử lại MỘT lần.
+        const busy = res.status === 502 || res.status === 503;
+        if (
+          busy &&
+          attempt === 0 &&
+          timeoutMs - (Date.now() - startedAt) > MIN_RETRY_MS
+        )
+          continue;
+        // Không đưa lỗi của router ra ngoài: có thể chứa thông tin tài khoản.
+        if (!res.ok) throw new Error(`Router trả ${res.status}`);
+        return await res.text();
+      } finally {
+        clearTimeout(timer);
+      }
     }
   }
 }

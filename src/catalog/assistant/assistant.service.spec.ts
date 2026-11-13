@@ -524,6 +524,25 @@ describe('AssistantService.ask', () => {
     expect(kq.reply).toMatch(/muốn tìm/i);
   });
 
+  it('mô hình lỗi ở câu nối tiếp thì tự tách giá, lấy tên món từ câu trước', async () => {
+    const understand = jest.fn().mockRejectedValue(new Error('Router trả 503'));
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Tai nghe Bluetooth Samsung', price: '150000.00' }),
+    ]);
+    const kq = await svc.ask([
+      { role: 'user', content: 'tai nghe bluetooth' },
+      { role: 'assistant', content: 'Mình tìm được 6 món.' },
+      { role: 'user', content: 'loại dưới 200k thôi' },
+    ]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'tai nghe bluetooth', price_max: 200000 }),
+    );
+    expect(kq.products.map((p) => p.id)).toEqual([1]);
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [
@@ -534,7 +553,7 @@ describe('AssistantService.ask', () => {
     expect(products.findAll).toHaveBeenCalledWith(
       '1',
       '40',
-      expect.objectContaining({ q: 'máy ảnh Canon' }),
+      expect.objectContaining({ q: 'máy ảnh canon' }),
     );
     expect(kq.products).toHaveLength(1);
     expect(kq.fallback).toBe(true);
