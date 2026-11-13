@@ -70,6 +70,34 @@ describe('dropUnaskedFilters', () => {
    * anh" ra price_max 3000000 và province "Hồ Chí Minh". Câu không có số tiền,
    * không có nơi chốn thì không được có giá, có tỉnh.
    */
+  /**
+   * Đo staging 13/11: "giày thể thao size 41" ra price_max 999999999 và
+   * 2147483647; luật cũ "câu có chữ số là có nói giá" để lọt vì có số 41.
+   */
+  it('số không đi với tiền (size 41) không giữ được giá mô hình bịa', () => {
+    const g = { q: 'giày thể thao size 41', price_max: 999999999 };
+    expect(
+      dropUnaskedFilters(g, ['giày thể thao size 41']).price_max,
+    ).toBeUndefined();
+  });
+
+  it('giữ giá khi số đi với đơn vị tiền hoặc từ 1000 trở lên', () => {
+    const g = { q: 'x', price_max: 10000000 };
+    expect(dropUnaskedFilters(g, ['iphone 13 dưới 10 triệu']).price_max).toBe(
+      10000000,
+    );
+    expect(dropUnaskedFilters(g, ['nồi 600k']).price_max).toBe(10000000);
+    expect(dropUnaskedFilters(g, ['laptop dưới 3000000']).price_max).toBe(
+      10000000,
+    );
+  });
+
+  it('bỏ giá trần từ 1 tỷ trở lên khi người dùng không nói "tỷ"', () => {
+    const g = { q: 'xe', price_max: 2147483647 };
+    expect(dropUnaskedFilters(g, ['xe dưới 2 tỷ']).price_max).toBe(2147483647);
+    expect(dropUnaskedFilters(g, ['xe đạp 900k']).price_max).toBeUndefined();
+  });
+
   it('bỏ giá và tỉnh mô hình tự bịa', () => {
     const g = { q: 'máy ảnh', price_max: 3000000, province: 'Hồ Chí Minh' };
     expect(dropUnaskedFilters(g, ['may anh'])).toEqual({ q: 'máy ảnh' });
