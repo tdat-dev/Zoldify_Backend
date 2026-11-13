@@ -30,7 +30,8 @@ const TIMEOUT_MS = 6_000;
 const SYSTEM_PROMPT = [
   'Bạn là trợ lý mua hàng của Zoldify, sàn đồ cũ ở Việt Nam.',
   'Nhiệm vụ duy nhất: đọc câu người dùng và gọi search_products với bộ lọc phù hợp.',
-  'q là tên món ngắn gọn bằng tiếng Việt, bỏ các từ như "tìm", "mua", "cho mình".',
+  'q là tên món ngắn gọn bằng tiếng Việt, bỏ các từ như "tìm", "mua", "cho mình", nhưng GIỮ chi tiết nhận diện món như size, dung lượng, đời máy (size 41, 128GB, M1).',
+  'Nếu người dùng nói nhu cầu hay dịp chứ không nói tên món (quà tặng, đồ cho bé, tai nghe chống ồn, laptop học lập trình), vẫn đặt q như họ nói và điền alternatives: tối đa 3 tên món cụ thể hay có trên sàn đồ cũ đáp ứng nhu cầu đó.',
   '"600k" là 600000 đồng, "1tr" hay "1 triệu" là 1000000 đồng. "HCM", "Sài Gòn" là Hồ Chí Minh.',
   'Dùng các câu trước trong hội thoại để hiểu câu nối tiếp như "rẻ hơn nữa" hay "ở Hà Nội thì sao".',
   'Nếu người dùng không tìm món hàng nào, trả lời một câu ngắn bằng tiếng Việt và mời họ mô tả món cần mua.',
@@ -54,6 +55,13 @@ const TOOLS = [
             description: 'Tỉnh hoặc thành phố, ví dụ Hồ Chí Minh, Hà Nội',
           },
           sort: { type: 'string', enum: [...VALID_SORTS] },
+          alternatives: {
+            type: 'array',
+            items: { type: 'string' },
+            maxItems: 3,
+            description:
+              'Tên món cụ thể khi câu là nhu cầu, ví dụ quà tặng bạn gái: đồng hồ, túi xách, tai nghe',
+          },
         },
         required: ['q'],
       },
