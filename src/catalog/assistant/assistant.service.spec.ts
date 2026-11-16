@@ -440,6 +440,26 @@ describe('AssistantService.ask', () => {
       return { svc, products };
     };
 
+    /**
+     * Đo staging 13 và 16/11: hai lần "may anh" mô hình vẫn điền alternatives
+     * dù câu dặn cấm, trợ lý đưa món khác trong khi sàn không bán máy ảnh. Câu
+     * không có chữ chỉ nhu cầu thì server bỏ tên gợi ý.
+     */
+    it('câu chỉ nói tên món (không có chữ nhu cầu) thì không dùng tên gợi ý', async () => {
+      const { svc, products } = svcWith({
+        q: 'máy ảnh',
+        alternatives: ['tai nghe Sony'],
+      });
+      const kq = await svc.ask([{ role: 'user', content: 'may anh' }]);
+
+      expect(kq.products).toEqual([]);
+      expect(products.findAll).not.toHaveBeenCalledWith(
+        '1',
+        '40',
+        expect.objectContaining({ q: 'tai nghe Sony' }),
+      );
+    });
+
     it('cụm gốc rỗng thì tìm các tên gợi ý và nói rõ là gợi ý', async () => {
       const { svc } = svcWith({
         q: 'tai nghe chống ồn',

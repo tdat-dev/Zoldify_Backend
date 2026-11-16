@@ -206,6 +206,39 @@ const MONEY_UNITS = new Set([
   'vnd',
 ]);
 
+/** Chữ cho thấy người dùng nói nhu cầu, dịp, công dụng chứ không chỉ tên món. */
+const NEED_WORDS = new Set([
+  'quà',
+  'tặng',
+  'tang',
+  'cho',
+  'để',
+  'chống',
+  'chong',
+  'học',
+  'hoc',
+  'làm',
+  'lam',
+  'chơi',
+  'choi',
+  'hợp',
+  'hop',
+  'dành',
+  'dùng',
+  'gift',
+  'for',
+]);
+
+/**
+ * Câu người dùng có nói nhu cầu ("quà tặng bạn gái", "tai nghe chống ồn",
+ * "laptop để học") hay chỉ nói tên món ("máy ảnh canon"). Chỉ câu nói nhu cầu
+ * mới được dùng tên món mô hình gợi ý. Đo staging 13 và 16/11: hai lần "may
+ * anh" mô hình vẫn gợi ý món khác dù câu dặn cấm.
+ */
+export function saysNeed(userTexts: string[]): boolean {
+  return userTexts.flatMap(tokens).some((w) => NEED_WORDS.has(w));
+}
+
 /**
  * Từ khoá mô hình trả có ít nhất một chữ nằm trong câu người dùng (so không
  * dấu). Đo staging 13/11: hai lần mô hình trả q "quà tặng" cho câu chẳng liên
