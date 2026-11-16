@@ -609,10 +609,11 @@ describe('AssistantService.ask', () => {
 
   /**
    * Đo staging 16/11: mô hình trả q "laptop 3 triệu" mà không có price_max cho
-   * câu "laptop dưới 3 triệu", ra rỗng. Bỏ cụm tiền khỏi từ khoá và lấy giá từ
-   * chính câu gõ khi mô hình bỏ sót.
+   * câu "laptop dưới 3 triệu", ra rỗng. Bỏ cụm tiền khỏi từ khoá. Không tự lấy
+   * giá từ câu gõ bằng regex đường lui: regex đó đọc "dưới 6 tháng", "dưới
+   * 2kg" thành giá (xem test kế tiếp).
    */
-  it('từ khoá mô hình dính cụm tiền thì bỏ cụm đó, lấy giá từ câu gõ', async () => {
+  it('từ khoá mô hình dính cụm tiền thì bỏ cụm đó', async () => {
     const understand = jest
       .fn()
       .mockResolvedValue({ filters: { q: 'laptop 3 triệu' } });
@@ -624,7 +625,50 @@ describe('AssistantService.ask', () => {
     expect(products.findAll).toHaveBeenCalledWith(
       '1',
       '40',
-      expect.objectContaining({ q: 'laptop', price_max: 3000000 }),
+      expect.objectContaining({ q: 'laptop' }),
+    );
+  });
+
+  it.each([
+    ['bỉm cho bé dưới 6 tháng', 'bỉm cho bé', 6000],
+    ['laptop dưới 2kg', 'laptop', 2000],
+    ['tivi dưới 50 inch', 'tivi', 50000],
+  ])(
+    'câu "%s" không nói về tiền thì không gán giá',
+    async (text, q, guessed) => {
+      const understand = jest
+        .fn()
+        .mockResolvedValue({ filters: { q, price_max: guessed } });
+      const { svc, products } = build({ understand }, [
+        product(1, { name: 'Món bất kỳ' }),
+      ]);
+      await svc.ask([{ role: 'user', content: text }]);
+
+      // Mọi lượt tìm (cả lượt so giá thị trường) đều không có giá.
+      for (const [, , f] of products.findAll.mock.calls) {
+        expect(f).toEqual(
+          expect.objectContaining({
+            price_max: undefined,
+            price_min: undefined,
+          }),
+        );
+      }
+    },
+  );
+
+  it('"rẻ hơn 3 triệu" chỉ có giá tối đa, không thêm giá tối thiểu', async () => {
+    const understand = jest.fn().mockResolvedValue({
+      filters: { q: 'điện thoại', price_max: 3000000 },
+    });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Điện thoại Samsung', price: '2500000.00' }),
+    ]);
+    await svc.ask([{ role: 'user', content: 'điện thoại rẻ hơn 3 triệu' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ price_max: 3000000, price_min: undefined }),
     );
   });
 

@@ -240,16 +240,6 @@ export class AssistantService {
         filters: null,
       };
     }
-    if (!fallback) {
-      // Mô hình để cụm tiền trong q mà bỏ sót giá (đo staging 16/11: "laptop
-      // dưới 3 triệu" ra q "laptop 3 triệu", không có price_max): lấy giá từ
-      // chính câu gõ. Giá đọc từ câu gõ nên không phải giá bịa.
-      const typed = parseFallback(history);
-      if (filters.price_max === undefined && typed.price_max !== undefined)
-        filters = { ...filters, price_max: typed.price_max };
-      if (filters.price_min === undefined && typed.price_min !== undefined)
-        filters = { ...filters, price_min: typed.price_min };
-    }
     filters = { ...filters, q: dropGenericPhrase(stripMoney(filters.q)) };
 
     // Tìm, xếp hạng. Rỗng thì thử theo thứ tự:
