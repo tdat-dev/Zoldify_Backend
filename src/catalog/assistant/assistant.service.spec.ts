@@ -607,6 +607,27 @@ describe('AssistantService.ask', () => {
     expect(understand).toHaveBeenCalledWith(expect.anything(), ['Nấu ăn']);
   });
 
+  /**
+   * Đo staging 16/11: mô hình trả q "laptop 3 triệu" mà không có price_max cho
+   * câu "laptop dưới 3 triệu", ra rỗng. Bỏ cụm tiền khỏi từ khoá và lấy giá từ
+   * chính câu gõ khi mô hình bỏ sót.
+   */
+  it('từ khoá mô hình dính cụm tiền thì bỏ cụm đó, lấy giá từ câu gõ', async () => {
+    const understand = jest
+      .fn()
+      .mockResolvedValue({ filters: { q: 'laptop 3 triệu' } });
+    const { svc, products } = build({ understand }, [
+      product(1, { name: 'Laptop Dell', price: '2500000.00' }),
+    ]);
+    await svc.ask([{ role: 'user', content: 'laptop dưới 3 triệu' }]);
+
+    expect(products.findAll).toHaveBeenCalledWith(
+      '1',
+      '40',
+      expect.objectContaining({ q: 'laptop', price_max: 3000000 }),
+    );
+  });
+
   it('mô hình lỗi thì tìm bằng câu người dùng gõ', async () => {
     const understand = jest.fn().mockRejectedValue(new Error('timeout'));
     const { svc, products } = build({ understand }, [

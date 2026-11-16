@@ -11,6 +11,8 @@ import type { ChatMessage } from './assistant-model';
 
 // Đơn vị dài đứng trước: nếu "tr" đứng trước "triệu" thì "3 triệu" chỉ khớp "tr" và sót lại "iệu".
 const NUM = String.raw`(\d+(?:[.,]\d+)?)\s*(triệu|trieu|tr|nghìn|nghin|ngàn|ngan|k|củ|cu|m)?`;
+/** Đơn vị chắc chắn là tiền, dùng để bỏ cụm tiền khỏi từ khoá (không có "m": có thể là mét). */
+const UNIT = String.raw`(?:triệu|trieu|tr|nghìn|nghin|ngàn|ngan|k|củ|đồng|đ)`;
 const RANGE = new RegExp(
   String.raw`(?:từ|tu)\s+${NUM}\s*(?:đến|den|tới|toi|-)\s*${NUM}`,
   'u',
@@ -95,6 +97,17 @@ const DROP = new Set([
   'second',
   'hand',
   'secondhand',
+  // Đo staging 16/11: "rẻ hơn nữa" thành từ khoá "hơn nữa", "1 cái laptop để
+  // học" giữ chữ "để".
+  'hơn',
+  'hon',
+  'nữa',
+  'nua',
+  'nhất',
+  'nhat',
+  'để',
+  'chiếc',
+  'chiec',
   'buy',
   'want',
   'need',
@@ -173,9 +186,11 @@ function parseOne(text: string): AssistantFilters {
     }
   }
   const words = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  if (words.some((w) => w === 'cheap' || w === 'cheapest'))
-    out.sort = 'price_asc';
+  // "rẻ", "rẻ hơn nữa", "rẻ nhất", "cheap": xếp giá tăng dần.
+  if (words.some((w) => CHEAP.has(w))) out.sort = 'price_asc';
   out.q = words
+    // "1 cái laptop": số đếm đi với từ chỉ loại không phải tên món.
+    .filter((w, i) => !(/^\d+$/.test(w) && COUNTERS.has(words[i + 1])))
     .filter((w) => !DROP.has(w))
     .map((w) => ENGLISH[w] ?? w)
     .join(' ')
@@ -183,6 +198,25 @@ function parseOne(text: string): AssistantFilters {
   if (out.price_min === undefined) delete out.price_min;
   if (out.price_max === undefined) delete out.price_max;
   return out;
+}
+
+const CHEAP = new Set(['rẻ', 're', 'cheap', 'cheapest']);
+const COUNTERS = new Set(['cái', 'cai', 'chiếc', 'chiec', 'đôi', 'doi', 'bộ']);
+
+/**
+ * Bỏ cụm tiền khỏi từ khoá mô hình trả ("laptop 3 triệu" thành "laptop"). Đo
+ * staging 16/11: mô hình để "3 triệu" trong q mà không điền price_max, tìm ra
+ * rỗng. Chỉ bỏ số ĐI VỚI đơn vị tiền: "size 41", "iPhone 13" giữ nguyên.
+ */
+export function stripMoney(q: string): string {
+  const rest = q
+    .replace(
+      new RegExp(String.raw`\d+(?:[.,]\d+)?\s*${UNIT}(?![\p{L}\p{N}])`, 'giu'),
+      ' ',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+  return rest || q;
 }
 
 export function parseFallback(history: ChatMessage[]): AssistantFilters {

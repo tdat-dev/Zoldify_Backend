@@ -70,6 +70,32 @@ describe('parseFallback', () => {
     });
   });
 
+  /**
+   * Đo staging 16/11: router trả 503 tới 39 lần trong 25 phút, đường lui gánh
+   * 45/150 lượt. Trượt: "rẻ hơn nữa" thành từ khoá "hơn nữa", "ấm siêu tốc rẻ
+   * nhất" thành "ấm siêu tốc nhất" không xếp giá, "1 cái laptop để học..." giữ
+   * chữ "1", "để".
+   */
+  it('"rẻ", "rẻ hơn nữa", "rẻ nhất" là xếp giá tăng dần', () => {
+    expect(parseFallback([user('ấm siêu tốc rẻ nhất')])).toEqual({
+      q: 'ấm siêu tốc',
+      sort: 'price_asc',
+    });
+    expect(
+      parseFallback([
+        user('loa bluetooth jbl'),
+        bot('Mình tìm được vài món.'),
+        user('rẻ hơn nữa'),
+      ]),
+    ).toEqual({ q: 'loa bluetooth jbl', sort: 'price_asc' });
+  });
+
+  it('bỏ "để" và số đếm đi với "cái", "chiếc"', () => {
+    expect(
+      parseFallback([user('mình cần mua 1 cái laptop để học, tầm 5 triệu')]),
+    ).toEqual({ q: 'laptop học', price_max: 5000000 });
+  });
+
   it('Hà Nội', () => {
     expect(parseFallback([user('laptop ở Hà Nội')])).toEqual({
       q: 'laptop',

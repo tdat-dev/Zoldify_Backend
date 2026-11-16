@@ -19,7 +19,7 @@ import {
   rankByName,
   relatesToUser,
 } from './assistant-filters';
-import { parseFallback } from './assistant-fallback';
+import { parseFallback, stripMoney } from './assistant-fallback';
 import { AssistantModel, ChatMessage, ReviewInput } from './assistant-model';
 import { baseReview, marketPrice, Verdict } from './assistant-review';
 
@@ -240,7 +240,17 @@ export class AssistantService {
         filters: null,
       };
     }
-    filters = { ...filters, q: dropGenericPhrase(filters.q) };
+    if (!fallback) {
+      // Mô hình để cụm tiền trong q mà bỏ sót giá (đo staging 16/11: "laptop
+      // dưới 3 triệu" ra q "laptop 3 triệu", không có price_max): lấy giá từ
+      // chính câu gõ. Giá đọc từ câu gõ nên không phải giá bịa.
+      const typed = parseFallback(history);
+      if (filters.price_max === undefined && typed.price_max !== undefined)
+        filters = { ...filters, price_max: typed.price_max };
+      if (filters.price_min === undefined && typed.price_min !== undefined)
+        filters = { ...filters, price_min: typed.price_min };
+    }
+    filters = { ...filters, q: dropGenericPhrase(stripMoney(filters.q)) };
 
     // Tìm, xếp hạng. Rỗng thì thử theo thứ tự:
     //  1. Tên món mô hình gợi ý, khi câu là nhu cầu ("tai nghe chống ồn", "quà
