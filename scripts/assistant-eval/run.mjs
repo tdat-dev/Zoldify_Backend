@@ -153,6 +153,15 @@ const summary = {
   ),
   review_clash: reviews.reduce((s, r) => s + r.review.clash.length, 0),
   fallback: rows.filter((r) => r.fallback).length,
+  // Tách lỗi do router (mô hình lỗi, đi đường lui) với lỗi do code.
+  pass_with_model: pct(
+    rows.filter((r) => !r.fallback && !r.errors.length).length,
+    rows.filter((r) => !r.fallback).length,
+  ),
+  pass_on_fallback: pct(
+    rows.filter((r) => r.fallback && !r.errors.length).length,
+    rows.filter((r) => r.fallback).length,
+  ),
   flaky,
   failed: [...new Set(rows.filter((r) => r.errors.length).map((r) => r.q))],
 };
