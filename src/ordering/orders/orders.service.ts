@@ -2077,6 +2077,10 @@ export class OrdersService {
           to_ward_code: toWardCode,
           weight: weight || 500,
           from_district_id: shop?.pickup_district_id || undefined,
+          // Quận và phường phải đi CẶP. Gửi quận của người bán mà thiếu phường
+          // thì GHN lấy phường đăng ký của shop nền tảng — có thể nằm ở quận
+          // khác, và GHN trả "route not found service".
+          from_ward_code: shop?.pickup_ward_code || undefined,
         });
         fee = Number(res?.total || 0);
       } catch (e) {

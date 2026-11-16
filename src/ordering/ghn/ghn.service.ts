@@ -225,6 +225,9 @@ export class GhnService {
     // Quận người GỬI. Mặc định là điểm gửi của sàn trong env; truyền vào để
     // tính phí theo địa chỉ lấy hàng của từng người bán (C2C).
     from_district_id?: number;
+    // Phường người GỬI. Thiếu thì GHN lấy phường đã đăng ký của shop trong
+    // header ShopId — đúng ý khi người bán chưa khai pickup.
+    from_ward_code?: string;
   }) {
     const fromDistrictId = dto.from_district_id ?? this.fromDistrictId;
     const services = await this.getAvailableServices(
@@ -234,12 +237,23 @@ export class GhnService {
     // GHN trả `data: null` (không phải mảng rỗng) khi không có tuyến, đo live
     // staging 05/10 với quận 2045. Gọi .find() thẳng trên null thì người mua
     // đọc thấy "Cannot read properties of null" thay vì lý do bên dưới.
-    const defaultService = (services ?? []).find(
-      (s) => s.service_type_id === 2,
-    );
+    const list = (services ?? []) as Array<{
+      service_id?: number;
+      service_type_id?: number;
+    }>;
+    // H-08 (16/11): trước đây gửi `service_id` lấy từ available-services. Tài
+    // liệu GHN ghi rõ `service_id` chỉ để tham khảo, còn /shipping-order/fee
+    // nhận `service_type_id` — gửi sai trường thì GHN trả
+    // "route not found service" dù tuyến có thật, và người mua không đặt được
+    // đơn nào. Gói chọn theo khối lượng: 2 = dưới 20 kg, 5 = từ 20 kg.
+    const wantedType = dto.weight >= 20000 ? 5 : 2;
+    const service =
+      list.find((s) => s.service_type_id === wantedType) ??
+      list.find((s) => s.service_type_id === 2) ??
+      list[0];
     // Mảng rỗng (không phải lỗi HTTP) là cách GHN nói "không có tuyến giữa hai
     // quận này", thường vì một bên đã ngừng phục vụ.
-    if (!defaultService) {
+    if (!service?.service_type_id) {
       throw new Error(
         'GHN không có tuyến giao giữa quận gửi và quận nhận (quận có thể đã ngừng phục vụ)',
       );
@@ -250,9 +264,12 @@ export class GhnService {
         `${this.baseUrl}/shipping-order/fee`,
         {
           from_district_id: fromDistrictId,
+          ...(dto.from_ward_code
+            ? { from_ward_code: dto.from_ward_code }
+            : {}),
           to_district_id: dto.to_district_id,
           to_ward_code: dto.to_ward_code,
-          service_id: defaultService.service_id,
+          service_type_id: service.service_type_id,
           weight: dto.weight,
           length: dto.length || 20,
           width: dto.width || 20,
@@ -385,7 +402,9 @@ export class GhnService {
           width: 20,
           height: 10,
           cod_amount: dto.cod_amount,
-          service_type_id: 2,
+          // Cùng quy tắc với calculateFee: 2 = dưới 20 kg, 5 = từ 20 kg.
+          // Đơn nặng mà khai gói nhẹ thì GHN từ chối tạo vận đơn.
+          service_type_id: totalWeight >= 20000 ? 5 : 2,
           payment_type_id: 2,
           required_note: 'KHONGCHOXEMHANG',
           items: dto.items,
