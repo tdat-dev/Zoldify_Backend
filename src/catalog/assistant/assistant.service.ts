@@ -18,6 +18,7 @@ import {
   isGreeting,
   rankByName,
   relatesToUser,
+  saysNeed,
 } from './assistant-filters';
 import { parseFallback, stripMoney } from './assistant-fallback';
 import { AssistantModel, ChatMessage, ReviewInput } from './assistant-model';
@@ -264,7 +265,11 @@ export class AssistantService {
     let groups: [ProductRow[], ProductRow[]][] = [[inStock, market]];
     let suggestedFrom: string[] | null = null;
     const words = filters.q.split(' ');
-    if (!inStock.length && filters.alternatives?.length) {
+    if (
+      !inStock.length &&
+      filters.alternatives?.length &&
+      saysNeed(userTexts)
+    ) {
       const found = await Promise.all(
         filters.alternatives.map((a) =>
           this.searchWithMarket({ ...filters, q: a }),
