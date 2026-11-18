@@ -370,6 +370,12 @@ export const CONG: Cong[] = [
     soDo: soDoTuPassFail,
   },
   {
+    ten: 'check:redis-chet',
+    lenh: 'npm run check:redis-chet',
+    dieuKien: canRedis,
+    soDo: soDoTuPassFail,
+  },
+  {
     ten: 'check:worker',
     lenh: 'npm run check:worker',
     dieuKien: canCaHai,

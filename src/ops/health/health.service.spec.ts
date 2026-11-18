@@ -90,6 +90,22 @@ describe('HealthService', () => {
     expect(kq.http).toBe(200);
   });
 
+  it('REDIS TREO (lời hứa không kết thúc) → vẫn trả lời trong 1 s, 200 + redis=down', async () => {
+    // Ca "ném lỗi" ở trên không đủ. Lúc dừng Redis thật (kiem-suc-khoe
+    // 2026-11-11), lệnh cache không ném mà treo hẳn, `/health` treo theo, Docker
+    // đánh dấu cả 3 bản api unhealthy — dù MySQL vẫn sống.
+    process.env.REDIS_URL = 'redis://x';
+    const cacheTreo = {
+      set: () => new Promise(() => undefined),
+      get: () => new Promise(() => undefined),
+    } as unknown as Cache;
+    const t0 = Date.now();
+    const kq = await new HealthService(dsOk, cacheTreo).kiem();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(kq.redis).toBe('down');
+    expect(kq.http).toBe(200);
+  });
+
   it('không cấu hình Redis → redis=off, không phải down', async () => {
     // Máy cá nhân và CI chạy không Redis. Báo "down" ở đó là báo động giả, và
     // báo động giả lặp lại thì người ta thôi nhìn cái đèn.
