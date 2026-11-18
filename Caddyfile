@@ -105,13 +105,21 @@
 	# WebSocket chỉ có một kết nối nên không dính, vì thế chỉ ghim đường này, các
 	# route khác vẫn chia theo bản rảnh.
 	#
-	# Băm theo Cf-Connecting-Ip chứ không client_ip_hash: nginx ghi X-Forwarded-For
-	# là IP biên Cloudflare, đổi theo từng request. Thiếu header (gọi thẳng, không
-	# qua Cloudflare) thì caddy rơi về chọn ngẫu nhiên.
+	# Băm theo Cf-Connecting-Ip trước: qua Cloudflare thì X-Forwarded-For có thể
+	# là IP biên Cloudflare, đổi theo từng request, còn header này luôn là IP thật.
+	#
+	# THIẾU HEADER THÌ RƠI VỀ client_ip_hash, KHÔNG ĐƯỢC ĐỂ MẶC ĐỊNH. Mặc định của
+	# `header` khi không có header là `random`: kiểm nâng cao 11/11 trên cụm 3 bản,
+	# polling không có Cf-Connecting-Ip thì 0/3 phiên nối được. Đường đó là máy
+	# local và mọi lối vào không qua Cloudflare. client_ip_hash băm theo IP khách
+	# mà caddy đã xác định (XFF chỉ được tin từ dải private, xem `trusted_proxies`
+	# ở trên), nên cùng một khách vẫn về đúng một bản.
 	@socket path /socket.io/*
 	reverse_proxy @socket {
 		import ban_api
-		lb_policy header Cf-Connecting-Ip
+		lb_policy header Cf-Connecting-Ip {
+			fallback client_ip_hash
+		}
 	}
 
 	reverse_proxy {
