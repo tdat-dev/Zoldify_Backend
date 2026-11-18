@@ -7,6 +7,8 @@
  * dài cả đoạn. Nên mọi thứ đi qua `normalizeFilters` rồi mới thành truy vấn.
  */
 
+import { GIA_TOI_DA } from '@catalog/products/gia-tran';
+
 export const VALID_CONDITIONS = [
   'new',
   'like_new',
@@ -37,8 +39,11 @@ const MAX_ALTERNATIVE_LENGTH = 40;
 
 /** Từ khoá dài hơn thế này là mô hình chép nguyên câu, không phải từ khoá. */
 const MAX_QUERY_LENGTH = 80;
-/** Trần giá: 10 tỷ. Lớn hơn là mô hình đọc nhầm đơn vị. */
-const MAX_PRICE = 10_000_000_000;
+/**
+ * Trần giá: 10 tỷ. Lớn hơn là mô hình đọc nhầm đơn vị. Dùng chung số với giá
+ * trần khi đăng bán: tìm món đắt hơn mức không ai đăng được là vô nghĩa.
+ */
+const MAX_PRICE = GIA_TOI_DA;
 
 /** "600k" -> 600000, "1tr" -> 1000000, "1,5 triệu" -> 1500000, 600000 -> 600000. */
 export function parsePrice(value: unknown): number | undefined {

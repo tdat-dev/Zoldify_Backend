@@ -6,11 +6,13 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { ConditionDetailsDto } from './condition-details.dto';
+import { GIA_TOI_DA } from '../gia-tran';
 
 export class CreateProductDto {
   @IsNotEmpty({ message: 'Tên sản phẩm không được để trống' })
@@ -23,10 +25,14 @@ export class CreateProductDto {
    * (amount phải > 0), đơn kẹt ở pending tới khi cron huỷ. Web và mobile đều
    * đã chặn `price > 0` ở form (edit/page.tsx, sell-screen.tsx), nên chặn ở
    * đây không làm hỏng client nào, chỉ đóng đường gọi thẳng API.
+   *
+   * Giá trần `GIA_TOI_DA` (10 tỷ): thiếu trần thì giá 17 chữ số vượt cột
+   * DECIMAL(15,2) và vỡ ở MySQL thành 500. Lý do đầy đủ ở `gia-tran.ts`.
    */
   @IsNotEmpty({ message: 'Giá sản phẩm không được để trống' })
   @IsNumber({}, { message: 'Giá sản phẩm phải là số' })
   @Min(1, { message: 'Giá sản phẩm phải lớn hơn 0' })
+  @Max(GIA_TOI_DA, { message: 'Giá sản phẩm tối đa 10.000.000.000' })
   price: number;
 
   /**
