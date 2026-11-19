@@ -18,6 +18,7 @@ import {
   isGreeting,
   rankByName,
   relatesToUser,
+  saysNeed,
 } from './assistant-filters';
 import { parseFallback, stripMoney } from './assistant-fallback';
 import { AssistantModel, ChatMessage, ReviewInput } from './assistant-model';
@@ -240,16 +241,6 @@ export class AssistantService {
         filters: null,
       };
     }
-    if (!fallback) {
-      // Mô hình để cụm tiền trong q mà bỏ sót giá (đo staging 16/11: "laptop
-      // dưới 3 triệu" ra q "laptop 3 triệu", không có price_max): lấy giá từ
-      // chính câu gõ. Giá đọc từ câu gõ nên không phải giá bịa.
-      const typed = parseFallback(history);
-      if (filters.price_max === undefined && typed.price_max !== undefined)
-        filters = { ...filters, price_max: typed.price_max };
-      if (filters.price_min === undefined && typed.price_min !== undefined)
-        filters = { ...filters, price_min: typed.price_min };
-    }
     filters = { ...filters, q: dropGenericPhrase(stripMoney(filters.q)) };
 
     // Tìm, xếp hạng. Rỗng thì thử theo thứ tự:
@@ -264,7 +255,11 @@ export class AssistantService {
     let groups: [ProductRow[], ProductRow[]][] = [[inStock, market]];
     let suggestedFrom: string[] | null = null;
     const words = filters.q.split(' ');
-    if (!inStock.length && filters.alternatives?.length) {
+    if (
+      !inStock.length &&
+      filters.alternatives?.length &&
+      saysNeed(userTexts)
+    ) {
       const found = await Promise.all(
         filters.alternatives.map((a) =>
           this.searchWithMarket({ ...filters, q: a }),

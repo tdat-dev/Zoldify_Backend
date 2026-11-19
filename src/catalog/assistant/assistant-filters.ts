@@ -7,6 +7,8 @@
  * dài cả đoạn. Nên mọi thứ đi qua `normalizeFilters` rồi mới thành truy vấn.
  */
 
+import { GIA_TOI_DA } from '@catalog/products/gia-tran';
+
 export const VALID_CONDITIONS = [
   'new',
   'like_new',
@@ -37,8 +39,11 @@ const MAX_ALTERNATIVE_LENGTH = 40;
 
 /** Từ khoá dài hơn thế này là mô hình chép nguyên câu, không phải từ khoá. */
 const MAX_QUERY_LENGTH = 80;
-/** Trần giá: 10 tỷ. Lớn hơn là mô hình đọc nhầm đơn vị. */
-const MAX_PRICE = 10_000_000_000;
+/**
+ * Trần giá: 10 tỷ. Lớn hơn là mô hình đọc nhầm đơn vị. Dùng chung số với giá
+ * trần khi đăng bán: tìm món đắt hơn mức không ai đăng được là vô nghĩa.
+ */
+const MAX_PRICE = GIA_TOI_DA;
 
 /** "600k" -> 600000, "1tr" -> 1000000, "1,5 triệu" -> 1500000, 600000 -> 600000. */
 export function parsePrice(value: unknown): number | undefined {
@@ -205,6 +210,39 @@ const MONEY_UNITS = new Set([
   'đ',
   'vnd',
 ]);
+
+/** Chữ cho thấy người dùng nói nhu cầu, dịp, công dụng chứ không chỉ tên món. */
+const NEED_WORDS = new Set([
+  'quà',
+  'tặng',
+  'tang',
+  'cho',
+  'để',
+  'chống',
+  'chong',
+  'học',
+  'hoc',
+  'làm',
+  'lam',
+  'chơi',
+  'choi',
+  'hợp',
+  'hop',
+  'dành',
+  'dùng',
+  'gift',
+  'for',
+]);
+
+/**
+ * Câu người dùng có nói nhu cầu ("quà tặng bạn gái", "tai nghe chống ồn",
+ * "laptop để học") hay chỉ nói tên món ("máy ảnh canon"). Chỉ câu nói nhu cầu
+ * mới được dùng tên món mô hình gợi ý. Đo staging 13 và 16/11: hai lần "may
+ * anh" mô hình vẫn gợi ý món khác dù câu dặn cấm.
+ */
+export function saysNeed(userTexts: string[]): boolean {
+  return userTexts.flatMap(tokens).some((w) => NEED_WORDS.has(w));
+}
 
 /**
  * Từ khoá mô hình trả có ít nhất một chữ nằm trong câu người dùng (so không

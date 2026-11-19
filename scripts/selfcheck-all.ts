@@ -28,6 +28,9 @@ const suites: Array<{ name: string; file: string }> = [
   // nó dựng hai server socket thật nên hỏng ở đây là hỏng thứ rất đáng biết
   // trước khi chạy ba suite database.
   { name: 'Task #5 — trạng thái dùng chung qua Redis', file: 'selfcheck-redis-state.ts' },
+  // Cần Redis, không cần database. Cắt Redis giữa chừng và lúc khởi động qua
+  // một proxy trong tiến trình, đòi cache không treo và tự hồi phục.
+  { name: 'Redis chết — cache không treo, tự hồi phục', file: 'selfcheck-redis-chet.ts' },
   // Cần Redis chứ KHÔNG cần database. Đặt ngay sau suite CI vì cùng loại: hỏng
   // là hỏng cấu hình, biết sớm hơn ba suite database phía dưới.
   { name: 'Task #14 — worker tách khỏi API (cần Redis + DB)', file: 'selfcheck-worker.ts' },

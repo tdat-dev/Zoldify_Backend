@@ -1,3 +1,60 @@
+/** Phần của Keyv do `@keyv/redis` trả về mà file này chạm tới. */
+interface KeyvCoClient {
+  store: { client: { connect: () => Promise<unknown> } };
+}
+
+/**
+ * Store Redis mà REDIS CHẾT THÌ LỆNH KẾT THÚC NGAY, REDIS SỐNG LẠI THÌ TỰ NỐI.
+ *
+ * VÌ SAO KHÔNG GỌI `createKeyv(url)` TRẦN NỮA. Bản cũ làm vậy, và báo cáo
+ * kiem-suc-khoe-2026-11-11 đo được: dừng Redis là mọi route chạm cache treo vô
+ * thời hạn, `/health` treo theo, Docker đánh dấu cả 3 bản api unhealthy. Có hai
+ * đường dẫn tới cùng một lời hứa không bao giờ kết thúc:
+ *
+ *   1. Redis chết GIỮA CHỪNG. node-redis mặc định XẾP HÀNG lệnh lúc mất kết nối
+ *      để gửi lại khi nối được. `client.isOpen` vẫn là true trong lúc nối lại,
+ *      nên @keyv/redis cứ thế đẩy lệnh vào hàng đợi. `try/catch` quanh lệnh
+ *      cache ở products/auth không cứu được: không có lỗi nào được ném.
+ *      → `disableOfflineQueue: true`: client chưa sẵn sàng thì lệnh bị từ chối
+ *      ngay, @keyv/redis nuốt lỗi và trả `undefined` — tức là cache miss, và
+ *      request đi tiếp xuống MySQL. Chậm hơn, nhưng trả lời.
+ *
+ *   2. App KHỞI ĐỘNG lúc Redis chưa lên. @keyv/redis chỉ nối ở lệnh đầu tiên,
+ *      và `await client.connect()` không kết thúc chừng nào Redis còn chết
+ *      (vòng nối lại cứ thử mãi). Lệnh đầu tiên treo, lệnh sau cũng vậy.
+ *      → Tự gọi `connect()` NGAY Ở ĐÂY và không chờ. `isOpen` lên true lập tức,
+ *      nên mọi lệnh sau đi thẳng vào nhánh (1) và hỏng nhanh thay vì chờ nối.
+ *
+ * TỰ HỒI PHỤC. `reconnectStrategy` giữ nguyên backoff của @keyv/redis (tối đa
+ * 2 s, thử mãi). KHÔNG dùng `createKeyvNonBlocking` của thư viện, dù tên nghe
+ * đúng: nó đặt `reconnectStrategy = false`, tức Redis chết một lần là cache tắt
+ * vĩnh viễn tới lần khởi động lại sau — đổi treo lấy chết câm.
+ *
+ * `throwOnConnectError: false` để mọi lỗi Redis đều thành cache miss, không
+ * thành lỗi 500. Kiểm bằng `npm run check:redis-chet`: nó cắt Redis giữa chừng
+ * và lúc khởi động, rồi đòi mỗi lệnh kết thúc dưới 1,5 s và cache tự dùng lại
+ * được khi Redis trở lại.
+ */
+function taoStoreKhongTreo(
+  createKeyv: (connect: unknown, options?: unknown) => KeyvCoClient,
+  reconnectStrategy: (attempts: number) => number,
+  url: string,
+): KeyvCoClient {
+  const keyv = createKeyv(
+    {
+      url,
+      disableOfflineQueue: true,
+      socket: { connectTimeout: 2000, reconnectStrategy },
+    },
+    { throwOnConnectError: false },
+  );
+  // Lỗi kết nối đã được @keyv/redis bắt và phát thành sự kiện 'error' (không
+  // giết tiến trình); ở đây chỉ cần lời hứa của lần nối đầu không thành
+  // unhandled rejection.
+  keyv.store.client.connect().catch(() => undefined);
+  return keyv;
+}
+
 /**
  * Cấu hình cache — nguồn DUY NHẤT cho cả tiến trình API lẫn tiến trình worker.
  *
@@ -55,10 +112,14 @@ export async function cacheConfig(): Promise<Record<string, unknown>> {
     // nó dựng WorkerModule thật với REDIS_URL trỏ vào Redis thật.
     const pkg = '@keyv/redis';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createKeyv } = require(pkg) as {
-      createKeyv: (u: string) => unknown;
+    const { createKeyv, defaultReconnectStrategy } = require(pkg) as {
+      createKeyv: (connect: unknown, options?: unknown) => KeyvCoClient;
+      defaultReconnectStrategy: (attempts: number) => number;
     };
-    return { stores: [createKeyv(url)], ttl };
+    return {
+      stores: [taoStoreKhongTreo(createKeyv, defaultReconnectStrategy, url)],
+      ttl,
+    };
   } catch (e) {
     // REDIS_URL có nhưng KHÔNG nạp được @keyv/redis (chưa cài) hoặc lỗi tạo
     // store → KHÔNG chặn boot: rơi về in-memory + cảnh báo. Fail-open ngay từ

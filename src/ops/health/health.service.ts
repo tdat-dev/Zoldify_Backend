@@ -80,6 +80,28 @@ export class HealthService {
     // chạy không Redis; báo động ở đó là báo động giả, mà báo động giả lặp lại
     // thì người ta thôi nhìn cái đèn.
     if (!process.env.REDIS_URL) return 'off';
+    // CÓ TRẦN THỜI GIAN. Healthcheck của Docker cắt ở 5 s; nếu lượt kiểm Redis
+    // treo thì cả `/health` treo, Docker ghi unhealthy và giết một container mà
+    // MySQL vẫn sống — đúng điều ghi ở `kiem()` là phải tránh. Đã xảy ra thật
+    // (kiem-suc-khoe-2026-11-11: cả 3 bản api unhealthy khi dừng Redis).
+    // `cache.config.ts` đã chặn đường treo đã biết, nhưng còn những kiểu treo
+    // client không tự thấy (mạng rớt gói mà không có RST), nên ở đây không trông
+    // vào tầng dưới: quá trần thì là `down`.
+    let hen: NodeJS.Timeout | undefined;
+    const quaTran = new Promise<'down'>((resolve) => {
+      hen = setTimeout(() => resolve('down'), HealthService.TRAN_REDIS_MS);
+    });
+    try {
+      return await Promise.race([this.kiemRedisKhongTran(), quaTran]);
+    } finally {
+      clearTimeout(hen);
+    }
+  }
+
+  /** Dưới ngưỡng 5 s của healthcheck Docker, chừa chỗ cho `SELECT 1`. */
+  private static readonly TRAN_REDIS_MS = 1000;
+
+  private async kiemRedisKhongTran(): Promise<'up' | 'down'> {
     try {
       // Đi qua chính `CACHE_MANAGER` mà ứng dụng dùng thật, thay vì mở thêm một
       // client thứ hai: cái cần biết là "đường cache của ứng dụng có thông
