@@ -59,7 +59,7 @@ const MAX_OVER_BUDGET = 3;
 
 /** Câu chào lại khi mô hình đem câu chào đi tìm như tên món. */
 const GREETING_REPLY =
-  'Chào bạn! Bạn muốn tìm mua món gì? Gõ tên món, tầm giá và nơi nhận, ví dụ: nồi cơm điện dưới 600k ở HCM.';
+  'Chào bạn! Bạn muốn tìm mua món gì? Gõ món bạn cần và tầm giá, ví dụ: laptop để học lập trình, tầm 5 triệu.';
 
 /** Số món trả về một lượt: vừa một hàng thẻ trong khung chat. */
 const RESULT_LIMIT = 6;
