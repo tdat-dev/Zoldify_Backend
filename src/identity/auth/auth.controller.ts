@@ -47,6 +47,7 @@ export class AuthController {
     private readonly firebaseService: FirebaseService,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
+    private readonly cartService: CartService 
   ) {}
 
   @Public()
