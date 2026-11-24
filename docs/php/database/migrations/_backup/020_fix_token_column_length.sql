@@ -1,1 +1,0 @@
-ALTER TABLE users MODIFY COLUMN email_verification_token VARCHAR(100) NULL;
