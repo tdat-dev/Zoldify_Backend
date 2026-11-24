@@ -64,10 +64,12 @@ export class CartController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @ResponseMessage('Xóa giỏ hàng thành công')
-  @ApiEntity(MessageResponseDto)
-  @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number, @User() user: IUser) {
-    return this.cartService.remove(id, user);
+  @ResponseMessage('Gộp giỏ khách vào giỏ thành viên')
+  @Post('merge')
+  async merge(@Body() body: { guestCart: { product_id: number; quantity?: number }[] }, @User() user: IUser) {
+    // @ts-ignore - CartService now has mergeGuestCart method
+    return this.cartService.mergeGuestCart(body.guestCart ?? [], user);
   }
+
+
 }

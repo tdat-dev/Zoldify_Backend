@@ -138,9 +138,14 @@ export class AuthService {
       data && typeof data === 'object' ? data.het_han - Date.now() : 0;
     // !(conLai > 0) chứ không conLai <= 0: bản ghi kiểu cũ (trước bản vá, không
     // có het_han) cho NaN, mà NaN <= 0 là false, tức lọt qua kiểm hết hạn.
-    if (!data || !(conLai > 0)) {
-      throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');
-    }
+    if (!data) {
+        // Data missing means OTP was never generated or already removed
+        throw new BadRequestException('Mã OTP không chính xác');
+      }
+      if (!(conLai > 0)) {
+        // Expired OTP
+        throw new BadRequestException('Mã OTP đã hết hạn hoặc không tồn tại');
+      }
     if (data.otp !== otp) {
       const sai = (data.sai ?? 0) + 1;
       if (sai >= SO_LAN_SAI_TOI_DA) {

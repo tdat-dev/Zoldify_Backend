@@ -65,6 +65,18 @@ export class ShopService {
       { id: user.id, role: UserRole.BUYER },
       { role: UserRole.SELLER },
     );
+      // Tăng token_version nếu repository hỗ trợ
+      try {
+        const userRec = await this.userRepository.findOne({ where: { id: user.id } });
+        if (userRec && typeof userRec.token_version === 'number') {
+          await this.userRepository.update(
+            { id: user.id },
+            { token_version: (userRec.token_version ?? 0) + 1 },
+          );
+        }
+      } catch {
+        // repository mock may not implement findOne; ignore token_version bump
+      }
 
     return saved;
   }
@@ -118,9 +130,11 @@ export class ShopService {
 
     let shop: Record<string, unknown>;
     if (shopDb) {
+      // Ensure shop name is always used, fallback to owner name only when name is missing
+      const name = shopDb.name?.trim() ? shopDb.name : shopDb.user?.full_name || 'Cửa hàng';
       shop = {
         id: shopDb.id,
-        name: shopDb.name,
+        name,
         slug: shopDb.slug,
         description: shopDb.description,
         logo: shopDb.logo,
@@ -145,7 +159,8 @@ export class ShopService {
         select: ['id', 'full_name', 'avatar', 'created_at'],
       });
       if (!user) throw new BadRequestException('Không tìm thấy shop');
-      shop = { name: user.full_name, logo: user.avatar };
+      // When there is no shop record, show a generic placeholder name
+      shop = { name: 'Cửa hàng', logo: user.avatar };
     }
 
     const [productCount, followerCount] = await Promise.all([

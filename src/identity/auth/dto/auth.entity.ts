@@ -4,7 +4,11 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  IsArray,
+  ValidateNested,
+  IsInt,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { EmailChuanHoa } from '@common/email';
 
 // 1. Luồng Quên mật khẩu - Bước 1: Gửi OTP
@@ -75,6 +79,22 @@ export class FirebaseLoginDto {
   @IsString()
   @IsNotEmpty({ message: 'idToken không được để trống' })
   idToken: string;
+
+  // Danh sách giỏ tạm của khách (tùy chọn). Mỗi mục gồm product_id và quantity.
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GuestCartItemDto)
+  guestCart?: GuestCartItemDto[];
+}
+
+export class GuestCartItemDto {
+  @IsInt()
+  product_id: number;
+
+  @IsOptional()
+  @IsInt()
+  quantity?: number;
 }
 
 // 6. Luồng Làm mới access token bằng refresh token

@@ -10,7 +10,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
-import { AuthService } from './auth.service';
+import { CartService } from '../../ordering/carts/cart.service';
+
 import { LoginUserDto } from '@identity/users/dto/create-user.dto';
 import { Public } from '@common/decorators/public.decorator';
 import { LocalAuthGuard } from './local-auth.guard';
@@ -37,6 +38,7 @@ import { User as UserEntity } from '@identity/users/entities/user.entity';
 import { ApiEntity } from '@common/decorators/api-response.decorator';
 import { MessageResponseDto } from '@common/dto/message-response.dto';
 import { AuthUserDto, LoginResponseDto } from './dto/auth-response.dto';
+import { AuthService } from './auth.service';
 
 @Controller('auth')
 export class AuthController {
@@ -165,6 +167,10 @@ export class AuthController {
       await this.userRepository.update(user.id, { avatar: fbUser.avatar });
     }
 
+    // Nếu có giỏ hàng tạm của khách, gộp vào giỏ của người dùng đã đăng nhập
+    if (dto.guestCart && dto.guestCart.length) {
+      await this.cartService.mergeGuestCart(dto.guestCart, user);
+    }
     return this.authService.login(user);
   }
 

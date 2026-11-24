@@ -62,6 +62,21 @@ export class CartService {
    * Giờ phép cộng và phép so với kho nằm chung một câu UPDATE có điều kiện, nên
    * MySQL tự xếp hàng các lần cộng trên khoá dòng của nó.
    */
+  /**
+   * Merge a list of guest‑cart items into the authenticated user's cart.
+   * Each item is processed using the same logic as `create` so all validation
+   * (stock, seller check, duplicate handling) is kept consistent.
+   */
+  async mergeGuestCart(items: { product_id: number; quantity?: number }[], user: IUser) {
+    for (const item of items) {
+      const dto = { product_id: String(item.product_id), quantity: item.quantity } as any;
+      // Re‑use the existing create logic – it throws appropriate exceptions
+      // if any rule is violated.
+      await this.create(dto, user);
+    }
+    return this.findAll(user);
+  }
+
   async create(createCartDto: CreateCartDto, user: IUser) {
     const { product_id } = createCartDto;
     const muonThem = createCartDto.quantity || 1;
