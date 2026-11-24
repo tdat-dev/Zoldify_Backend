@@ -232,6 +232,18 @@ if (coCaddyfile) {
     'thiếu thì 2/3 phiên polling mất session khi chạy ba bản api',
   );
 
+  // Thiếu Cf-Connecting-Ip (local, lối vào không qua Cloudflare) thì policy
+  // `header` mặc định chọn NGẪU NHIÊN: kiểm nâng cao 11/11 đo được 0/3 phiên
+  // polling nối được. Phải có fallback băm theo IP.
+  kiem(
+    soBan(S.api) < 2 ||
+      /lb_policy\s+header\s+Cf-Connecting-Ip\s*\{[^}]*\bfallback\s+client_ip_hash\b/i.test(
+        cf,
+      ),
+    'thiếu Cf-Connecting-Ip thì polling socket.io vẫn ghim bản (fallback client_ip_hash)',
+    'mặc định là random — gọi thẳng không qua Cloudflare thì phiên polling mất session',
+  );
+
   // Deploy khởi động lại lần lượt từng bản api (scripts/deploy/lan-luot-api.sh).
   // Bản vừa tắt vẫn nằm trong danh sách DNS của caddy tới 10 giây; thiếu
   // `lb_try_duration` thì caddy trả 502 ngay lần nối hỏng đầu tiên thay vì thử

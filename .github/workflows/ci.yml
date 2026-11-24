@@ -282,6 +282,10 @@ jobs:
       # phải thấy lỗi thật của tầng đó trước.
       - name: Trạng thái dùng chung qua Redis
         run: npm run check:redis
+      # Redis chết thì cache không được treo, sống lại thì tự dùng lại được.
+      # Bài tự cắt Redis bằng proxy trong tiến trình, không cần quyền Docker.
+      - name: Redis chết không treo API
+        run: npm run check:redis-chet
       # Task #14: cron đã ra khỏi API chưa, và ra rồi thì có còn chạy đúng MỘT
       # lần không. Phần sau dựng hai worker thật trên service redis ở trên.
       - name: Worker tách khỏi API

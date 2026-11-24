@@ -8601,8 +8601,9 @@
           },
           "price": {
             "type": "number",
-            "description": "Giá tối thiểu 1. Trước 26/10 chỉ có `@IsNumber`: đăng được món -1000đ hay\n0đ, và món 0đ cộng phí ship 0 thì ra đơn tổng 0đ mà PayOS từ chối tạo link\n(amount phải > 0), đơn kẹt ở pending tới khi cron huỷ. Web và mobile đều\nđã chặn `price > 0` ở form (edit/page.tsx, sell-screen.tsx), nên chặn ở\nđây không làm hỏng client nào, chỉ đóng đường gọi thẳng API.",
-            "minimum": 1
+            "description": "Giá tối thiểu 1. Trước 26/10 chỉ có `@IsNumber`: đăng được món -1000đ hay\n0đ, và món 0đ cộng phí ship 0 thì ra đơn tổng 0đ mà PayOS từ chối tạo link\n(amount phải > 0), đơn kẹt ở pending tới khi cron huỷ. Web và mobile đều\nđã chặn `price > 0` ở form (edit/page.tsx, sell-screen.tsx), nên chặn ở\nđây không làm hỏng client nào, chỉ đóng đường gọi thẳng API.\n\nGiá trần `GIA_TOI_DA` (10 tỷ): thiếu trần thì giá 17 chữ số vượt cột\nDECIMAL(15,2) và vỡ ở MySQL thành 500. Lý do đầy đủ ở `gia-tran.ts`.",
+            "minimum": 1,
+            "maximum": 10000000000
           },
           "currency": {
             "type": "string",
