@@ -211,6 +211,10 @@ export class PayosService {
       orderCode: link.orderCode,
       amount: link.amount,
       expiresAt: link.expiredAt,
+      bin: link.bin,
+      accountNumber: link.accountNumber,
+      accountName: link.accountName,
+      description: link.description,
       isMock: this.isMock,
     };
   }
@@ -265,6 +269,10 @@ export class PayosService {
       orderCode: link.orderCode,
       amount: link.amount,
       expiresAt: link.expiredAt,
+      bin: link.bin,
+      accountNumber: link.accountNumber,
+      accountName: link.accountName,
+      description: link.description,
       isMock: this.isMock,
     };
   }
@@ -285,6 +293,10 @@ export class PayosService {
       checkoutUrl: string;
       qrCode: string;
       expiredAt?: number;
+      bin?: string;
+      accountNumber?: string;
+      accountName?: string;
+      description?: string;
     };
     if (this.isMock) {
       link = {
@@ -294,6 +306,10 @@ export class PayosService {
         checkoutUrl: `${yeuCau.returnUrl}${yeuCau.returnUrl.includes('?') ? '&' : '?'}orderCode=${yeuCau.orderCode}`,
         qrCode: `ZOLDIFY-MOCK-PAYOS|${yeuCau.orderCode}|${yeuCau.amount}`,
         expiredAt: yeuCau.expiredAt,
+        bin: '970422',
+        accountNumber: '0000123456789',
+        accountName: 'ZOLDIFY STAGING MOCK',
+        description: yeuCau.description,
       };
     } else {
       try {
