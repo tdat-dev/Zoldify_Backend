@@ -134,6 +134,19 @@ export class PayosController {
   }
 
   /**
+   * Giả lập thanh toán PayOS thành công — chỉ hoạt động khi PAYOS_MOCK=true (staging)
+   * POST /payos/mock-confirm
+   * body: { payos_order_code: string }
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('mock-confirm')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Giả lập thanh toán PayOS thành công')
+  async mockConfirm(@Body() dto: CancelPayosLinkDto, @User() user: IUser) {
+    return this.payosService.mockConfirmPayment(dto.payos_order_code, user.id);
+  }
+
+  /**
    * Webhook nhận thông báo từ PayOS
    * POST /payos/webhook (PUBLIC, không cần JWT)
    * PayOS gửi raw JSON, cần verify signature
