@@ -5,7 +5,7 @@ import { COT_SUA_DUOC, UpdateUserDto } from './dto/update-user.dto';
 import { Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { compareSync, genSaltSync, hashSync } from 'bcrypt';
+import { compareSync, genSalt, hash } from 'bcrypt';
 
 @Injectable()
 export class UsersService {
@@ -14,14 +14,20 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
   ) { }
 
-  hashPassword(password: string) {
-    const salt = genSaltSync(10);
-    const hash = hashSync(password, salt)
+  /**
+   * Hash a plain password using bcrypt with a configurable salt round and a server‑side pepper.
+   * The pepper is read from the environment variable `PASSWORD_PEPPER` and is concatenated
+   * to the password before hashing. This adds an extra secret that is never stored in the DB.
+   */
+  async hashPassword(password: string): Promise<string> {
+    const pepper = process.env.PASSWORD_PEPPER ?? '';
+    const salt = await genSalt(10);
+    const hash = await hash(password + pepper, salt);
     return hash;
   }
 
   async create(createUserDto: CreateUserDto) {
-    const hashPassword = this.hashPassword(createUserDto.password);
+    const hashPassword = await this.hashPassword(createUserDto.password);
     const newUser = this.userRepository.create({
       ...createUserDto,
       password: hashPassword,
@@ -99,7 +105,7 @@ export class UsersService {
     if (existingUser) {
       throw new BadRequestException("Tài khoản đã tồn tại!");
     }
-    const hashPassword = this.hashPassword(password)
+    const hashPassword = await this.hashPassword(password);
     const newUser = this.userRepository.create({
       full_name,
       email,
@@ -120,8 +126,14 @@ export class UsersService {
     return await query.getOne();
   }
 
+  /**
+   * Validate a plain password against a stored bcrypt hash.
+   * The same server‑side pepper used during hashing is appended
+   * to the plain password before comparison.
+   */
   isValidPassword(password: string, hash: string) {
-    return compareSync(password, hash);
+    const pepper = process.env.PASSWORD_PEPPER ?? '';
+    return compareSync(password + pepper, hash);
   }
 
   async updateUserToken(refreshToken: string, id: string) {
