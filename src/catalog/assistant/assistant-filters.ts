@@ -78,8 +78,13 @@ export function normalizeFilters(
       ? raw.q.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY_LENGTH)
       : '';
   const filters: AssistantFilters = { q };
-  let min = parsePrice(raw?.price_min);
-  let max = parsePrice(raw?.price_max);
+  // Đo prod 19/11: "dưới 8 triệu" mô hình trả 7999999 (viết dấu "<" bằng cách
+  // trừ 1 đồng), câu trả lời hiện "dưới 7.999.999 đ". Lệch đúng 1 đồng so với
+  // số tròn nghìn thì làm tròn lại; giá lẻ thật (650.500) không bị đụng.
+  const unStrict = (v: number | undefined, step: 1 | -1) =>
+    v !== undefined && (v + step) % 1000 === 0 ? v + step : v;
+  let min = unStrict(parsePrice(raw?.price_min), -1);
+  let max = unStrict(parsePrice(raw?.price_max), 1);
   if (min !== undefined && max !== undefined && min > max)
     [min, max] = [max, min];
   // "tầm 5 triệu" ra min = max = 5 triệu (đo staging 13/11), chỉ còn món giá

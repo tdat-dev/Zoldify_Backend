@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -68,6 +69,7 @@ export const PAYOS_MA_GOC = 10_000_000_000_000;
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
   private payos: PayOS;
+  private readonly isMock: boolean;
   /**
    * true khi không có PAYOS_CHECKSUM_KEY (thiếu hoặc toàn khoảng trắng).
    *
@@ -116,6 +118,7 @@ export class PayosService {
       this.configService.get<string>('PAYOS_HOST') ||
       'https://api-merchant.payos.vn';
 
+    this.isMock = this.configService.get<string>('PAYOS_MOCK') === 'true';
     this.payos = new PayOS({ clientId, apiKey, checksumKey, baseURL });
   }
 
@@ -208,6 +211,11 @@ export class PayosService {
       orderCode: link.orderCode,
       amount: link.amount,
       expiresAt: link.expiredAt,
+      bin: link.bin,
+      accountNumber: link.accountNumber,
+      accountName: link.accountName,
+      description: link.description,
+      isMock: this.isMock,
     };
   }
 
@@ -261,6 +269,11 @@ export class PayosService {
       orderCode: link.orderCode,
       amount: link.amount,
       expiresAt: link.expiredAt,
+      bin: link.bin,
+      accountNumber: link.accountNumber,
+      accountName: link.accountName,
+      description: link.description,
+      isMock: this.isMock,
     };
   }
 
@@ -273,15 +286,41 @@ export class PayosService {
     payment: Payment,
     yeuCau: Parameters<PayOS['paymentRequests']['create']>[0],
   ) {
-    let link: Awaited<ReturnType<PayOS['paymentRequests']['create']>>;
-    try {
-      link = await this.payos.paymentRequests.create(yeuCau);
-    } catch (err) {
-      await this.paymentRepository.update(payment.id, {
-        status: PaymentStatus.FAILED,
-        note: `Tạo link PayOS hỏng: ${(err as Error).message}`,
-      });
-      throw err;
+    let link: {
+      orderCode: number;
+      amount: number;
+      paymentLinkId: string;
+      checkoutUrl: string;
+      qrCode: string;
+      expiredAt?: number;
+      bin?: string;
+      accountNumber?: string;
+      accountName?: string;
+      description?: string;
+    };
+    if (this.isMock) {
+      link = {
+        orderCode: yeuCau.orderCode,
+        amount: yeuCau.amount,
+        paymentLinkId: `mock-${yeuCau.orderCode}`,
+        checkoutUrl: `${yeuCau.returnUrl}${yeuCau.returnUrl.includes('?') ? '&' : '?'}orderCode=${yeuCau.orderCode}`,
+        qrCode: `ZOLDIFY-MOCK-PAYOS|${yeuCau.orderCode}|${yeuCau.amount}`,
+        expiredAt: yeuCau.expiredAt,
+        bin: '970422',
+        accountNumber: '0000123456789',
+        accountName: 'ZOLDIFY STAGING MOCK',
+        description: yeuCau.description,
+      };
+    } else {
+      try {
+        link = await this.payos.paymentRequests.create(yeuCau);
+      } catch (err) {
+        await this.paymentRepository.update(payment.id, {
+          status: PaymentStatus.FAILED,
+          note: `Tạo link PayOS hỏng: ${(err as Error).message}`,
+        });
+        throw err;
+      }
     }
     await this.paymentRepository.update(payment.id, {
       payos_order_code: String(link.orderCode),
@@ -358,15 +397,24 @@ export class PayosService {
 
     let payosStatus: string | null = null;
     let expiresAt: number | null = null;
-    try {
-      const link = await this.payos.paymentRequests.get(Number(payosOrderCode));
-      payosStatus = link.status;
-      // Hạn hết hiệu lực lấy SỐNG từ PayOS chứ không lưu cột riêng: nó do PayOS
-      // quyết, lưu lại là tự tạo thêm một nguồn sự thật thứ hai để lệch.
-      expiresAt = (link as any).expiredAt ?? null;
-    } catch (err: any) {
-      // PayOS lỗi thì vẫn trả dữ liệu đã lưu — mã QR trong DB vẫn quét được.
-      this.logger.warn(`Cannot fetch payos status: ${err.message}`);
+    if (this.isMock) {
+      payosStatus =
+        payment.status === PaymentStatus.SUCCESS
+          ? 'PAID'
+          : payment.status === PaymentStatus.FAILED
+            ? 'CANCELLED'
+            : 'PENDING';
+    } else {
+      try {
+        const link = await this.payos.paymentRequests.get(Number(payosOrderCode));
+        payosStatus = link.status;
+        // Hạn hết hiệu lực lấy SỐNG từ PayOS chứ không lưu cột riêng: nó do PayOS
+        // quyết, lưu lại là tự tạo thêm một nguồn sự thật thứ hai để lệch.
+        expiresAt = (link as any).expiredAt ?? null;
+      } catch (err: any) {
+        // PayOS lỗi thì vẫn trả dữ liệu đã lưu — mã QR trong DB vẫn quét được.
+        this.logger.warn(`Cannot fetch payos status: ${err.message}`);
+      }
     }
 
     return {
@@ -402,6 +450,21 @@ export class PayosService {
       throw new NotFoundException(
         'Không tìm thấy payment PayOS cho đơn hàng này',
       );
+    }
+
+    if (this.isMock) {
+      return {
+        orderId: order.id,
+        is_paid: order.is_paid || payment.status === PaymentStatus.SUCCESS,
+        payos_status:
+          payment.status === PaymentStatus.SUCCESS
+            ? 'PAID'
+            : payment.status === PaymentStatus.FAILED
+              ? 'CANCELLED'
+              : 'PENDING',
+        payment_status: payment.status,
+        amount: Number(payment.amount),
+      };
     }
 
     // Gọi PayOS API để lấy status thật
@@ -499,13 +562,60 @@ export class PayosService {
         'Chỉ có thể hủy payment đang chờ thanh toán',
       );
     }
-    await this.payos.paymentRequests.cancel(
-      Number(payosOrderCode),
-      'User cancelled',
-    );
+    if (!this.isMock) {
+      await this.payos.paymentRequests.cancel(
+        Number(payosOrderCode),
+        'User cancelled',
+      );
+    }
     payment.status = PaymentStatus.FAILED;
     await this.paymentRepository.save(payment);
     return { cancelled: true, payos_order_code: payosOrderCode };
+  }
+
+  /**
+   * Giả lập PayOS báo PAID — CHỈ hoạt động khi PAYOS_MOCK=true (staging).
+   * Đi qua đúng applyPaidPayment trong cùng transaction như webhook thật.
+   */
+  async mockConfirmPayment(payosOrderCode: string, userId: number) {
+    if (!this.isMock) {
+      throw new ForbiddenException('Chế độ PayOS mock không được bật');
+    }
+
+    const result = await this.dataSource.transaction(async (em) => {
+      const payment = await em.findOne(Payment, {
+        where: { payos_order_code: payosOrderCode, user: { id: userId } },
+        relations: ['order', 'user'],
+      });
+      if (!payment) {
+        throw new NotFoundException('Không tìm thấy payment');
+      }
+      if (payment.status === PaymentStatus.SUCCESS) {
+        return { alreadyPaid: true as const, outcome: null };
+      }
+      if (payment.status !== PaymentStatus.PENDING) {
+        throw new BadRequestException(
+          'Payment không còn ở trạng thái chờ thanh toán',
+        );
+      }
+
+      const outcome = await this.applyPaidPayment(em, payment, {
+        idempotencyKey: `payos:${payment.payos_order_code}:${payment.payos_payment_link_id}`,
+        transactionCode: `MOCK-${Date.now()}`,
+        metadata: { source: 'mockConfirmPayment' },
+      });
+      return { alreadyPaid: false as const, outcome };
+    });
+
+    if (result.outcome) {
+      await this.notifyPaid(result.outcome);
+    }
+
+    return {
+      paid: true,
+      already_paid: result.alreadyPaid,
+      payos_order_code: payosOrderCode,
+    };
   }
 
   /**
@@ -537,10 +647,12 @@ export class PayosService {
     for (const payment of dangMo) {
       if (!payment.payos_order_code) continue;
       try {
-        await this.payos.paymentRequests.cancel(
-          Number(payment.payos_order_code),
-          'Order cancelled',
-        );
+        if (!this.isMock) {
+          await this.payos.paymentRequests.cancel(
+            Number(payment.payos_order_code),
+            'Order cancelled',
+          );
+        }
         // Chỉ hạ dòng còn pending: webhook thành công có thể vừa commit.
         await this.paymentRepository.update(
           { id: payment.id, status: PaymentStatus.PENDING },

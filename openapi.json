@@ -4294,6 +4294,52 @@
         ]
       }
     },
+    "/api/v1/payos/mock-confirm": {
+      "post": {
+        "operationId": "PayosController_mockConfirm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelPayosLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "statusCode",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Giả lập thanh toán PayOS thành công — chỉ hoạt động khi PAYOS_MOCK=true (staging)\nPOST /payos/mock-confirm\nbody: { payos_order_code: string }",
+        "tags": [
+          "Payos"
+        ]
+      }
+    },
     "/api/v1/payos/webhook": {
       "post": {
         "operationId": "PayosController_webhook_v1",

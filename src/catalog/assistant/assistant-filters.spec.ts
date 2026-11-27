@@ -182,6 +182,33 @@ describe('normalizeFilters: giá hai đầu bằng nhau', () => {
   });
 });
 
+/**
+ * Đo prod 19/11: "iphone 12 dưới 8 triệu" mô hình trả price_max 7999999 (hiểu
+ * "dưới" là nhỏ hơn hẳn), câu trả lời hiện "dưới 7.999.999 đ" trước hội đồng.
+ * Lệch 1 đồng ở hai đầu là cách mô hình viết dấu "<" và ">", làm tròn lại.
+ */
+describe('normalizeFilters: giá lệch 1 đồng', () => {
+  it('7999999 thành 8000000, 500001 thành 500000', () => {
+    const f = normalizeFilters({
+      q: 'iphone 12',
+      price_min: 500001,
+      price_max: 7999999,
+    });
+    expect(f.price_max).toBe(8000000);
+    expect(f.price_min).toBe(500000);
+  });
+
+  it('giá lẻ thật vẫn giữ nguyên', () => {
+    const f = normalizeFilters({
+      q: 'a',
+      price_min: 123456,
+      price_max: 650500,
+    });
+    expect(f.price_min).toBe(123456);
+    expect(f.price_max).toBe(650500);
+  });
+});
+
 describe('normalizeFilters', () => {
   it('giữ đúng các trường hợp lệ', () => {
     expect(
